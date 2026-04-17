@@ -1,0 +1,118 @@
+## PROMPT 10 — Staff petition document generation system
+
+Build the complete petition document generation system. Staff only. Gated workflow.
+
+**Create /server/services/legalPdfTemplate.js:**
+
+All PDFs use this template. Uses pdfkit.
+
+Function: createDocument(docType, title, metadata):
+- docType: 'criteria_exhibit' | 'recommendation_letter' | 'exhibit_index' | 'cover_letter' | 'o1_itinerary'
+- metadata: { clientName, clientEmail, generatedAt, staffName, visaPath }
+- Returns configured PDFDocument (pdfkit) with:
+  - LETTER size, 1-inch margins
+  - Page 1 starts with disclaimer block (gray shaded box):
+    "IMPORTANT NOTICE" bold header + LEGAL_DISCLAIMER text
+    "AI-GENERATED CONTENT" bold header + AI_DISCLAIMER text
+  - Cover letter gets additional bold red-bordered DRAFT WARNING box before disclaimer
+  - Reco letter gets amber RECO_LETTER_NOTE box after disclaimer
+  - Every page footer: left="Pinnacle³ — Not Legal Advice" | center="Page N" | right="AI-assisted — verify content"
+  - Document title centered below disclaimer block
+
+Helper functions exported alongside:
+- addSectionHeading(doc, text)
+- addBodyText(doc, text)
+- addEvidenceTable(doc, items) — formatted table with borders
+- addPageBreak(doc)
+- async finalizePdf(doc) — returns Buffer
+
+---
+
+**Create /server/services/petitionDocumentGenerator.js:**
+
+Uses Anthropic claude-sonnet-4-20250514, max_tokens: 8000
+
+Function: generateCriteriaExhibit(criteriaExhibit, clientContext, priorApprovedExhibits)
+System: "You are an expert US immigration attorney specializing in EB-1A, EB-2 NIW, and O-1 petitions. Draft a formal exhibit document for USCIS. Write in professional legal petition style. Be specific. Reference evidence by name. Never use placeholders."
+Returns JSON: { exhibit_title, legal_standard_section, petitioner_narrative, evidence_table: [{exhibit_ref, document_title, significance}], conclusion }
+Converts to PDF using legalPdfTemplate, saves to Drive Drafts/Criteria_Exhibits/
+
+Function: generateRecoLetter(recoLetterRecord, clientContext)
+System: "You are drafting a recommendation letter to be signed by an expert. Write in first person as the recommender. Be specific and personal. Write complete ready-to-review content."
+Returns full letter text (not JSON). Business letter format.
+Converts to PDF, saves to Drive Drafts/Recommendation_Letters/
+
+Function: generateExhibitIndex(caseSetupId, clientContext)
+Gate check: all petition_criteria_exhibits for caseSetupId must have status='approved'
+Fetches all approved exhibits + reco letters
+Claude generates formal table of contents
+Converts to PDF, saves to Drive Drafts/Final_Package/
+
+Function: generateCoverLetter(caseSetupId, clientContext)
+Gate checks: exhibit_index_status='approved' AND all criteria='approved' AND all reco letters='approved'
+Claude receives: all approved criterion exhibit narratives + exhibit index + reco letter summaries + full client profile
+System: "You are a senior immigration attorney writing the main USCIS petition support letter. Reference exhibits by tab number throughout. Write 5-15 pages depending on criteria count."
+Structure: I. Introduction, II. Background, III. Criterion-by-criterion (each referencing exhibit tabs), IV. Conclusion and Prayer for Relief
+This is always generated LAST. Converts to PDF, saves to Drive Drafts/Final_Package/
+
+---
+
+**Create /server/routes/admin/petition.js (all staff auth):**
+
+POST /api/internal/petition/setup
+- Body: { userId, visa_path, selected_criteria[], exhibit_numbering_style }
+- Create case_petition_setup
+- Create petition_criteria_exhibits rows for each selected criterion (assign exhibit numbers)
+- Create petition_package row
+- Call googleDrive.createPetitionFolders(userId)
+- Return full setup with criteria rows
+
+GET /api/internal/petition/setup/:userId
+
+PATCH /api/internal/petition/setup/:caseSetupId/evidence-mapping
+- Body: { criteria_exhibit_id, evidence_item_ids[] }
+
+POST /api/internal/petition/criteria/:criteriaExhibitId/generate
+- Set status='generating', create job, fire async generateCriteriaExhibit
+- On complete: update drive_draft_file_id, drive_draft_url, status='draft'
+- Notify staff: "{criteriaName} exhibit draft ready"
+- Return { jobId } immediately
+
+POST /api/internal/petition/criteria/:criteriaExhibitId/approve
+- Set status='approved', staff_approved_by, staff_approved_at
+
+POST /api/internal/petition/criteria/:criteriaExhibitId/regenerate
+- Reset status='not_started', increment regeneration_count, re-trigger generate
+
+POST /api/internal/petition/reco-letters (create new reco letter record)
+POST /api/internal/petition/reco-letters/:id/generate
+POST /api/internal/petition/reco-letters/:id/approve
+POST /api/internal/petition/reco-letters/:id/publish (individual early publish to client)
+
+POST /api/internal/petition/package/:caseSetupId/generate-index
+- SERVER-SIDE GATE: return 400 if any selected criterion status != 'approved'
+- Error message includes list of unapproved criteria names
+- Fire async generateExhibitIndex
+
+POST /api/internal/petition/package/:caseSetupId/approve-index
+POST /api/internal/petition/package/:caseSetupId/generate-cover
+- SERVER-SIDE GATE: return 400 if exhibit_index_status != 'approved'
+- Fire async generateCoverLetter
+
+POST /api/internal/petition/package/:caseSetupId/approve-cover
+
+POST /api/internal/petition/package/:caseSetupId/publish-full
+- SERVER-SIDE GATE: cover_letter_status must be 'approved'
+- Copy all docs to Published/ folders
+- Set all published_to_client=true
+- Notify client: "Your petition package is ready — {n} documents shared"
+
+POST /api/internal/petition/criteria/:id/publish-individual
+
+CLIENT READ-ONLY:
+GET /api/petition/my-documents
+- Client JWT required
+- Returns ONLY published docs: { criteria_exhibits, reco_letters, package }
+- No draft URLs, no staff info
+
+---
