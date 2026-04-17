@@ -1,0 +1,89 @@
+## PROMPT 8 — Intelligent lesson generation engine (Excellence Lab)
+
+Build the dynamic AI-powered lesson system. No pre-written lesson content — Claude generates it.
+
+**Create /server/services/lessonGenerator.js:**
+
+Function: generateLessonContent(lessonDefinition, clientContext)
+
+clientContext: { intake, resumeText, evidenceItems, completedLessonIds, blueprintNotes, visaPath }
+
+System prompt:
+"You are an expert EB1A/NIW/O1 immigration coaching specialist with 15 years of experience helping tech professionals qualify for US extraordinary ability visas. Generate a personalized lesson for a specific professional. Write in second person, directly addressing them. Reference their actual background, field, and current evidence gaps. Be specific and actionable. Never give generic advice."
+
+Return JSON with exact keys:
+{
+  "personalized_opening": "2-3 sentences referencing their actual role, field, and situation",
+  "concept_explanation": "Core concept for this lesson explained in 250-300 words, tailored to their field",
+  "field_specific_examples": "3 concrete examples from their specific field and role level",
+  "gap_aware_action_steps": ["Step 1: specific action", "Step 2: ...", "Step 3: ..."],
+  "evidence_prompt": "What specific evidence they should add to their vault based on this lesson",
+  "evidence_criteria_id": "The criteria_id this lesson maps to (e.g. EB1A-06)",
+  "estimated_read_time_minutes": 5
+}
+
+Parse JSON response strictly. On parse failure, retry once with explicit JSON instruction.
+
+---
+
+**Create /server/services/learningPlanService.js:**
+
+Function: buildContextHash(userId, lessonId, evidenceItems, intake)
+- SHA256 of: lessonId + sorted evidence_item_ids joined + intake.updated_at + intake.visa_path
+- Use Node.js crypto module
+
+Function: getOrGenerateLesson(userId, lessonId)
+1. Fetch lesson_definitions WHERE id=lessonId
+2. Fetch or create personalized_learning_plans for user
+3. Check plan_payload[lessonId] — if exists AND context_hash matches → return cached
+4. Fetch full clientContext: intake, resume extracted_text, all evidence_items, completedLessonIds, blueprintNotes if any
+5. Call generateLessonContent(lessonDefinition, clientContext)
+6. Compute new context_hash
+7. Update plan_payload[lessonId] = { content, context_hash, generated_at: NOW() }
+8. Save updated plan to DB
+9. Return content
+
+Function: getModuleOrder(userId)
+- Fetch all lesson_definitions for client's visa_path
+- Fetch evidence counts per criteria from evidence_items
+- Sort: lessons where client has 0 evidence for that criteria_focus → first (highest priority)
+  lessons where client has 1-2 evidence items → middle
+  lessons where client has 3+ items → last
+- Mark each lesson with: { ...lessonDef, completed: lessonId in completedLessonIds, evidenceCount }
+- Return ordered array
+
+Function: invalidateLessons(userId, reason)
+- reason: 'evidence_added' | 'intake_updated' | 'blueprint_updated' | 'staff_forced'
+- Fetch personalized_learning_plans for user
+- For each lesson in plan_payload that is NOT in completed_lesson_ids: clear its context_hash
+- Save updated plan
+- Log to client_activity_log: event_type='lessons_invalidated', event_data: { reason }
+
+---
+
+**Create /server/routes/lessons.js:**
+
+GET /api/lessons/plan
+- Client auth + product access check (has excellence_lab or elite_blueprint)
+- Call getModuleOrder(userId)
+- Returns ordered lesson list with completion status (no lesson content — fetched separately)
+
+GET /api/lessons/:lessonId
+- Client auth + product access check
+- Call getOrGenerateLesson(userId, lessonId)
+- Log to activity_log: event_type='lesson_opened', event_data: { lessonId }
+- Wrap response with aiGenerated: true flag
+- Return lesson content
+
+POST /api/lessons/:lessonId/complete
+- Client auth
+- Add lessonId to completed_lesson_ids in personalized_learning_plans
+- Do NOT invalidate completed lessons — only incomplete ones if needed
+- Return updated completion state
+
+POST /api/admin/lessons/invalidate (staff auth)
+- Body: { userId, reason }
+- Call invalidateLessons(userId, reason)
+- Return { success: true, lessonsInvalidated: count }
+
+---

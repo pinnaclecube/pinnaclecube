@@ -7,6 +7,7 @@ import evidenceRouter from "./evidence";
 import blueprintRouter from "./blueprint";
 import coursesRouter from "./courses";
 import dashboardRouter from "./dashboard";
+import lessonsRouter from "./lessons";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(evidenceRouter);
 router.use(blueprintRouter);
 router.use(coursesRouter);
 router.use(dashboardRouter);
+router.use(lessonsRouter);
 
 export default router;
