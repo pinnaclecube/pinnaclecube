@@ -1,0 +1,97 @@
+## PROMPT 1 — Project scaffold and tech stack
+
+Create a full-stack web application called Pinnacle³ for EB1A / EB2 NIW / O1 immigration consulting.
+
+**Tech stack:**
+- Frontend: React + Vite + TypeScript + Tailwind CSS + shadcn/ui
+- Backend: Node.js + Express (separate /api routes)
+- Database: Supabase (Postgres) with Row Level Security
+- Auth: Custom JWT-based auth (bcrypt + jsonwebtoken) stored in client_users table
+- AI: Anthropic Claude Sonnet (@anthropic-ai/sdk)
+- File storage: Google Drive API via service account (googleapis)
+- Payments: Stripe (Excellence Lab and Evidence Vault only)
+- Email: Nodemailer via Gmail OAuth
+
+**Project structure:**
+```
+/client          React + Vite frontend
+/server          Express backend
+/server/routes   API route handlers
+/server/services Business logic (drive, claude, stripe, email)
+/server/jobs     Async background job handlers
+/server/middleware Auth and validation middleware
+/server/db       SQL migration files
+/shared          Shared constants used by both client and server
+```
+
+**Create these files:**
+
+1. `/server/index.js` — Express server with:
+   - CORS configured for localhost:5173 (dev) and production domain
+   - JSON body parsing (50mb limit for file uploads)
+   - Static file serving of /client/dist in production
+   - All /api routes mounted
+   - Global error handler middleware
+   - Health check: GET /api/health returns { status: 'ok', timestamp }
+
+2. `/client/vite.config.ts` — Vite config with:
+   - Proxy: /api → http://localhost:5000 in dev
+   - Build output to /client/dist
+
+3. `package.json` (root) with scripts:
+   - `dev`: runs client (port 5173) and server (port 5000) concurrently using concurrently package
+   - `build`: vite build in /client
+   - `start`: node server/index.js
+
+4. `/client/package.json` with dependencies:
+   react, react-dom, react-router-dom, typescript, vite,
+   @vitejs/plugin-react, tailwindcss, @radix-ui/react-*, shadcn/ui components,
+   axios, framer-motion, lucide-react, react-hook-form, zod
+
+5. `/server/package.json` with dependencies:
+   express, cors, dotenv, @anthropic-ai/sdk, @supabase/supabase-js,
+   googleapis, stripe, nodemailer, bcrypt, jsonwebtoken,
+   multer, pdf-parse, mammoth, pdfkit, concurrently
+
+6. `/.env.example`:
+```
+# Supabase
+SUPABASE_URL=
+SUPABASE_SERVICE_KEY=
+
+# Anthropic
+ANTHROPIC_API_KEY=
+
+# Stripe
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+
+# Google Drive (service account JSON as single-line string)
+GOOGLE_SERVICE_ACCOUNT_JSON=
+GOOGLE_DRIVE_ROOT_FOLDER_ID=
+
+# Gmail (for email sending)
+GMAIL_USER=
+GMAIL_CLIENT_ID=
+GMAIL_CLIENT_SECRET=
+GMAIL_REFRESH_TOKEN=
+
+# JWT
+JWT_SECRET=
+JWT_EXPIRY=7d
+
+# App
+NODE_ENV=development
+PORT=5000
+FRONTEND_URL=http://localhost:5173
+
+# Disclaimer
+CURRENT_DISCLAIMER_VERSION=1.0
+```
+
+7. `/shared/constants.js` — export APP_NAME, DISCLAIMER_VERSION='1.0', VISA_PATHS array
+
+8. Tailwind and shadcn/ui fully configured in /client
+
+Do not build any pages yet. Just the scaffold, config, and package setup.
+Confirm the dev server runs (both client and server) before stopping.
