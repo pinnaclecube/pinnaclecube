@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Logo } from "@/components/ui/logo";
-import { LegalFooterBar } from "@/components/disclaimers/LegalFooterBar";
+import { PublicFooter } from "@/components/layout/PublicFooter";
 import { useAuth } from "@/contexts/AuthContext";
 
 const DISCLAIMER_VERSION = "1.0";
@@ -213,13 +213,25 @@ export default function ClientRegister() {
                     Sign in
                   </Link>
                 </p>
+
+                <p className="text-center text-xs text-muted-foreground leading-relaxed">
+                  By creating an account you agree to our{" "}
+                  <Link href="/terms" className="text-[#1E2D6B] hover:underline">
+                    Terms of Service
+                  </Link>{" "}
+                  and acknowledge our{" "}
+                  <Link href="/disclaimer" className="text-[#1E2D6B] hover:underline">
+                    Disclaimer
+                  </Link>
+                  .
+                </p>
               </form>
             </CardContent>
           </Card>
         </div>
       </main>
 
-      <LegalFooterBar />
+      <PublicFooter />
     </div>
   );
 }

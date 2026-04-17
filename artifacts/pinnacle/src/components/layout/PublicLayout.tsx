@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Navbar } from "./Navbar";
-import { LegalFooterBar } from "../disclaimers/LegalFooterBar";
+import { PublicFooter } from "./PublicFooter";
 
 export function PublicLayout({ children }: { children: ReactNode }) {
   return (
@@ -9,7 +9,7 @@ export function PublicLayout({ children }: { children: ReactNode }) {
       <main className="flex-1 flex flex-col">
         {children}
       </main>
-      <LegalFooterBar />
+      <PublicFooter />
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Logo } from "@/components/ui/logo";
-import { LegalFooterBar } from "@/components/disclaimers/LegalFooterBar";
+import { PublicFooter } from "@/components/layout/PublicFooter";
 import { ReconsentModal } from "@/components/disclaimers/ReconsentModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDisclaimer } from "@/contexts/DisclaimerContext";
@@ -112,7 +112,7 @@ export default function ClientLogin() {
         </div>
       </main>
 
-      <LegalFooterBar />
+      <PublicFooter />
       <ReconsentModal />
     </div>
   );

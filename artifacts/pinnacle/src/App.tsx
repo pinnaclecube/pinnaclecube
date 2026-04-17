@@ -15,6 +15,9 @@ import HowItWorks from "@/pages/how-it-works";
 import Products from "@/pages/products";
 import ClientLogin from "@/pages/ClientLogin";
 import ClientRegister from "@/pages/ClientRegister";
+import TermsOfService from "@/pages/TermsOfService";
+import PrivacyPolicy from "@/pages/PrivacyPolicy";
+import Disclaimer from "@/pages/Disclaimer";
 import ExcellenceLabMarketing from "@/pages/ExcellenceLabMarketing";
 import EvidenceVaultMarketing from "@/pages/EvidenceVaultMarketing";
 import EliteBlueprintMarketing from "@/pages/EliteBlueprintMarketing";
@@ -69,6 +72,9 @@ function Router() {
       <Route path="/instant-profile-insight/results" component={InstantProfileInsightResults} />
       <Route path="/login" component={ClientLogin} />
       <Route path="/register" component={ClientRegister} />
+      <Route path="/terms" component={TermsOfService} />
+      <Route path="/privacy-policy" component={PrivacyPolicy} />
+      <Route path="/disclaimer" component={Disclaimer} />
 
       {/* Checkout routes */}
       <Route path="/excellence-lab/checkout" component={ExcellenceLabCheckout} />
