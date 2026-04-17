@@ -1,0 +1,57 @@
+## PROMPT 9 — Elite Blueprint application flow (offline payment)
+
+Build the Elite Blueprint application and staff access grant system.
+No Stripe for Elite Blueprint. Payment collected offline. Staff grants access manually.
+
+**Create /server/routes/blueprint.js (client-facing):**
+
+POST /api/blueprint/apply
+- No auth required (prospect may not have account yet)
+- Body: full application fields (see applications table schema)
+- Create applications record, status='submitted'
+- If user is logged in: set user_id from JWT
+- Trigger async: call Claude Sonnet to pre-analyze application:
+  Prompt: "You are an EB1A case analyst. Analyze this application and return JSON:
+  { confidence_score: 1-10, key_strengths: [], key_gaps: [], strengthening_roadmap: '', estimated_timeline: '', ai_analysis: '' }"
+  Save result to applications: admin_ai_analysis, admin_confidence_score, admin_estimated_timeline
+- Send notification to staff: new application received
+- Return { applicationId, status: 'submitted' }
+
+GET /api/blueprint/application-status
+- Client auth required
+- Return application for this user (status only — not AI analysis, not admin notes)
+
+**Create /server/routes/admin/blueprint.js (staff auth):**
+
+GET /api/internal/blueprint-applications
+- Return all applications with status, payment_status, user info
+
+GET /api/internal/blueprint-applications/:id
+- Return full application including AI analysis, admin notes
+
+PATCH /api/internal/blueprint-applications/:id/status
+- Body: { status, admin_review_notes, admin_confidence_score, admin_estimated_timeline }
+- Update application
+- Send notification to client based on new status:
+  - approved: "Great news — your application has been approved. Next step: payment."
+  - needs_more_info: "We need a bit more information about your application."
+  - declined: "Thank you for applying — we're unable to proceed at this time."
+
+PATCH /api/internal/blueprint-applications/:id/payment
+- Body: { payment_status: 'received'|'waived', payment_notes }
+- Update payment fields
+
+POST /api/internal/blueprint-applications/:id/grant-access
+- Body: { include_excellence_lab: boolean, grant_notes }
+- Checks: application.status='approved' AND payment_status in ('received','waived')
+- If checks fail: return 400 with specific reason
+- Create ClientUserProduct rows:
+  Always: elite_blueprint (offline_payment=true, granted_by_staff_id)
+  Always: evidence_vault (Blueprint always includes Vault)
+  If include_excellence_lab: excellence_lab
+- Update application: status='access_granted'
+- Log to client_activity_log
+- Send client notification + email: "Your Elite Blueprint access is ready"
+- Return { success: true, productsGranted: [] }
+
+---
