@@ -1,0 +1,84 @@
+## PROMPT 13 — Internal case management and petition workspace UI
+
+Build the internal staff interface.
+
+**InternalCaseDetail page — tabbed interface:**
+
+Tab 1: Overview
+- Client profile summary (name, email, visa path, case status)
+- Readiness intake card (completion status, key fields)
+- Resume card (upload date, Drive link, extracted text preview)
+- Action items section (create, assign, track)
+- Activity log access link
+- Reset password, delete case buttons
+
+Tab 2: Evidence
+- All evidence items grouped by criteria
+- Each item: title, Drive link, AI summary (with AIBadge), criteria tags
+- Internal notes per evidence item (staff-only)
+- Reclassify evidence (change primary_criteria_id)
+- Force regenerate AI summary
+
+Tab 3: Excellence Lab
+- Client's lesson progress (which lessons completed)
+- "Invalidate and regenerate lessons" button (calls POST /api/admin/lessons/invalidate)
+- Personalized learning plan status
+
+Tab 4: Petition Workspace (full petition generation system)
+Sub-section A — Setup panel (shown when no setup exists):
+- Visa path selector
+- Criteria checklist (loads from visa_criteria for selected path)
+- Evidence mapping: for each checked criterion, show client's evidence with checkboxes
+- Exhibit numbering toggle (numeric vs alpha)
+- "Create Petition Setup" button
+
+Sub-section B — Criteria Exhibit Board (shown after setup):
+- Progress bar: X of Y criteria approved
+- One status card per selected criterion:
+  Header: "Exhibit {num} — {Criteria Name}"
+  Status badge: Not started / Generating / Draft ready / Approved
+  Evidence count: "{n} items mapped"
+  Buttons: Generate | View in Drive | Approve | Regenerate
+  Generate disabled when generating or approved
+  Approve shown only when status=draft
+  View in Drive shown when draft or approved
+
+Sub-section C — Recommendation Letters:
+- "Add Recommender" button → modal form: name, title, org, relationship, credentials, criteria supported (multi-select from selected criteria)
+- Same status card pattern as criteria exhibits
+- "Publish to Client" button on approved letters (individual early publish)
+
+Sub-section D — Final Package (vertical gated checklist):
+Show each step with lock icon until prior step complete:
+- All criteria exhibits approved (X/Y)
+- [Generate Exhibit Index] — locked until all criteria approved
+- [Approve Exhibit Index]
+- [Generate Cover Letter] — locked until index approved (ALWAYS LAST)
+- [Approve Cover Letter]
+- [O-1 only: Generate Employment Itinerary]
+- [Publish Full Package] — prominent button, locked until cover letter approved
+
+Publish Full Package: confirmation dialog showing count of docs, then calls publish-full endpoint.
+
+Tab 5: Documents
+- All documents for this client (drafts + published)
+- Status badges: Generating / Draft ready / Published
+- Generate Document button → modal: select type, fill context inputs
+- Publish button on draft docs
+- Unpublish button on published docs
+- View in Drive on all completed docs
+
+**InternalProspects and InternalProspectDetail:**
+- Prospect table with status, source, signals
+- Detail: profile data, invite client button (sends registration invite email), activity timeline, notes
+
+**InternalEliteBlueprintApplications:**
+- Applications table with status and payment_status badges
+- Detail page: full application + AI analysis (with AIOutputBanner) + staff review form:
+  Status selector, review notes, confidence score, estimated timeline
+  Payment status: "Mark Payment Received" / "Mark as Waived" buttons + notes
+  "Grant Access" button (enabled only when approved + payment received/waived)
+  "Include Excellence Lab" checkbox
+  Grant access confirmation dialog
+
+---

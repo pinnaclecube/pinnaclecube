@@ -34,6 +34,37 @@ Premium immigration advisory coaching platform for high-achieving tech professio
 - **Evidence Vault** — Document/evidence tracking (Stripe checkout, self-serve, $497 one-time)
 - **Elite Blueprint** — Personalized strategy (application-only, offline payment)
 
+## Internal Staff Portal (Prompt 13)
+
+All internal staff pages are complete at `/internal/` path prefix. Staff access is gated by `X-Staff-Token` header and the `StaffProtectedRoute` component.
+
+### Staff Nav
+`artifacts/pinnacle/src/components/layout/StaffNav.tsx` — shared indigo header with links to Cases, Prospects, Blueprint Apps.
+
+### Internal Pages
+- **InternalCases** `/internal/cases` — case list with search + filter
+- **InternalCaseDetail** `/internal/case/:user_id` — 5-tab master view:
+  - Overview: profile card, intake, resume, action items (CRUD + status), activity log link, reset password, delete case
+  - Evidence: grouped by criteria, AI summary display, reclassify, internal notes, force regenerate
+  - Excellence Lab: course progress bars, learning plan status, invalidate & regenerate
+  - Petition Workspace: create setup → criteria exhibit board (generate/approve/regen per exhibit) → recommendation letters (add/generate/approve/publish) → final package (gated checklist, publish full package)
+  - Documents: list all docs, generate modal, publish/unpublish
+- **InternalCaseActivityLog** `/internal/case/:user_id/activity-log` — timeline view with color-coded event types
+- **InternalEvidenceDetail** `/internal/case/:user_id/evidence/:evidence_id` — detailed evidence review with AI summary, reclassify, staff notes, force regenerate
+- **InternalProspects** `/internal/prospects` — list with add modal, signal badges (publications/awards/leadership), status badges
+- **InternalProspectDetail** `/internal/prospect/:id` — inline edit form, invite button, linked case link
+- **InternalEliteBlueprintApplications** `/internal/elite-blueprint-applications` — list with search, confidence scores, payment status
+- **InternalEliteBlueprintApplicationDetail** `/internal/elite-blueprint-applications/:id` — review status/score/timeline, payment mark received/waived, grant access with optional Excellence Lab
+
+### Backend Routes
+- `adminCases.ts` → `/api/admin/*` (17+ endpoints for profile CRUD, evidence notes/reclassify/regen, action items, course progress, lesson invalidation, documents publish/unpublish, activity log, password reset, delete)
+- `adminProspects.ts` → `/api/admin/prospects` (CRUD + invite)
+- `adminBlueprint.ts` → `/api/internal/blueprint-applications/*` (status/payment/grant-access workflow)
+- `petitionAdmin.ts` → `/api/internal/petition/*` (full petition gen workflow)
+
+### Key Pattern
+All staff fetch calls use `staffFetch(path, opts)` helper that wraps `/api${path}` with `X-Staff-Token` header (from `getStaffToken()`).
+
 ## Authentication System (Prompt 12)
 
 JWT-based auth stored in `localStorage['pinnacle_token']`.

@@ -3,80 +3,127 @@ import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import StaffNav from "@/components/layout/StaffNav";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
-import { Search, Users, ChevronRight, ArrowLeft } from "lucide-react";
+import { Search, Users, ChevronRight, Plus, BookOpen, Trophy, Briefcase } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-interface Prospect {
-  id: number;
-  name: string;
-  email: string;
-  source: string | null;
-  stage: string;
-  createdAt: string;
+function staffFetch(path: string, opts: RequestInit = {}) {
+  return fetch(`/api${path}`, {
+    ...opts,
+    headers: {
+      "X-Staff-Token": getStaffToken() ?? "",
+      ...(opts.body ? { "Content-Type": "application/json" } : {}),
+    },
+  });
 }
 
+const STATUS_COLORS: Record<string, string> = {
+  new: "bg-gray-100 text-gray-600",
+  in_contact: "bg-blue-100 text-blue-700",
+  qualified: "bg-green-100 text-green-700",
+  not_qualified: "bg-red-100 text-red-700",
+  converted: "bg-purple-100 text-purple-700",
+};
+
 export default function InternalProspects() {
-  const [prospects, setProspects] = useState<Prospect[]>([]);
+  const [prospects, setProspects] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [form, setForm] = useState({ fullName: "", email: "", currentRole: "", fieldOfWork: "", sourceType: "manual" });
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await fetch("/api/admin/prospects", {
-          headers: { "X-Staff-Token": getStaffToken() ?? "" },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setProspects(data.prospects ?? []);
-        }
-      } catch { /* ignore */ }
-      setLoading(false);
-    };
-    load();
-  }, []);
+  const load = async () => {
+    try {
+      const res = await staffFetch("/admin/prospects");
+      if (res.ok) {
+        const data = await res.json();
+        setProspects(data.prospects ?? []);
+      }
+    } catch { /* ignore */ }
+    setLoading(false);
+  };
 
-  const filtered = prospects.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase()) || p.email.toLowerCase().includes(search.toLowerCase())
+  useEffect(() => { load(); }, []);
+
+  const createProspect = async () => {
+    if (!form.fullName.trim() || !form.email.trim()) return;
+    setSaving(true);
+    try {
+      const r = await staffFetch("/admin/prospects", {
+        method: "POST",
+        body: JSON.stringify(form),
+      });
+      if (r.ok) {
+        setShowAddModal(false);
+        setForm({ fullName: "", email: "", currentRole: "", fieldOfWork: "", sourceType: "manual" });
+        await load();
+      }
+    } finally { setSaving(false); }
+  };
+
+  const filtered = prospects.filter((p: any) =>
+    (p.fullName ?? "").toLowerCase().includes(search.toLowerCase()) ||
+    (p.email ?? "").toLowerCase().includes(search.toLowerCase()) ||
+    (p.currentRole ?? "").toLowerCase().includes(search.toLowerCase())
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-[#1E2D6B] text-white px-8 py-4">
-        <div className="flex items-center justify-between">
-          <Link href="/internal/cases" className="inline-flex items-center gap-2 text-white/70 hover:text-white text-sm">
-            <ArrowLeft className="w-4 h-4" /> All Cases
-          </Link>
-          <span className="font-bold">Prospects</span>
-          <div />
-        </div>
-      </header>
-      <main className="px-8 py-8 max-w-5xl mx-auto">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <StaffNav />
+      <main className="flex-1 px-8 py-8 max-w-5xl mx-auto w-full">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold">Prospects</h2>
-          <Badge variant="secondary">{prospects.length} total</Badge>
+          <div>
+            <h2 className="text-2xl font-bold">Prospects</h2>
+            <p className="text-sm text-muted-foreground">{prospects.length} total</p>
+          </div>
+          <Button size="sm" onClick={() => setShowAddModal(true)} className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
+            <Plus className="w-4 h-4 mr-1.5" /> Add Prospect
+          </Button>
         </div>
-        <div className="relative mb-6">
+
+        <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search prospects..." className="pl-9" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name, email, or role…" className="pl-9" />
         </div>
+
         {loading ? (
-          <div className="space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-16 bg-gray-200 rounded-lg animate-pulse" />)}</div>
+          <div className="space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-20 bg-gray-200 rounded-lg animate-pulse" />)}</div>
         ) : filtered.length === 0 ? (
-          <Card><CardContent className="py-16 text-center"><Users className="w-10 h-10 text-muted-foreground mx-auto mb-3" /><p className="text-muted-foreground">No prospects found.</p></CardContent></Card>
+          <Card>
+            <CardContent className="py-16 text-center">
+              <Users className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+              <p className="text-muted-foreground">{search ? "No matching prospects." : "No prospects yet."}</p>
+            </CardContent>
+          </Card>
         ) : (
-          <div className="space-y-3">
-            {filtered.map((p) => (
+          <div className="space-y-2">
+            {filtered.map((p: any) => (
               <Link key={p.id} href={`/internal/prospect/${p.id}`}>
                 <Card className="cursor-pointer hover:shadow-md transition-shadow">
-                  <CardContent className="py-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-semibold">{p.name}</p>
-                        <p className="text-sm text-muted-foreground">{p.email}</p>
+                  <CardContent className="py-3 px-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className="w-9 h-9 rounded-full bg-[#1E2D6B]/10 flex items-center justify-center text-[#1E2D6B] font-bold shrink-0">
+                          {(p.fullName ?? p.email ?? "?")[0].toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-semibold truncate">{p.fullName}</p>
+                          <p className="text-xs text-muted-foreground truncate">{p.email}{p.currentRole ? ` · ${p.currentRole}` : ""}</p>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="capitalize">{p.stage}</Badge>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {p.publicationsSignal && <BookOpen className="w-3.5 h-3.5 text-blue-500" title="Publications" />}
+                        {p.awardsSignal && <Trophy className="w-3.5 h-3.5 text-yellow-500" title="Awards" />}
+                        {p.leadershipSignal && <Briefcase className="w-3.5 h-3.5 text-green-500" title="Leadership" />}
+                        <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium capitalize", STATUS_COLORS[p.status ?? "new"] ?? "bg-gray-100 text-gray-600")}>
+                          {(p.status ?? "new").replace(/_/g, " ")}
+                        </span>
+                        <Badge variant="outline" className="text-xs capitalize">{p.registrationStatus?.replace(/_/g, " ") ?? "not invited"}</Badge>
                         <ChevronRight className="w-4 h-4 text-muted-foreground" />
                       </div>
                     </div>
@@ -87,6 +134,29 @@ export default function InternalProspects() {
           </div>
         )}
       </main>
+
+      <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add Prospect</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            {(["fullName", "email", "currentRole", "fieldOfWork"] as const).map((field) => (
+              <div key={field}>
+                <label className="text-xs font-medium text-muted-foreground capitalize block mb-1">
+                  {field.replace(/([A-Z])/g, " $1")}
+                  {(field === "fullName" || field === "email") && " *"}
+                </label>
+                <Input value={form[field]} onChange={(e) => setForm((p) => ({ ...p, [field]: e.target.value }))} />
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddModal(false)}>Cancel</Button>
+            <Button onClick={createProspect} disabled={saving || !form.fullName.trim() || !form.email.trim()} className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
+              {saving ? "Creating…" : "Add Prospect"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
