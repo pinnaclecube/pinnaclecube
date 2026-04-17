@@ -31,12 +31,32 @@ export default function ClientRegister() {
     e.preventDefault();
     setError("");
 
-    if (form.password !== form.confirmPassword) {
-      setError("Passwords do not match.");
+    if (!form.first_name.trim()) {
+      setError("First name is required.");
+      return;
+    }
+    if (!form.last_name.trim()) {
+      setError("Last name is required.");
+      return;
+    }
+    if (!form.email.trim()) {
+      setError("Email address is required.");
+      return;
+    }
+    if (!form.password) {
+      setError("Password is required.");
       return;
     }
     if (form.password.length < 8) {
       setError("Password must be at least 8 characters.");
+      return;
+    }
+    if (!form.confirmPassword) {
+      setError("Please confirm your password.");
+      return;
+    }
+    if (form.password !== form.confirmPassword) {
+      setError("Passwords do not match.");
       return;
     }
     if (!check1 || !check2) {
@@ -80,7 +100,7 @@ export default function ClientRegister() {
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="first_name">First Name</Label>
+                    <Label htmlFor="first_name">First Name <span className="text-red-500">*</span></Label>
                     <Input
                       id="first_name"
                       value={form.first_name}
@@ -91,7 +111,7 @@ export default function ClientRegister() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="last_name">Last Name</Label>
+                    <Label htmlFor="last_name">Last Name <span className="text-red-500">*</span></Label>
                     <Input
                       id="last_name"
                       value={form.last_name}
@@ -104,7 +124,7 @@ export default function ClientRegister() {
                 </div>
 
                 <div>
-                  <Label htmlFor="email">Email address</Label>
+                  <Label htmlFor="email">Email address <span className="text-red-500">*</span></Label>
                   <Input
                     id="email"
                     type="email"
@@ -118,7 +138,7 @@ export default function ClientRegister() {
                 </div>
 
                 <div>
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password">Password <span className="text-red-500">*</span></Label>
                   <Input
                     id="password"
                     type="password"
@@ -132,7 +152,7 @@ export default function ClientRegister() {
                 </div>
 
                 <div>
-                  <Label htmlFor="confirm">Confirm Password</Label>
+                  <Label htmlFor="confirm">Confirm Password <span className="text-red-500">*</span></Label>
                   <Input
                     id="confirm"
                     type="password"
