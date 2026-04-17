@@ -1,0 +1,59 @@
+## PROMPT 5 — Authentication system
+
+Build the complete authentication system.
+
+**Create /server/services/auth.js:**
+- bcrypt for password hashing (salt rounds: 12)
+- jsonwebtoken for JWTs (7-day expiry)
+- Export: hashPassword, comparePassword, generateToken, verifyToken
+
+**Create /server/middleware/clientAuth.js:**
+- Reads Authorization: Bearer {token} header
+- Verifies JWT, fetches client_user from Supabase by id
+- Checks disclaimer_accepted = true AND disclaimer_version matches DISCLAIMER_VERSION from env
+- If disclaimer mismatch: return 403 { error: 'Disclaimer update required', requiresReconsent: true }
+- Attaches req.clientUser to request
+- Returns 401 if missing or invalid token
+
+**Create /server/middleware/staffAuth.js:**
+- Separate simple staff auth using a STAFF_SECRET env variable
+- Header: X-Staff-Token: {secret}
+- Attaches req.staffUser = { id: 'staff', role: 'admin' }
+- Returns 403 if missing or wrong
+
+**Create /server/routes/auth.js with these endpoints:**
+
+POST /api/auth/register
+- Body: { first_name, last_name, email, password, disclaimer_accepted, disclaimer_version }
+- Validate: all required, email unique, disclaimer_accepted must be true
+- Hash password, create client_users record
+- Create Google Drive root folders (Resume/ and Evidence/ root): call googleDrive.createClientRootFolders(userId, email)
+- Return JWT + client user object (without password_hash)
+
+POST /api/auth/login
+- Body: { email, password }
+- Fetch user, compare password
+- Check if disclaimer_version matches current — include requiresReconsent in response if not
+- Return JWT + { requiresReconsent: boolean } + client user
+
+POST /api/auth/accept-disclaimer
+- Auth required
+- Body: { disclaimer_version }
+- Update client_users: disclaimer_version, disclaimer_accepted_at = NOW()
+- Return { success: true }
+
+POST /api/auth/update-profile
+- Auth required
+- Allowed fields: first_name, last_name, phone, country, city, gender, nationality, marital_status, linkedin_url, bio
+- No password field here
+
+POST /api/auth/reset-password
+- Auth required
+- Body: { new_password }
+- Hash and update
+
+GET /api/auth/me
+- Auth required
+- Return current client user
+
+---
