@@ -28,7 +28,8 @@
     "pdfkit": "^0.18.0",
     "pino": "^9",
     "pino-http": "^10",
-    "stripe": "^22.0.2"
+    "stripe": "^22.0.2",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
