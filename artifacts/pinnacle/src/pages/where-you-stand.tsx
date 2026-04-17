@@ -1,4 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { AIOutputBanner } from "@/components/disclaimers/AIOutputBanner";
 import { useGetReadiness } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,6 +29,8 @@ export default function WhereYouStand() {
         <h1 className="text-3xl font-bold text-foreground">Where You Stand</h1>
         <p className="text-muted-foreground mt-2">Comprehensive readiness evaluation for your {readiness?.visaTarget?.toUpperCase()} application.</p>
       </div>
+
+      <AIOutputBanner variant="analysis" />
 
       <Card className="mb-8 border-[#1E2D6B]/20 bg-blue-50/10">
         <CardContent className="p-8">

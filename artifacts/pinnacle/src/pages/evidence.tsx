@@ -1,4 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { AIOutputBanner } from "@/components/disclaimers/AIOutputBanner";
 import { useListEvidence, useCreateEvidence, useListCriteria } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
@@ -207,6 +208,8 @@ export default function EvidenceVault() {
           </DialogContent>
         </Dialog>
       </div>
+
+      <AIOutputBanner variant="analysis" />
 
       <div className="flex flex-col md:flex-row gap-4 mb-6">
         <div className="relative flex-1">

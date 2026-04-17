@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Sidebar } from "./Sidebar";
-import { LegalFooter } from "../shared/LegalFooter";
+import { LegalFooterBar } from "../disclaimers/LegalFooterBar";
 import { Navbar } from "./Navbar";
 
 export function AppLayout({ children }: { children: ReactNode }) {
@@ -14,7 +14,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         <main className="flex-1 p-6 lg:p-8 max-w-6xl mx-auto w-full">
           {children}
         </main>
-        <LegalFooter />
+        <LegalFooterBar />
       </div>
     </div>
   );

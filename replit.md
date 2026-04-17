@@ -74,11 +74,25 @@ Premium immigration advisory coaching platform for high-achieving tech professio
 - `pnpm --filter @workspace/api-server run dev` — run API server locally
 - `pnpm --filter @workspace/pinnacle run dev` — run frontend locally
 
-## Legal
+## Legal / Disclaimer System (Prompt 11)
 
-Every page includes: "Pinnacle³ is not a law firm and does not provide legal advice."
-Every AI output block includes: "AI-generated content — verify with your attorney."
-These are non-negotiable and never dismissable.
+Components in `artifacts/pinnacle/src/components/disclaimers/`:
+- `LegalFooterBar.tsx` — always-visible footer in both layouts; collapsible on mobile
+- `AIOutputBanner.tsx` — purple left-border banner, variants: analysis|lesson|document|summary|strength
+- `LessonDisclaimer.tsx` — amber banner at top of every Excellence Lab lesson
+- `DocumentDisclaimer.tsx` — stacked red+purple banners; cover_letter gets strongest warning
+- `AIBadge.tsx` — inline AI badge with tooltip
+- `ReconsentModal.tsx` — full-screen overlay when disclaimer version changes; two required checkboxes
+
+Shared constants in `artifacts/pinnacle/src/lib/disclaimers.ts` (LEGAL_DISCLAIMER + AI_VARIANTS map).
+
+Context in `artifacts/pinnacle/src/contexts/DisclaimerContext.tsx`:
+- Global QueryCache error handler catches 403 `{ requiresReconsent: true }` → triggers ReconsentModal
+- `POST /api/auth/accept-disclaimer` clears the gate
+
+Backend: `requireClientAuth` middleware (clientAuth.ts) enforces disclaimer version on all protected routes.
+
+Every page includes the non-negotiable, non-dismissable legal footer bar. All AI output blocks show variant-specific disclaimers.
 
 ## Important Notes
 

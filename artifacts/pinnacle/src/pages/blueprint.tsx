@@ -3,7 +3,7 @@ import { useGetBlueprint, useListMilestones, useUpdateMilestone } from "@workspa
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { AIBanner } from "@/components/shared/AIBanner";
+import { AIOutputBanner } from "@/components/disclaimers/AIOutputBanner";
 import { useToast } from "@/hooks/use-toast";
 
 export default function EliteBlueprint() {
@@ -60,7 +60,7 @@ export default function EliteBlueprint() {
         <p className="text-muted-foreground mt-2">Your strategic roadmap to {blueprint.visaTarget.toUpperCase()} approval.</p>
       </div>
 
-      <AIBanner />
+      <AIOutputBanner variant="analysis" />
 
       <Card className="mb-8 border-[#1E2D6B]/20">
         <CardHeader className="bg-[#1E2D6B]/5 border-b border-[#1E2D6B]/10 pb-4">

@@ -1,4 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { LessonDisclaimer } from "@/components/disclaimers/LessonDisclaimer";
 import { useGetCourse, useUpdateCourseProgress } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,6 +59,8 @@ export default function CourseDetail() {
           <Progress value={course.progressPercent} className="h-3" />
         </div>
       </div>
+
+      <LessonDisclaimer />
 
       <h2 className="text-2xl font-bold mb-6">Curriculum</h2>
       <div className="space-y-4">

@@ -3,7 +3,8 @@ import { useGetDashboardSummary, useGetProfile } from "@workspace/api-client-rea
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { AIBanner } from "@/components/shared/AIBanner";
+import { AIOutputBanner } from "@/components/disclaimers/AIOutputBanner";
+import { DocumentDisclaimer } from "@/components/disclaimers/DocumentDisclaimer";
 import { AlertCircle, FileText, CheckCircle2, BookOpen, Target } from "lucide-react";
 
 export default function Dashboard() {
@@ -32,7 +33,7 @@ export default function Dashboard() {
         <p className="text-muted-foreground mt-2">Here is the current status of your {summary?.visaTarget?.toUpperCase()} application profile.</p>
       </div>
 
-      <AIBanner />
+      <AIOutputBanner variant="summary" />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <Card>
@@ -81,6 +82,7 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      <DocumentDisclaimer docType="general" />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
