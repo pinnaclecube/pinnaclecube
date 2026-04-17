@@ -1,0 +1,71 @@
+## PROMPT 6 — Google Drive service
+
+Build the complete Google Drive service with criteria-mapped folder structure.
+
+Import from shared/criteriaFolders.js: getCriteriaForVisaPath, sanitizeFileName, buildEvidenceFileName
+
+**Create /server/services/googleDrive.js with these functions:**
+
+1. getDriveClient() — initializes Drive v3 client using service account from GOOGLE_SERVICE_ACCOUNT_JSON env
+
+2. findOrCreateFolder(drive, name, parentId) — idempotent: searches for folder by name in parent, creates if not found. Returns { id, webViewLink }. Add 500ms retry before creating to handle Drive eventual consistency.
+
+3. createClientRootFolders(userId, clientEmail) — called on registration:
+   - Find/create Clients/ under ROOT_FOLDER_ID
+   - Find/create {clientEmail}/ under Clients/
+   - Find/create Resume/ under client root
+   - Find/create Evidence/ under client root (criteria subfolders added at intake)
+   - Insert into client_drive_roots
+   - Return { clientRootId, resumeFolderId, evidenceRootId }
+
+4. createCriteriaEvidenceFolders(userId, visaPath) — called on readiness intake completion:
+   - Fetch evidenceRootFolderId from client_drive_roots
+   - Get all criteria for visaPath via getCriteriaForVisaPath(visaPath)
+   - For each criterion: findOrCreateFolder using the folderName from CRITERIA_FOLDER_MAP
+   - Upsert into client_drive_folders: { user_id, criteria_id, visa_path, folder_name, drive_folder_id, drive_folder_url }
+   - Update readiness_intake: drive_folders_created=true, drive_folders_created_at=NOW()
+   - Return array of created/found folder records
+
+5. createPetitionFolders(userId) — called when staff creates petition setup:
+   - Get client root from client_drive_roots
+   - Create Petition/ folder
+   - Under Petition/: Drafts/ → Criteria_Exhibits/, Recommendation_Letters/, Final_Package/
+   - Under Petition/: Published/ → Criteria_Exhibits/, Recommendation_Letters/, Final_Package/
+   - Update client_drive_roots with all petition folder IDs
+   - Return full petition folder ID map
+
+6. uploadEvidenceFile(userId, criteriaId, fileBuffer, originalFileName, mimeType):
+   - Look up client_drive_folders WHERE user_id=userId AND criteria_id=criteriaId
+   - If not found: throw Error with helpful message
+   - Build file name: buildEvidenceFileName(criteriaId, originalFileName)
+   - Upload using multipart upload to Drive (use googleapis stream upload)
+   - Return { driveFileId, driveFileUrl, driveDownloadUrl, fileName }
+
+7. uploadResumeFile(userId, fileBuffer, originalFileName, mimeType, clientLastName):
+   - Get resumeFolderId from client_drive_roots
+   - Name: Resume_{lastName}_{YYYY-MM-DD}{ext}
+   - Upload and return file info
+
+8. uploadPetitionDraftFile(userId, docSubtype, fileBuffer, fileName):
+   - Routes to correct Petition/Drafts/ subfolder based on docSubtype
+   - criteria_exhibit → Drafts/Criteria_Exhibits/
+   - recommendation_letter → Drafts/Recommendation_Letters/
+   - exhibit_index, cover_letter, o1_itinerary → Drafts/Final_Package/
+   - Upload and return file info
+
+9. publishPetitionFile(draftFileId, userId, docSubtype):
+   - Copy file to corresponding Petition/Published/ subfolder
+   - Return new { id, webViewLink } of published copy
+
+10. getClientFolderSummary(userId):
+    - Returns complete folder map: resume, all evidence criterion folders, all petition folders
+
+File naming:
+- Evidence: {criteriaId}_{YYYY-MM-DD}_{sanitizedOriginalName}
+- Resume: Resume_{lastName}_{date}{ext}
+- Criteria exhibit: Exhibit_{num}_{criteriaCode}_{lastName}_{date}.pdf (v2, v3 suffix on regen)
+- Reco letter: RecoLetter_{recommenderLastName}_{clientLastName}_{date}.pdf
+- Exhibit index: ExhibitIndex_{lastName}_{date}.pdf
+- Cover letter: PetitionLetter_{lastName}_{visaPath}_{date}.pdf
+
+---
