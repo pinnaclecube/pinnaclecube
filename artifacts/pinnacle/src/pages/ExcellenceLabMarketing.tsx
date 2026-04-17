@@ -2,7 +2,7 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Navbar } from "@/components/layout/Navbar";
-import { LegalFooterBar } from "@/components/disclaimers/LegalFooterBar";
+import { PublicFooter } from "@/components/layout/PublicFooter";
 import { AppLayout } from "@/components/layout/AppLayout";
 import {
   BookOpen, Zap, BarChart2, CheckCircle2, Users, Lock, ChevronRight
@@ -142,7 +142,7 @@ export default function ExcellenceLabMarketing() {
           </div>
         </section>
       </main>
-      <LegalFooterBar />
+      <PublicFooter />
     </div>
   );
 }

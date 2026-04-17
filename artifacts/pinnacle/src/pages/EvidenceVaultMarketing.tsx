@@ -2,7 +2,7 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Navbar } from "@/components/layout/Navbar";
-import { LegalFooterBar } from "@/components/disclaimers/LegalFooterBar";
+import { PublicFooter } from "@/components/layout/PublicFooter";
 import { Shield, FolderOpen, Sparkles, BarChart, FileCheck, Lock, ChevronRight } from "lucide-react";
 
 const FEATURES = [
@@ -139,7 +139,7 @@ export default function EvidenceVaultMarketing() {
           </div>
         </section>
       </main>
-      <LegalFooterBar />
+      <PublicFooter />
     </div>
   );
 }

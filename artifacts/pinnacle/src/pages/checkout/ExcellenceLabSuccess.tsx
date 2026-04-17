@@ -1,6 +1,6 @@
 import { Link } from "wouter";
 import { Navbar } from "@/components/layout/Navbar";
-import { LegalFooterBar } from "@/components/disclaimers/LegalFooterBar";
+import { PublicFooter } from "@/components/layout/PublicFooter";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, BookOpen } from "lucide-react";
 
@@ -29,7 +29,7 @@ export default function ExcellenceLabSuccess() {
           </div>
         </div>
       </main>
-      <LegalFooterBar />
+      <PublicFooter />
     </div>
   );
 }

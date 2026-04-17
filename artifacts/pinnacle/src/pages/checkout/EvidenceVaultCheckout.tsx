@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { Navbar } from "@/components/layout/Navbar";
-import { LegalFooterBar } from "@/components/disclaimers/LegalFooterBar";
+import { PublicFooter } from "@/components/layout/PublicFooter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { CheckCircle2, Lock, Shield } from "lucide-react";
@@ -102,7 +102,7 @@ export default function EvidenceVaultCheckout() {
           </Card>
         </div>
       </main>
-      <LegalFooterBar />
+      <PublicFooter />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Navbar } from "@/components/layout/Navbar";
-import { LegalFooterBar } from "@/components/disclaimers/LegalFooterBar";
+import { PublicFooter } from "@/components/layout/PublicFooter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -114,7 +114,7 @@ export default function InstantProfileInsightStart() {
           </Card>
         </div>
       </main>
-      <LegalFooterBar />
+      <PublicFooter />
     </div>
   );
 }

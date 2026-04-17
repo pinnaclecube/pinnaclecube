@@ -1,7 +1,7 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Navbar } from "@/components/layout/Navbar";
-import { LegalFooterBar } from "@/components/disclaimers/LegalFooterBar";
+import { PublicFooter } from "@/components/layout/PublicFooter";
 import { CheckCircle2, Clock, Mail } from "lucide-react";
 
 export default function EliteBlueprintSubmitted() {
@@ -57,7 +57,7 @@ export default function EliteBlueprintSubmitted() {
           </p>
         </div>
       </main>
-      <LegalFooterBar />
+      <PublicFooter />
     </div>
   );
 }

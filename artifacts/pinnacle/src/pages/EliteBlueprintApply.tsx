@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Navbar } from "@/components/layout/Navbar";
-import { LegalFooterBar } from "@/components/disclaimers/LegalFooterBar";
+import { PublicFooter } from "@/components/layout/PublicFooter";
 
 export default function EliteBlueprintApply() {
   const [, navigate] = useLocation();
@@ -200,7 +200,7 @@ export default function EliteBlueprintApply() {
           </Card>
         </div>
       </main>
-      <LegalFooterBar />
+      <PublicFooter />
     </div>
   );
 }

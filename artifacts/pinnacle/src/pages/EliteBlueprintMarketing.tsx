@@ -2,7 +2,7 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Navbar } from "@/components/layout/Navbar";
-import { LegalFooterBar } from "@/components/disclaimers/LegalFooterBar";
+import { PublicFooter } from "@/components/layout/PublicFooter";
 import { Map, UserCheck, CalendarDays, MessageSquare, FileText, Sparkles, ChevronRight, Star } from "lucide-react";
 
 const FEATURES = [
@@ -140,7 +140,7 @@ export default function EliteBlueprintMarketing() {
           </div>
         </section>
       </main>
-      <LegalFooterBar />
+      <PublicFooter />
     </div>
   );
 }
