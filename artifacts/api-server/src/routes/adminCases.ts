@@ -26,6 +26,7 @@ import {
   notificationsTable,
 } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
+import { createClientRootFolders } from "../services/googleDrive";
 import { z } from "zod/v4";
 import bcrypt from "bcrypt";
 
@@ -83,6 +84,53 @@ router.get(
       resume: resume ?? null,
       driveRoot: driveRoot ?? null,
     });
+  },
+);
+
+// ─── Provision Drive workspace ─────────────────────────────────────────────────
+
+router.post(
+  "/admin/profiles/:id/provision-drive",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const id = parseId(req.params.id);
+    if (!id) { res.status(400).json({ error: "Invalid profile ID" }); return; }
+
+    const [profile] = await db.select({ id: profilesTable.id, email: profilesTable.email })
+      .from(profilesTable).where(eq(profilesTable.id, id)).limit(1);
+    if (!profile) { res.status(404).json({ error: "Profile not found" }); return; }
+
+    const [intake] = await db.select({ id: readinessIntakeTable.id, driveFoldersCreated: readinessIntakeTable.driveFoldersCreated })
+      .from(readinessIntakeTable).where(eq(readinessIntakeTable.profileId, id)).limit(1);
+
+    const [existingRoot] = await db.select({ id: clientDriveRootsTable.id })
+      .from(clientDriveRootsTable).where(eq(clientDriveRootsTable.profileId, id)).limit(1);
+
+    if (existingRoot) {
+      res.json({ success: true, message: "Drive workspace already exists.", alreadyProvisioned: true });
+      return;
+    }
+
+    try {
+      await createClientRootFolders(id, profile.email);
+
+      if (intake) {
+        await db.update(readinessIntakeTable)
+          .set({ driveFoldersCreated: true, driveFoldersCreatedAt: new Date() })
+          .where(eq(readinessIntakeTable.profileId, id));
+      }
+
+      await db.insert(clientActivityLogTable).values({
+        profileId: id,
+        eventType: "drive_provisioned",
+        eventData: { message: "Staff manually provisioned Google Drive workspace." },
+      });
+
+      res.json({ success: true, message: "Google Drive workspace created successfully." });
+    } catch (err: any) {
+      console.error(`[provision-drive] Failed for profile ${id}:`, err);
+      res.status(500).json({ error: "Drive provisioning failed", detail: err?.message ?? "Unknown error" });
+    }
   },
 );
 

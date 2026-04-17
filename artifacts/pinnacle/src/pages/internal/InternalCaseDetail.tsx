@@ -14,7 +14,7 @@ import StaffNav from "@/components/layout/StaffNav";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
 import {
   ArrowLeft, Plus, Check, AlertTriangle, Lock,
-  RefreshCw, ExternalLink, Loader2, CheckCircle, Clock, Zap, Activity,
+  RefreshCw, ExternalLink, Loader2, CheckCircle, Clock, Zap, Activity, FolderOpen, FolderPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -54,7 +54,7 @@ function StatusBadge({ status }: { status: string }) {
 
 // ─── Tab 1: Overview ────────────────────────────────────────────────────────────
 
-function OverviewTab({ userId, data }: { userId: string; data: any }) {
+function OverviewTab({ userId, data, onReload }: { userId: string; data: any; onReload: () => void }) {
   const { profile, intake, resume, driveRoot } = data;
   const [actionItems, setActionItems] = useState<any[]>([]);
   const [showNewItem, setShowNewItem] = useState(false);
@@ -65,6 +65,8 @@ function OverviewTab({ userId, data }: { userId: string; data: any }) {
   const [showResetPw, setShowResetPw] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [provisioning, setProvisioning] = useState(false);
+  const [provisionMsg, setProvisionMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     staffFetch(`/admin/profiles/${userId}/action-items`)
@@ -113,6 +115,25 @@ function OverviewTab({ userId, data }: { userId: string; data: any }) {
     window.location.href = "/internal/cases";
   };
 
+  const provisionDrive = async () => {
+    setProvisioning(true);
+    setProvisionMsg(null);
+    try {
+      const r = await staffFetch(`/admin/profiles/${userId}/provision-drive`, { method: "POST" });
+      const d = await r.json();
+      if (r.ok) {
+        setProvisionMsg({ type: "success", text: d.alreadyProvisioned ? "Drive workspace already exists." : "Drive workspace created successfully." });
+        onReload();
+      } else {
+        setProvisionMsg({ type: "error", text: d.detail ?? d.error ?? "Drive provisioning failed." });
+      }
+    } catch {
+      setProvisionMsg({ type: "error", text: "Network error — check API server logs." });
+    } finally {
+      setProvisioning(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -141,12 +162,51 @@ function OverviewTab({ userId, data }: { userId: string; data: any }) {
                 </div>
               ) : null)}
             </div>
-            {driveRoot && (
-              <a href={`https://drive.google.com/drive/folders/${driveRoot.clientRootFolderId}`} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs text-[#1E2D6B] hover:underline">
-                <ExternalLink className="w-3 h-3" /> View Drive Root Folder
-              </a>
-            )}
+            <div className="pt-2 border-t">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Drive Workspace</p>
+              {driveRoot ? (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-xs text-green-700">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    <span className="font-medium">Workspace provisioned</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <a href={`https://drive.google.com/drive/folders/${driveRoot.clientRootFolderId}`} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-[#1E2D6B] hover:underline">
+                      <FolderOpen className="w-3 h-3" /> Root
+                    </a>
+                    {driveRoot.evidenceRootFolderId && (
+                      <a href={`https://drive.google.com/drive/folders/${driveRoot.evidenceRootFolderId}`} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-[#1E2D6B] hover:underline">
+                        <FolderOpen className="w-3 h-3" /> Evidence
+                      </a>
+                    )}
+                    {driveRoot.resumeFolderId && (
+                      <a href={`https://drive.google.com/drive/folders/${driveRoot.resumeFolderId}`} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-[#1E2D6B] hover:underline">
+                        <FolderOpen className="w-3 h-3" /> Resume
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs text-amber-700">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    <span>Not provisioned — folders have not been created in Google Drive.</span>
+                  </div>
+                  {provisionMsg && (
+                    <p className={cn("text-xs font-medium", provisionMsg.type === "success" ? "text-green-700" : "text-red-600")}>
+                      {provisionMsg.text}
+                    </p>
+                  )}
+                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={provisionDrive} disabled={provisioning}>
+                    {provisioning ? <Loader2 className="w-3 h-3 animate-spin" /> : <FolderPlus className="w-3 h-3" />}
+                    {provisioning ? "Creating workspace…" : "Provision Drive Workspace"}
+                  </Button>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
 
@@ -1105,7 +1165,7 @@ export default function InternalCaseDetail() {
           ))}
         </div>
 
-        {activeTab === "Overview" && <OverviewTab userId={user_id} data={profileData} />}
+        {activeTab === "Overview" && <OverviewTab userId={user_id} data={profileData} onReload={loadProfile} />}
         {activeTab === "Evidence" && <EvidenceTab userId={user_id} />}
         {activeTab === "Excellence Lab" && <ExcellenceLabTab userId={user_id} />}
         {activeTab === "Petition Workspace" && <PetitionWorkspaceTab userId={user_id} />}
