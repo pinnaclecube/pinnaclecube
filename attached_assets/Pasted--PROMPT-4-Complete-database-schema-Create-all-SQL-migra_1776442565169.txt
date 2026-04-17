@@ -1,0 +1,536 @@
+## PROMPT 4 — Complete database schema
+
+Create all SQL migration files for Pinnacle³.
+
+**Create /server/db/migrations/001_core_schema.sql:**
+
+```sql
+-- Enable UUID extension
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- Client users (app's own auth, not Supabase auth)
+CREATE TABLE client_users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  phone TEXT,
+  case_status TEXT DEFAULT 'active',
+  country TEXT,
+  city TEXT,
+  date_of_birth DATE,
+  gender TEXT,
+  nationality TEXT,
+  marital_status TEXT,
+  linkedin_url TEXT,
+  bio TEXT,
+  disclaimer_accepted BOOLEAN NOT NULL DEFAULT false,
+  disclaimer_accepted_at TIMESTAMPTZ,
+  disclaimer_version TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Drive folder roots per client
+CREATE TABLE client_drive_roots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES client_users(id) UNIQUE,
+  client_root_folder_id TEXT NOT NULL,
+  resume_folder_id TEXT NOT NULL,
+  evidence_root_folder_id TEXT NOT NULL,
+  petition_root_folder_id TEXT,
+  petition_drafts_criteria_id TEXT,
+  petition_drafts_reco_id TEXT,
+  petition_drafts_package_id TEXT,
+  petition_published_criteria_id TEXT,
+  petition_published_reco_id TEXT,
+  petition_published_package_id TEXT,
+  folders_created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Per-criterion Drive folder IDs per client (created at intake completion)
+CREATE TABLE client_drive_folders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES client_users(id),
+  criteria_id TEXT NOT NULL,
+  visa_path TEXT NOT NULL,
+  folder_name TEXT NOT NULL,
+  drive_folder_id TEXT NOT NULL,
+  drive_folder_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, criteria_id)
+);
+
+-- Resume uploads
+CREATE TABLE resume_uploads (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES client_users(id),
+  drive_file_id TEXT,
+  drive_file_url TEXT,
+  file_name TEXT,
+  upload_date TIMESTAMPTZ DEFAULT NOW(),
+  extraction_status TEXT DEFAULT 'pending' CHECK (extraction_status IN ('pending','processing','completed','failed')),
+  extracted_text TEXT,
+  extraction_json JSONB
+);
+
+-- Readiness intake
+CREATE TABLE readiness_intake (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES client_users(id) UNIQUE,
+  full_name TEXT,
+  email TEXT,
+  current_role TEXT,
+  company TEXT,
+  country TEXT,
+  education TEXT,
+  field_of_work TEXT,
+  years_experience TEXT,
+  summary TEXT,
+  describe_work TEXT,
+  key_achievements TEXT,
+  publications TEXT,
+  awards TEXT,
+  media TEXT,
+  judging_reviewing TEXT,
+  leadership_roles TEXT,
+  memberships TEXT,
+  salary_indicators TEXT,
+  documentation_available TEXT,
+  evidence_organization TEXT,
+  evidence_storage TEXT,
+  visa_path TEXT CHECK (visa_path IN ('eb1a','niw','o1')),
+  timeline TEXT,
+  current_goal TEXT,
+  resume_upload_id UUID REFERENCES resume_uploads(id),
+  readiness_completed BOOLEAN DEFAULT false,
+  readiness_completed_at TIMESTAMPTZ,
+  drive_folders_created BOOLEAN DEFAULT false,
+  drive_folders_created_at TIMESTAMPTZ,
+  status TEXT DEFAULT 'draft',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Evidence items
+CREATE TABLE evidence_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES client_users(id),
+  title TEXT NOT NULL,
+  description TEXT,
+  primary_criteria_id TEXT NOT NULL,
+  additional_criteria_ids TEXT[] DEFAULT '{}',
+  drive_folder_id TEXT,
+  drive_file_id TEXT,
+  drive_file_url TEXT,
+  file_name TEXT,
+  extraction_status TEXT DEFAULT 'pending' CHECK (extraction_status IN ('pending','processing','completed','failed')),
+  extracted_text TEXT,
+  extraction_json JSONB,
+  ai_summary TEXT,
+  ai_summary_ignored BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Products / access
+CREATE TABLE client_user_products (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_user_id UUID NOT NULL REFERENCES client_users(id),
+  client_email TEXT NOT NULL,
+  product TEXT NOT NULL CHECK (product IN ('excellence_lab','elite_blueprint','evidence_vault')),
+  stripe_session_id TEXT,
+  amount_paid NUMERIC DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','expired','cancelled')),
+  access_until TIMESTAMPTZ,
+  offline_payment BOOLEAN DEFAULT false,
+  granted_by_staff_id TEXT,
+  grant_notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(client_user_id, product)
+);
+
+-- Purchases
+CREATE TABLE purchases (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_email TEXT NOT NULL,
+  product TEXT NOT NULL,
+  amount NUMERIC,
+  currency TEXT DEFAULT 'usd',
+  status TEXT DEFAULT 'pending',
+  stripe_session_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Action items
+CREATE TABLE client_action_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES client_users(id),
+  generated_by_admin_id TEXT,
+  title TEXT NOT NULL,
+  description TEXT,
+  focus_types TEXT[] DEFAULT '{}',
+  priority TEXT DEFAULT 'medium' CHECK (priority IN ('high','medium','low')),
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','sent_to_client','marked_complete_by_client','marked_complete_by_admin','archived')),
+  admin_notes TEXT,
+  sent_at TIMESTAMPTZ,
+  client_completed_at TIMESTAMPTZ,
+  admin_completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Notifications
+CREATE TABLE notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  user_type TEXT NOT NULL CHECK (user_type IN ('client','staff')),
+  notification_type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  link TEXT,
+  status TEXT NOT NULL DEFAULT 'unread' CHECK (status IN ('unread','read','archived')),
+  priority TEXT DEFAULT 'medium' CHECK (priority IN ('high','medium','low')),
+  email_sent BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Prospects (internal)
+CREATE TABLE prospects (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  full_name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  phone TEXT,
+  current_role TEXT,
+  linkedin_url TEXT,
+  drive_file_id TEXT,
+  source_type TEXT,
+  internal_notes TEXT,
+  owner_staff_user TEXT,
+  years_of_experience TEXT,
+  field_of_work TEXT,
+  summary TEXT,
+  publications_signal BOOLEAN DEFAULT false,
+  awards_signal BOOLEAN DEFAULT false,
+  leadership_signal BOOLEAN DEFAULT false,
+  status TEXT DEFAULT 'new',
+  registration_status TEXT DEFAULT 'not_invited',
+  linked_user_id UUID REFERENCES client_users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Quiz leads
+CREATE TABLE quiz_leads (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  first_name TEXT,
+  last_name TEXT,
+  email TEXT NOT NULL,
+  phone TEXT,
+  quiz_answers JSONB,
+  result_type TEXT,
+  status TEXT DEFAULT 'new',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Personalized learning plans
+CREATE TABLE personalized_learning_plans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES client_users(id) UNIQUE,
+  plan_type TEXT DEFAULT 'excellence_lab',
+  status TEXT DEFAULT 'active',
+  generation_version INT DEFAULT 1,
+  plan_payload JSONB DEFAULT '{}',
+  completed_lesson_ids TEXT[] DEFAULT '{}',
+  context_hash TEXT,
+  last_invalidated_at TIMESTAMPTZ,
+  generated_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Instant profile insight
+CREATE TABLE instant_profile_insight_submissions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT,
+  role TEXT,
+  field TEXT,
+  years_experience TEXT,
+  publications_count INT,
+  awards_count INT,
+  leadership_indicator BOOLEAN,
+  resume_text TEXT,
+  generated_summary TEXT,
+  current_position TEXT,
+  suggested_next_steps TEXT,
+  recommended_product TEXT,
+  quiz_answers JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Internal notes
+CREATE TABLE internal_case_notes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES client_users(id),
+  staff_user_id TEXT NOT NULL,
+  note_type TEXT DEFAULT 'general',
+  content JSONB NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE internal_evidence_notes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  evidence_item_id UUID NOT NULL REFERENCES evidence_items(id),
+  staff_user_id TEXT NOT NULL,
+  note TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Activity log
+CREATE TABLE client_activity_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES client_users(id),
+  event_type TEXT NOT NULL,
+  event_data JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Create /server/db/migrations/002_lesson_definitions.sql:**
+
+```sql
+-- Lesson curriculum skeleton (static — content generated dynamically by Claude)
+CREATE TABLE lesson_definitions (
+  id TEXT PRIMARY KEY,
+  module_id INT NOT NULL,
+  module_name TEXT NOT NULL,
+  lesson_title TEXT NOT NULL,
+  learning_objective TEXT NOT NULL,
+  display_order INT NOT NULL,
+  visa_paths TEXT[] DEFAULT '{eb1a,niw,o1}',
+  criteria_focus TEXT,
+  is_active BOOLEAN DEFAULT true
+);
+
+INSERT INTO lesson_definitions VALUES
+('mod1-les1', 1, 'Understanding Extraordinary Ability', 'What USCIS is actually looking for', 'Understand how USCIS adjudicators evaluate extraordinary ability and what standard of evidence is required.', 1, '{eb1a,niw,o1}', NULL),
+('mod1-les2', 1, 'Understanding Extraordinary Ability', 'The criteria explained for your visa type', 'Learn what each criterion means in plain language and how it applies to tech professionals.', 2, '{eb1a,niw,o1}', NULL),
+('mod1-les3', 1, 'Understanding Extraordinary Ability', 'Reading your profile against the criteria', 'Map your existing achievements to the criteria and identify your strongest starting points.', 3, '{eb1a,niw,o1}', NULL),
+('mod2-les1', 2, 'Publications and Scholarly Contributions', 'What counts as a qualifying publication', 'Understand the spectrum of publications USCIS accepts and how to frame yours.', 4, '{eb1a,o1}', 'EB1A-06'),
+('mod2-les2', 2, 'Publications and Scholarly Contributions', 'Citation counts and impact factors', 'Learn how to document citation counts and why they matter for your case.', 5, '{eb1a,o1}', 'EB1A-06'),
+('mod2-les3', 2, 'Publications and Scholarly Contributions', 'Non-traditional publications', 'Patents, technical blog posts, whitepapers, and open source — how to qualify these.', 6, '{eb1a,o1}', 'EB1A-06'),
+('mod3-les1', 3, 'Awards and Recognition', 'What makes an award qualifying', 'Distinguish qualifying awards from participation trophies using USCIS standards.', 7, '{eb1a,o1}', 'EB1A-01'),
+('mod3-les2', 3, 'Awards and Recognition', 'Building your awards narrative', 'Frame existing recognition and identify new award opportunities to pursue.', 8, '{eb1a,o1}', 'EB1A-01'),
+('mod4-les1', 4, 'Press and Media Coverage', 'What qualifies as press coverage', 'Understand what major media means to USCIS and how to document it.', 9, '{eb1a,o1}', 'EB1A-03'),
+('mod4-les2', 4, 'Press and Media Coverage', 'Getting coverage if you have none', 'Proactive strategies to earn qualifying press coverage in your field.', 10, '{eb1a,o1}', 'EB1A-03'),
+('mod5-les1', 5, 'Judging and Peer Review', 'Conference reviewer and journal peer reviewer', 'Understand how judging roles qualify and how to document them properly.', 11, '{eb1a,o1}', 'EB1A-04'),
+('mod5-les2', 5, 'Judging and Peer Review', 'Getting judging roles proactively', 'Step-by-step strategy to obtain qualifying reviewer and panel positions.', 12, '{eb1a,o1}', 'EB1A-04'),
+('mod6-les1', 6, 'Critical Role Evidence', 'Defining critical role for USCIS', 'Learn what distinguished organization means and how to document a leading or critical role.', 13, '{eb1a,o1}', 'EB1A-07'),
+('mod6-les2', 6, 'Critical Role Evidence', 'Field-specific critical role examples', 'Real examples of qualifying critical roles for tech, science, and business professionals.', 14, '{eb1a,o1}', 'EB1A-07'),
+('mod7-les1', 7, 'High Salary Documentation', 'Salary surveys and benchmarking', 'Which salary surveys USCIS accepts and how to frame your compensation.', 15, '{eb1a,o1}', 'EB1A-08'),
+('mod7-les2', 7, 'High Salary Documentation', 'Total compensation and equity', 'How to document total compensation including equity, bonuses, and perks.', 16, '{eb1a,o1}', 'EB1A-08'),
+('mod8-les1', 8, 'Original Contributions', 'Defining original contributions', 'What counts as an original contribution of major significance and how to document it.', 17, '{eb1a,niw,o1}', 'EB1A-05'),
+('mod8-les2', 8, 'Original Contributions', 'Expert letters for contributions', 'How expert witness letters validate and amplify original contribution claims.', 18, '{eb1a,niw,o1}', 'EB1A-05'),
+('mod9-les1', 9, 'Recommendation Letter Strategy', 'Who to ask and why', 'Dependent vs independent recommenders — who counts more and why.', 19, '{eb1a,niw,o1}', NULL),
+('mod9-les2', 9, 'Recommendation Letter Strategy', 'What each letter must say', 'The specific content USCIS expects from recommendation letters and how to brief recommenders.', 20, '{eb1a,niw,o1}', NULL),
+('mod10-les1', 10, 'NIW: Substantial Merit and National Importance', 'Framing your proposed endeavor', 'How to define and articulate your proposed endeavor for the Dhillon test.', 21, '{niw}', 'NIW-01'),
+('mod10-les2', 10, 'NIW: Well-Positioned Prong', 'Proving you are well-positioned', 'Evidence that demonstrates your unique ability to advance your proposed endeavor.', 22, '{niw}', 'NIW-03'),
+('mod11-les1', 11, 'Case Readiness and Filing', 'Assessing your 3-criteria minimum', 'How to objectively evaluate whether your case meets the filing threshold.', 23, '{eb1a,niw,o1}', NULL),
+('mod11-les2', 11, 'Case Readiness and Filing', 'Working with an immigration attorney', 'How to select and brief an attorney and what Pinnacle³ prepares you to bring them.', 24, '{eb1a,niw,o1}', NULL);
+```
+
+**Create /server/db/migrations/003_petition_system.sql:**
+
+```sql
+-- Visa criteria reference table
+CREATE TABLE visa_criteria (
+  id TEXT PRIMARY KEY,
+  visa_path TEXT NOT NULL CHECK (visa_path IN ('eb1a','niw','o1')),
+  criteria_code TEXT NOT NULL,
+  criteria_name TEXT NOT NULL,
+  legal_standard TEXT NOT NULL,
+  folder_name TEXT NOT NULL,
+  display_order INT NOT NULL,
+  is_common BOOLEAN DEFAULT true
+);
+
+INSERT INTO visa_criteria VALUES
+('EB1A-01','eb1a','01','Awards and prizes','Documentation of the alien\'s receipt of nationally or internationally recognized prizes or awards for excellence in the field of endeavor.','EB1A-01_Awards_and_Prizes',1,true),
+('EB1A-02','eb1a','02','Membership','Documentation of the alien\'s membership in associations in the field which require outstanding achievements of their members, as judged by recognized national or international experts.','EB1A-02_Membership',2,true),
+('EB1A-03','eb1a','03','Press and media','Published material about the alien in professional or major trade publications or other major media, relating to the alien\'s work in the field.','EB1A-03_Press_and_Media',3,true),
+('EB1A-04','eb1a','04','Judging others','Evidence of the alien\'s participation, either individually or on a panel, as a judge of the work of others in the same or an allied field.','EB1A-04_Judging_Others',4,true),
+('EB1A-05','eb1a','05','Original contributions','Evidence of the alien\'s original scientific, scholarly, artistic, athletic, or business-related contributions of major significance in the field.','EB1A-05_Original_Contributions',5,true),
+('EB1A-06','eb1a','06','Scholarly articles','Evidence of the alien\'s authorship of scholarly articles in the field, in professional or major trade publications or other major media.','EB1A-06_Scholarly_Articles',6,true),
+('EB1A-07','eb1a','07','Critical role','Evidence that the alien has performed in a leading or critical role for organizations or establishments that have a distinguished reputation.','EB1A-07_Critical_Role',7,true),
+('EB1A-08','eb1a','08','High salary','Evidence that the alien has commanded a high salary or other significantly high remuneration for services, in relation to others in the field.','EB1A-08_High_Salary',8,true),
+('EB1A-09','eb1a','09','Commercial success','Evidence of commercial successes in the performing arts, as shown by box office receipts or record, cassette, compact disk, or video sales.','EB1A-09_Commercial_Success',9,false),
+('EB1A-10','eb1a','10','Exhibitions','Evidence of the display of the alien\'s work in the field at artistic exhibitions or showcases.','EB1A-10_Exhibitions',10,false),
+('NIW-01','niw','01','Substantial merit','The proposed endeavor has substantial merit and national importance in business, science, technology, culture, health, or education.','NIW-01_Substantial_Merit',1,true),
+('NIW-02','niw','02','National importance','The proposed endeavor is of national importance with potential impact that is national in scope.','NIW-02_National_Importance',2,true),
+('NIW-03','niw','03','Well-positioned','The petitioner is well positioned to advance the proposed endeavor based on education, skills, knowledge, and record of success.','NIW-03_Well_Positioned',3,true),
+('NIW-04','niw','04','Education and credentials','Advanced degree or exceptional ability demonstrated through academic credentials and professional qualifications.','NIW-04_Education_Credentials',4,true),
+('NIW-05','niw','05','Track record','Past contributions and demonstrated expertise showing a track record of success in the field of endeavor.','NIW-05_Track_Record',5,true),
+('NIW-06','niw','06','Future plan','A detailed and credible plan for the proposed endeavor in the United States and the benefits it will bring.','NIW-06_Future_Plan',6,true),
+('NIW-07','niw','07','Support letters','Letters from experts and organizations with firsthand knowledge confirming the national interest and the petitioner\'s standing.','NIW-07_Support_Letters',7,true),
+('NIW-08','niw','08','Balance of factors','On balance, waiving the job offer and labor certification requirement serves the national interest of the United States.','NIW-08_Balance_of_Factors',8,true),
+('O1A-01','o1','01','Awards and prizes','Documentation of the beneficiary\'s receipt of nationally or internationally recognized prizes or awards for excellence in the field.','O1A-01_Awards_and_Prizes',1,true),
+('O1A-02','o1','02','Membership','Documentation of the beneficiary\'s membership in associations that require outstanding achievements as judged by recognized experts.','O1A-02_Membership',2,true),
+('O1A-03','o1','03','Press coverage','Published material in professional or major trade publications about the beneficiary and the beneficiary\'s work.','O1A-03_Press_Coverage',3,true),
+('O1A-04','o1','04','Judging','Evidence of the beneficiary\'s participation as a judge of the work of others in the same or allied field.','O1A-04_Judging',4,true),
+('O1A-05','o1','05','Original contributions','Evidence of the beneficiary\'s original scientific, scholarly, or business-related contributions of major significance.','O1A-05_Original_Contributions',5,true),
+('O1A-06','o1','06','Scholarly articles','Evidence of the beneficiary\'s authorship of scholarly articles in professional journals or other major media.','O1A-06_Scholarly_Articles',6,true),
+('O1A-07','o1','07','Critical or essential role','Evidence of the beneficiary\'s performance in a critical or essential role for distinguished organizations.','O1A-07_Critical_Role',7,true),
+('O1A-08','o1','08','High remuneration','Evidence of the beneficiary\'s high salary or other remuneration for services compared to others in the field.','O1A-08_High_Remuneration',8,true);
+
+-- Petition case setup
+CREATE TABLE case_petition_setup (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES client_users(id),
+  visa_path TEXT NOT NULL CHECK (visa_path IN ('eb1a','niw','o1')),
+  selected_criteria TEXT[] NOT NULL DEFAULT '{}',
+  exhibit_numbering_style TEXT NOT NULL DEFAULT 'numeric' CHECK (exhibit_numbering_style IN ('numeric','alpha')),
+  status TEXT NOT NULL DEFAULT 'setup' CHECK (status IN ('setup','in_progress','package_ready')),
+  folder_ids JSONB DEFAULT '{}',
+  created_by_staff TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- One exhibit per selected criterion
+CREATE TABLE petition_criteria_exhibits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_setup_id UUID NOT NULL REFERENCES case_petition_setup(id),
+  user_id UUID NOT NULL REFERENCES client_users(id),
+  criteria_id TEXT NOT NULL REFERENCES visa_criteria(id),
+  criteria_code TEXT NOT NULL,
+  criteria_name TEXT NOT NULL,
+  exhibit_number TEXT NOT NULL,
+  evidence_item_ids TEXT[] DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started','generating','draft','approved')),
+  generation_job_id UUID,
+  drive_draft_file_id TEXT,
+  drive_draft_url TEXT,
+  drive_published_file_id TEXT,
+  drive_published_url TEXT,
+  published_to_client BOOLEAN DEFAULT false,
+  staff_approved_by TEXT,
+  staff_approved_at TIMESTAMPTZ,
+  regeneration_count INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Recommendation letters
+CREATE TABLE petition_reco_letters (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_setup_id UUID NOT NULL REFERENCES case_petition_setup(id),
+  user_id UUID NOT NULL REFERENCES client_users(id),
+  recommender_name TEXT NOT NULL,
+  recommender_title TEXT NOT NULL,
+  recommender_org TEXT NOT NULL,
+  recommender_relationship TEXT NOT NULL,
+  recommender_credentials TEXT,
+  criteria_supported TEXT[] DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started','generating','draft','approved')),
+  generation_job_id UUID,
+  drive_draft_file_id TEXT,
+  drive_draft_url TEXT,
+  drive_published_file_id TEXT,
+  drive_published_url TEXT,
+  published_to_client BOOLEAN DEFAULT false,
+  staff_approved_by TEXT,
+  staff_approved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Final package (index + cover letter)
+CREATE TABLE petition_package (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_setup_id UUID NOT NULL REFERENCES case_petition_setup(id) UNIQUE,
+  user_id UUID NOT NULL REFERENCES client_users(id),
+  exhibit_index_job_id UUID,
+  exhibit_index_status TEXT DEFAULT 'not_started',
+  exhibit_index_drive_draft_url TEXT,
+  exhibit_index_drive_published_url TEXT,
+  cover_letter_job_id UUID,
+  cover_letter_status TEXT DEFAULT 'not_started',
+  cover_letter_drive_draft_url TEXT,
+  cover_letter_drive_published_url TEXT,
+  o1_itinerary_job_id UUID,
+  o1_itinerary_status TEXT DEFAULT 'not_started',
+  package_published_at TIMESTAMPTZ,
+  package_published_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Document generation jobs
+CREATE TABLE document_generation_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES client_users(id),
+  triggered_by_staff_id TEXT NOT NULL,
+  case_setup_id UUID REFERENCES case_petition_setup(id),
+  criteria_code TEXT,
+  doc_subtype TEXT NOT NULL CHECK (doc_subtype IN ('criteria_exhibit','recommendation_letter','exhibit_index','cover_letter','o1_itinerary')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processing','completed','failed')),
+  input_payload JSONB DEFAULT '{}',
+  staff_context_input JSONB DEFAULT '{}',
+  drive_draft_file_id TEXT,
+  drive_draft_url TEXT,
+  drive_published_file_id TEXT,
+  drive_published_url TEXT,
+  published_to_client BOOLEAN DEFAULT false,
+  published_at TIMESTAMPTZ,
+  error_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  completed_at TIMESTAMPTZ
+);
+
+-- Elite Blueprint applications
+CREATE TABLE applications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES client_users(id),
+  full_name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  current_role TEXT,
+  country TEXT,
+  visa_path TEXT CHECK (visa_path IN ('eb1a','niw','o1')),
+  field TEXT,
+  years_experience TEXT,
+  top_achievements TEXT,
+  publications TEXT,
+  awards TEXT,
+  evidence_organization TEXT,
+  documentation_available TEXT,
+  linkedin_url TEXT,
+  resume_file TEXT,
+  resume_upload_id UUID REFERENCES resume_uploads(id),
+  extracted_data JSONB,
+  why_applying TEXT,
+  timeline TEXT,
+  status TEXT DEFAULT 'submitted' CHECK (status IN ('submitted','under_review','approved','needs_more_info','declined','access_granted')),
+  payment_status TEXT DEFAULT 'pending' CHECK (payment_status IN ('pending','received','waived')),
+  payment_notes TEXT,
+  payment_received_at TIMESTAMPTZ,
+  payment_received_by TEXT,
+  include_excellence_lab BOOLEAN DEFAULT false,
+  admin_confidence_score INT,
+  admin_strengthening_roadmap TEXT,
+  admin_estimated_timeline TEXT,
+  admin_ai_analysis TEXT,
+  admin_review_notes TEXT,
+  admin_reviewed_at TIMESTAMPTZ,
+  admin_reviewed_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+Also create `/server/services/supabase.js`:
+```javascript
+const { createClient } = require('@supabase/supabase-js');
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
+module.exports = supabase;
+```
+
+Run all migrations against your Supabase project. Confirm all tables created successfully.
+
+---

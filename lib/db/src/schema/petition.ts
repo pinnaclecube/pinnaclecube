@@ -1,0 +1,117 @@
+import { pgTable, text, serial, integer, boolean, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod/v4";
+
+export const casePetitionSetupTable = pgTable("case_petition_setup", {
+  id: serial("id").primaryKey(),
+  profileId: integer("profile_id").notNull(),
+  visaPath: text("visa_path").notNull(),
+  selectedCriteria: jsonb("selected_criteria").notNull().default([]),
+  exhibitNumberingStyle: text("exhibit_numbering_style").notNull().default("numeric"),
+  status: text("status").notNull().default("setup"),
+  folderIds: jsonb("folder_ids").default({}),
+  createdByStaff: text("created_by_staff").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+export const petitionCriteriaExhibitsTable = pgTable("petition_criteria_exhibits", {
+  id: serial("id").primaryKey(),
+  caseSetupId: integer("case_setup_id").notNull(),
+  profileId: integer("profile_id").notNull(),
+  criteriaId: text("criteria_id").notNull(),
+  criteriaCode: text("criteria_code").notNull(),
+  criteriaName: text("criteria_name").notNull(),
+  exhibitNumber: text("exhibit_number").notNull(),
+  evidenceItemIds: jsonb("evidence_item_ids").default([]),
+  status: text("status").notNull().default("not_started"),
+  generationJobId: integer("generation_job_id"),
+  driveDraftFileId: text("drive_draft_file_id"),
+  driveDraftUrl: text("drive_draft_url"),
+  drivePublishedFileId: text("drive_published_file_id"),
+  drivePublishedUrl: text("drive_published_url"),
+  publishedToClient: boolean("published_to_client").default(false),
+  staffApprovedBy: text("staff_approved_by"),
+  staffApprovedAt: timestamp("staff_approved_at", { withTimezone: true }),
+  regenerationCount: integer("regeneration_count").default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const petitionRecoLettersTable = pgTable("petition_reco_letters", {
+  id: serial("id").primaryKey(),
+  caseSetupId: integer("case_setup_id").notNull(),
+  profileId: integer("profile_id").notNull(),
+  recommenderName: text("recommender_name").notNull(),
+  recommenderTitle: text("recommender_title").notNull(),
+  recommenderOrg: text("recommender_org").notNull(),
+  recommenderRelationship: text("recommender_relationship").notNull(),
+  recommenderCredentials: text("recommender_credentials"),
+  criteriaSupported: jsonb("criteria_supported").default([]),
+  status: text("status").notNull().default("not_started"),
+  generationJobId: integer("generation_job_id"),
+  driveDraftFileId: text("drive_draft_file_id"),
+  driveDraftUrl: text("drive_draft_url"),
+  drivePublishedFileId: text("drive_published_file_id"),
+  drivePublishedUrl: text("drive_published_url"),
+  publishedToClient: boolean("published_to_client").default(false),
+  staffApprovedBy: text("staff_approved_by"),
+  staffApprovedAt: timestamp("staff_approved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const petitionPackageTable = pgTable("petition_package", {
+  id: serial("id").primaryKey(),
+  caseSetupId: integer("case_setup_id").notNull().unique(),
+  profileId: integer("profile_id").notNull(),
+  exhibitIndexJobId: integer("exhibit_index_job_id"),
+  exhibitIndexStatus: text("exhibit_index_status").default("not_started"),
+  exhibitIndexDriveDraftUrl: text("exhibit_index_drive_draft_url"),
+  exhibitIndexDrivePublishedUrl: text("exhibit_index_drive_published_url"),
+  coverLetterJobId: integer("cover_letter_job_id"),
+  coverLetterStatus: text("cover_letter_status").default("not_started"),
+  coverLetterDriveDraftUrl: text("cover_letter_drive_draft_url"),
+  coverLetterDrivePublishedUrl: text("cover_letter_drive_published_url"),
+  o1ItineraryJobId: integer("o1_itinerary_job_id"),
+  o1ItineraryStatus: text("o1_itinerary_status").default("not_started"),
+  packagePublishedAt: timestamp("package_published_at", { withTimezone: true }),
+  packagePublishedBy: text("package_published_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const documentGenerationJobsTable = pgTable("document_generation_jobs", {
+  id: serial("id").primaryKey(),
+  profileId: integer("profile_id").notNull(),
+  triggeredByStaffId: text("triggered_by_staff_id").notNull(),
+  caseSetupId: integer("case_setup_id"),
+  criteriaCode: text("criteria_code"),
+  docSubtype: text("doc_subtype").notNull(),
+  status: text("status").notNull().default("pending"),
+  inputPayload: jsonb("input_payload").default({}),
+  staffContextInput: jsonb("staff_context_input").default({}),
+  driveDraftFileId: text("drive_draft_file_id"),
+  driveDraftUrl: text("drive_draft_url"),
+  drivePublishedFileId: text("drive_published_file_id"),
+  drivePublishedUrl: text("drive_published_url"),
+  publishedToClient: boolean("published_to_client").default(false),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+});
+
+export const insertCasePetitionSetupSchema = createInsertSchema(casePetitionSetupTable).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertPetitionCriteriaExhibitSchema = createInsertSchema(petitionCriteriaExhibitsTable).omit({ id: true, createdAt: true });
+export const insertPetitionRecoLetterSchema = createInsertSchema(petitionRecoLettersTable).omit({ id: true, createdAt: true });
+export const insertPetitionPackageSchema = createInsertSchema(petitionPackageTable).omit({ id: true, createdAt: true });
+export const insertDocumentGenerationJobSchema = createInsertSchema(documentGenerationJobsTable).omit({ id: true, createdAt: true });
+
+export type InsertCasePetitionSetup = z.infer<typeof insertCasePetitionSetupSchema>;
+export type CasePetitionSetup = typeof casePetitionSetupTable.$inferSelect;
+export type InsertPetitionCriteriaExhibit = z.infer<typeof insertPetitionCriteriaExhibitSchema>;
+export type PetitionCriteriaExhibit = typeof petitionCriteriaExhibitsTable.$inferSelect;
+export type InsertPetitionRecoLetter = z.infer<typeof insertPetitionRecoLetterSchema>;
+export type PetitionRecoLetter = typeof petitionRecoLettersTable.$inferSelect;
+export type InsertPetitionPackage = z.infer<typeof insertPetitionPackageSchema>;
+export type PetitionPackage = typeof petitionPackageTable.$inferSelect;
+export type InsertDocumentGenerationJob = z.infer<typeof insertDocumentGenerationJobSchema>;
+export type DocumentGenerationJob = typeof documentGenerationJobsTable.$inferSelect;
