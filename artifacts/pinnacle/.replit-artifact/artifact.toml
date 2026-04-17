@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Pinnacle³ — EB-1A Immigration Consulting"
+version = "1.0.0"
+id = "artifacts/pinnacle"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19917
+
+[services.development]
+run = "pnpm --filter @workspace/pinnacle run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/pinnacle", "run", "build" ]
+publicDir = "artifacts/pinnacle/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19917"
+BASE_PATH = "/"

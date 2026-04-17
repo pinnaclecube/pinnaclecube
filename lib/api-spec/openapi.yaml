@@ -3,13 +3,26 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Pinnacle³ API specification — EB-1A, EB-2 NIW, O-1A immigration consulting platform
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: profile
+    description: User profile and readiness intake
+  - name: criteria
+    description: USCIS criteria evidence tracking
+  - name: evidence
+    description: Evidence Vault — document management
+  - name: blueprint
+    description: Elite Blueprint — personalized strategy
+  - name: courses
+    description: Excellence Lab — learning content
+  - name: dashboard
+    description: Dashboard summary and analytics
+
 paths:
   /healthz:
     get:
@@ -24,6 +37,396 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ━━━ Profile / Intake ━━━
+  /profile:
+    get:
+      operationId: getProfile
+      tags: [profile]
+      summary: Get current user profile
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "404":
+          description: Profile not found
+
+    post:
+      operationId: createProfile
+      tags: [profile]
+      summary: Create user profile from readiness intake
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProfileBody"
+      responses:
+        "201":
+          description: Profile created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "400":
+          description: Validation error
+
+    patch:
+      operationId: updateProfile
+      tags: [profile]
+      summary: Update user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileBody"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+
+  /profile/readiness:
+    get:
+      operationId: getReadiness
+      tags: [profile]
+      summary: Get visa readiness score and criterion breakdown
+      responses:
+        "200":
+          description: Readiness assessment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessReport"
+
+  # ━━━ Criteria / Evidence Vault ━━━
+  /criteria:
+    get:
+      operationId: listCriteria
+      tags: [criteria]
+      summary: List all USCIS criteria with evidence counts
+      parameters:
+        - in: query
+          name: visaType
+          schema:
+            type: string
+            enum: [eb1a, niw, o1]
+          description: Filter by visa type
+      responses:
+        "200":
+          description: List of criteria
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Criterion"
+
+  /criteria/{criterionId}:
+    get:
+      operationId: getCriterion
+      tags: [criteria]
+      summary: Get a specific criterion with its evidence
+      parameters:
+        - in: path
+          name: criterionId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Criterion detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CriterionDetail"
+        "404":
+          description: Criterion not found
+
+  # ━━━ Evidence ━━━
+  /evidence:
+    get:
+      operationId: listEvidence
+      tags: [evidence]
+      summary: List all evidence items
+      parameters:
+        - in: query
+          name: criterionId
+          schema:
+            type: integer
+          description: Filter by criterion
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [draft, pending, approved, rejected]
+          description: Filter by status
+      responses:
+        "200":
+          description: List of evidence items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Evidence"
+
+    post:
+      operationId: createEvidence
+      tags: [evidence]
+      summary: Add a new evidence item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEvidenceBody"
+      responses:
+        "201":
+          description: Evidence created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Evidence"
+        "400":
+          description: Validation error
+
+  /evidence/{evidenceId}:
+    get:
+      operationId: getEvidence
+      tags: [evidence]
+      summary: Get a specific evidence item
+      parameters:
+        - in: path
+          name: evidenceId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Evidence item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Evidence"
+        "404":
+          description: Not found
+
+    patch:
+      operationId: updateEvidence
+      tags: [evidence]
+      summary: Update an evidence item
+      parameters:
+        - in: path
+          name: evidenceId
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEvidenceBody"
+      responses:
+        "200":
+          description: Updated evidence
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Evidence"
+
+    delete:
+      operationId: deleteEvidence
+      tags: [evidence]
+      summary: Delete an evidence item
+      parameters:
+        - in: path
+          name: evidenceId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ━━━ Elite Blueprint ━━━
+  /blueprint:
+    get:
+      operationId: getBlueprint
+      tags: [blueprint]
+      summary: Get the user's Elite Blueprint strategy
+      responses:
+        "200":
+          description: Blueprint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Blueprint"
+        "404":
+          description: No blueprint yet
+
+  /blueprint/milestones:
+    get:
+      operationId: listMilestones
+      tags: [blueprint]
+      summary: List blueprint milestones and their completion status
+      responses:
+        "200":
+          description: Milestones
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Milestone"
+
+    post:
+      operationId: createMilestone
+      tags: [blueprint]
+      summary: Create a milestone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMilestoneBody"
+      responses:
+        "201":
+          description: Created milestone
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Milestone"
+
+  /blueprint/milestones/{milestoneId}:
+    patch:
+      operationId: updateMilestone
+      tags: [blueprint]
+      summary: Update a milestone (e.g. mark complete)
+      parameters:
+        - in: path
+          name: milestoneId
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMilestoneBody"
+      responses:
+        "200":
+          description: Updated milestone
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Milestone"
+
+  # ━━━ Excellence Lab (Courses) ━━━
+  /courses:
+    get:
+      operationId: listCourses
+      tags: [courses]
+      summary: List all Excellence Lab courses
+      parameters:
+        - in: query
+          name: visaType
+          schema:
+            type: string
+            enum: [eb1a, niw, o1]
+      responses:
+        "200":
+          description: List of courses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Course"
+
+  /courses/{courseId}:
+    get:
+      operationId: getCourse
+      tags: [courses]
+      summary: Get course details and lessons
+      parameters:
+        - in: path
+          name: courseId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Course detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CourseDetail"
+        "404":
+          description: Course not found
+
+  /courses/{courseId}/progress:
+    patch:
+      operationId: updateCourseProgress
+      tags: [courses]
+      summary: Update progress for a course lesson
+      parameters:
+        - in: path
+          name: courseId
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCourseProgressBody"
+      responses:
+        "200":
+          description: Updated progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CourseProgress"
+
+  # ━━━ Dashboard ━━━
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get overall dashboard metrics — readiness score, evidence counts, milestone progress
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /dashboard/activity:
+    get:
+      operationId: getRecentActivity
+      tags: [dashboard]
+      summary: Recent activity feed — evidence uploads, milestones completed, notes
+      responses:
+        "200":
+          description: Activity items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityItem"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +437,502 @@ components:
       required:
         - status
 
+    Profile:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        visaTarget:
+          type: string
+          enum: [eb1a, niw, o1]
+        profession:
+          type: string
+        yearsExperience:
+          type: integer
+        currentStatus:
+          type: string
+          description: "H-1B, F-1 OPT, etc."
+        bio:
+          type: ["string", "null"]
+        accessLevel:
+          type: string
+          enum: [free, excellence_lab, evidence_vault, elite_blueprint]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - email
+        - visaTarget
+        - profession
+        - yearsExperience
+        - currentStatus
+        - accessLevel
+        - createdAt
+
+    CreateProfileBody:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        visaTarget:
+          type: string
+          enum: [eb1a, niw, o1]
+        profession:
+          type: string
+        yearsExperience:
+          type: integer
+        currentStatus:
+          type: string
+        bio:
+          type: string
+      required:
+        - name
+        - email
+        - visaTarget
+        - profession
+        - yearsExperience
+        - currentStatus
+
+    UpdateProfileBody:
+      type: object
+      properties:
+        name:
+          type: string
+        bio:
+          type: string
+        profession:
+          type: string
+        yearsExperience:
+          type: integer
+        visaTarget:
+          type: string
+          enum: [eb1a, niw, o1]
+
+    ReadinessReport:
+      type: object
+      properties:
+        overallScore:
+          type: integer
+          description: 0–100 readiness score
+        visaTarget:
+          type: string
+          enum: [eb1a, niw, o1]
+        criteriaScores:
+          type: array
+          items:
+            $ref: "#/components/schemas/CriterionScore"
+        recommendation:
+          type: string
+        readyToFile:
+          type: boolean
+      required:
+        - overallScore
+        - visaTarget
+        - criteriaScores
+        - recommendation
+        - readyToFile
+
+    CriterionScore:
+      type: object
+      properties:
+        criterionId:
+          type: integer
+        criterionName:
+          type: string
+        evidenceCount:
+          type: integer
+        requiredCount:
+          type: integer
+        score:
+          type: integer
+      required:
+        - criterionId
+        - criterionName
+        - evidenceCount
+        - requiredCount
+        - score
+
+    Criterion:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        visaType:
+          type: string
+          enum: [eb1a, niw, o1]
+        uscisCode:
+          type: string
+          description: Official USCIS criterion code (e.g. "8 CFR 204.5(h)(3)(i)")
+        evidenceCount:
+          type: integer
+        requiredMinimum:
+          type: integer
+        strengthLevel:
+          type: string
+          enum: [none, weak, developing, strong, excellent]
+      required:
+        - id
+        - name
+        - description
+        - visaType
+        - uscisCode
+        - evidenceCount
+        - requiredMinimum
+        - strengthLevel
+
+    CriterionDetail:
+      allOf:
+        - $ref: "#/components/schemas/Criterion"
+        - type: object
+          properties:
+            evidence:
+              type: array
+              items:
+                $ref: "#/components/schemas/Evidence"
+            tips:
+              type: string
+              description: Guidance for strengthening this criterion
+
+    Evidence:
+      type: object
+      properties:
+        id:
+          type: integer
+        criterionId:
+          type: integer
+        title:
+          type: string
+        description:
+          type: ["string", "null"]
+        evidenceType:
+          type: string
+          enum: [publication, citation, award, salary, membership, media, judging, contribution, letter, other]
+        status:
+          type: string
+          enum: [draft, pending, approved, rejected]
+        sourceUrl:
+          type: ["string", "null"]
+        dateAchieved:
+          type: ["string", "null"]
+          format: date
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - criterionId
+        - title
+        - evidenceType
+        - status
+        - createdAt
+        - updatedAt
+
+    CreateEvidenceBody:
+      type: object
+      properties:
+        criterionId:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        evidenceType:
+          type: string
+          enum: [publication, citation, award, salary, membership, media, judging, contribution, letter, other]
+        sourceUrl:
+          type: string
+        dateAchieved:
+          type: string
+          format: date
+      required:
+        - criterionId
+        - title
+        - evidenceType
+
+    UpdateEvidenceBody:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        evidenceType:
+          type: string
+          enum: [publication, citation, award, salary, membership, media, judging, contribution, letter, other]
+        status:
+          type: string
+          enum: [draft, pending, approved, rejected]
+        sourceUrl:
+          type: string
+        dateAchieved:
+          type: string
+          format: date
+
+    Blueprint:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        visaTarget:
+          type: string
+          enum: [eb1a, niw, o1]
+        strategySummary:
+          type: string
+        targetFilingDate:
+          type: ["string", "null"]
+          format: date
+        assignedConsultant:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [pending, active, on_hold, completed]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - visaTarget
+        - strategySummary
+        - status
+        - createdAt
+
+    Milestone:
+      type: object
+      properties:
+        id:
+          type: integer
+        blueprintId:
+          type: integer
+        title:
+          type: string
+        description:
+          type: ["string", "null"]
+        dueDate:
+          type: ["string", "null"]
+          format: date
+        completed:
+          type: boolean
+        completedAt:
+          type: ["string", "null"]
+          format: date-time
+        sortOrder:
+          type: integer
+      required:
+        - id
+        - blueprintId
+        - title
+        - completed
+        - sortOrder
+
+    CreateMilestoneBody:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        dueDate:
+          type: string
+          format: date
+        sortOrder:
+          type: integer
+      required:
+        - title
+
+    UpdateMilestoneBody:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        dueDate:
+          type: string
+          format: date
+        completed:
+          type: boolean
+        sortOrder:
+          type: integer
+
+    Course:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        visaType:
+          type: string
+          enum: [eb1a, niw, o1]
+        lessonCount:
+          type: integer
+        estimatedMinutes:
+          type: integer
+        progressPercent:
+          type: integer
+        category:
+          type: string
+      required:
+        - id
+        - title
+        - description
+        - visaType
+        - lessonCount
+        - estimatedMinutes
+        - progressPercent
+        - category
+
+    CourseDetail:
+      allOf:
+        - $ref: "#/components/schemas/Course"
+        - type: object
+          properties:
+            lessons:
+              type: array
+              items:
+                $ref: "#/components/schemas/Lesson"
+
+    Lesson:
+      type: object
+      properties:
+        id:
+          type: integer
+        courseId:
+          type: integer
+        title:
+          type: string
+        content:
+          type: string
+        sortOrder:
+          type: integer
+        completed:
+          type: boolean
+        estimatedMinutes:
+          type: integer
+      required:
+        - id
+        - courseId
+        - title
+        - content
+        - sortOrder
+        - completed
+        - estimatedMinutes
+
+    CourseProgress:
+      type: object
+      properties:
+        courseId:
+          type: integer
+        lessonId:
+          type: integer
+        completed:
+          type: boolean
+        progressPercent:
+          type: integer
+      required:
+        - courseId
+        - lessonId
+        - completed
+        - progressPercent
+
+    UpdateCourseProgressBody:
+      type: object
+      properties:
+        lessonId:
+          type: integer
+        completed:
+          type: boolean
+      required:
+        - lessonId
+        - completed
+
+    DashboardSummary:
+      type: object
+      properties:
+        readinessScore:
+          type: integer
+        visaTarget:
+          type: string
+          enum: [eb1a, niw, o1]
+        totalEvidence:
+          type: integer
+        approvedEvidence:
+          type: integer
+        pendingEvidence:
+          type: integer
+        criteriaStrong:
+          type: integer
+        criteriaDeveloping:
+          type: integer
+        criteriaWeak:
+          type: integer
+        milestonesTotal:
+          type: integer
+        milestonesCompleted:
+          type: integer
+        coursesEnrolled:
+          type: integer
+        coursesCompleted:
+          type: integer
+        hasBlueprint:
+          type: boolean
+        accessLevel:
+          type: string
+          enum: [free, excellence_lab, evidence_vault, elite_blueprint]
+      required:
+        - readinessScore
+        - visaTarget
+        - totalEvidence
+        - approvedEvidence
+        - pendingEvidence
+        - criteriaStrong
+        - criteriaDeveloping
+        - criteriaWeak
+        - milestonesTotal
+        - milestonesCompleted
+        - coursesEnrolled
+        - coursesCompleted
+        - hasBlueprint
+        - accessLevel
+
+    ActivityItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+          enum: [evidence_added, evidence_approved, milestone_completed, course_progress, blueprint_updated, profile_updated]
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+      required:
+        - id
+        - type
+        - description
+        - createdAt

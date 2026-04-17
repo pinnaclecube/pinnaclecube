@@ -1,0 +1,387 @@
+# Pinnacle³ — Prompt 0: Business Context and Brand Guidelines
+# Run this FIRST before any code is written.
+# Every UI decision throughout the entire build must reflect this document.
+
+---
+
+## PROMPT 0 — Business context, brand identity, and design system
+
+Before writing a single line of code, internalize everything in this
+document completely. This is the authoritative brand and product
+reference for Pinnacle³. Every decision — colors, typography, copy,
+component names, spacing, empty states, button labels, error messages
+— must match what is defined here. Treat it as the single source of
+truth throughout the entire build.
+
+━━━ LOGO AND BRAND MARK ━━━
+
+The logo, as seen on the live site pinnaclecube.com, is:
+
+  [pinnacle]³
+
+Precise breakdown:
+- The word "pinnacle" is lowercase
+- It is wrapped in square brackets: [ and ] — these are structural
+  brand elements, always rendered in the same color as the text
+- The ³ superscript appears top-right of the closing bracket,
+  slightly smaller and slightly lighter in color (more violet/purple)
+- Full wordmark: [pinnacle]³
+
+Logo colors (on white background, as seen on live site):
+- Main text and brackets: Deep indigo — #1E2D6B
+- The ³ superscript: Lighter indigo-violet — #5B6BAE
+- Background: Pure white #FFFFFF
+
+Logo usage rules:
+- On white/light backgrounds: use #1E2D6B for text and brackets
+- Never distort the bracket proportions
+- The ³ is always superscript, never full-size
+- In plain text contexts where styling is unavailable: Pinnacle³
+- In styled UI contexts (navbar, hero, email headers): [pinnacle]³
+  with brackets rendered in brand indigo #1E2D6B
+
+━━━ TYPOGRAPHY ━━━
+
+Primary font: Plus Jakarta Sans (Google Fonts)
+This matches the letterform style visible on pinnaclecube.com —
+humanist geometric sans-serif with slightly rounded terminals,
+comfortable at both display and body sizes.
+
+Import in index.html:
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+Font stack: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif
+
+Type scale:
+  Display/Hero:     64px, weight 800
+  H1:               40px, weight 700
+  H2:               30px, weight 600
+  H3:               22px, weight 600
+  H4:               17px, weight 600
+  Body large:       17px, weight 400, line-height 1.7
+  Body:             15px, weight 400, line-height 1.6
+  Body small:       13px, weight 400, line-height 1.5
+  Caption/Eyebrow:  11px, weight 600, letter-spacing 0.08em, UPPERCASE
+  Button:           15px, weight 600
+  Nav links:        15px, weight 500
+
+Heading color treatment (from live site hero "Clarity for Extraordinary Talent"):
+  - Regular heading words: near-black #1A1A2E
+  - ONE accent word per heading (e.g. "Extraordinary"): brand indigo #3D4FA8
+    with subtle gradient to #6B78C4
+  - This gradient-word treatment is used sparingly — one word per hero heading
+    maximum. It is the brand's signature typographic accent.
+
+Eyebrow labels (e.g. "WHAT YOU GET FIRST", "EB1A · EB2 NIW · O1"):
+  11px, weight 600, letter-spacing 0.10em, text-transform uppercase
+  Color: #3D4FA8 for brand-colored eyebrows, #8A8FA8 for neutral eyebrows
+
+━━━ COLOR SYSTEM ━━━
+
+Define in :root in index.css AND map to Tailwind in tailwind.config.js.
+
+Brand indigo palette (extracted from logo and live site):
+  --pinnacle-900: #0D1340
+  --pinnacle-800: #141B52
+  --pinnacle-700: #1E2D6B    /* LOGO PRIMARY — main brand color */
+  --pinnacle-600: #2A3D8F
+  --pinnacle-500: #3D4FA8    /* ACCENT — highlighted text, active states, CTAs */
+  --pinnacle-400: #5B6BAE    /* LOGO ³ — softer indigo */
+  --pinnacle-300: #7D8EC4
+  --pinnacle-200: #A8B3D8
+  --pinnacle-100: #D4D9EE
+  --pinnacle-50:  #EEF0F8    /* lightest indigo wash — chip backgrounds */
+
+Page and surface (light theme — matches pinnaclecube.com):
+  --color-bg:              #FFFFFF    /* page background */
+  --color-bg-secondary:    #F8F9FC    /* subtle off-white sections */
+  --color-bg-tertiary:     #EEF0F8    /* light indigo wash — chips, tags */
+  --color-surface:         #FFFFFF    /* cards, panels */
+  --color-surface-hover:   #F8F9FC
+
+Borders:
+  --color-border:          #E8EAF0    /* default — very subtle */
+  --color-border-medium:   #C8CCE0    /* inputs, emphasis */
+  --color-border-strong:   #A8B3D8    /* strong dividers */
+
+Text:
+  --color-text-primary:    #1A1A2E    /* headings — near-black, blue undertone */
+  --color-text-secondary:  #4A4A6A    /* body — dark gray, slight purple */
+  --color-text-tertiary:   #7A7A9A    /* captions, hints */
+  --color-text-muted:      #A8A8C0    /* disabled, placeholders */
+  --color-text-brand:      #1E2D6B    /* brand indigo text */
+  --color-text-accent:     #3D4FA8    /* accent indigo */
+
+Semantic:
+  --color-success:         #166534
+  --color-success-bg:      #DCFCE7
+  --color-warning:         #92400E
+  --color-warning-bg:      #FEF3C7
+  --color-danger:          #991B1B
+  --color-danger-bg:       #FEE2E2
+  --color-info:            #1E40AF
+  --color-info-bg:         #DBEAFE
+
+Product accent colors (use consistently per product):
+  Excellence Lab:    #0F6E56  (teal)
+  Evidence Vault:    #7C3AED  (violet)
+  Elite Blueprint:   #B45309  (amber)
+  Petition/Docs:     #1E2D6B  (brand indigo)
+
+━━━ LAYOUT AND SPACING ━━━
+
+Base unit: 4px. Use multiples: 4, 8, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96px
+
+Max content width: 1280px, centered with auto horizontal margins
+Page horizontal padding: 24px (mobile), 48px (tablet), 64px (desktop)
+Navbar height: 64px, fixed, always on top
+Section vertical padding: 80px (marketing), 48px (app pages)
+
+Cards:
+  bg: #FFFFFF
+  border: 1px solid #E8EAF0
+  border-radius: 12px
+  padding: 24px
+  shadow (elevated cards): 0 1px 3px rgba(0,0,0,0.06), 0 8px 32px rgba(30,45,107,0.08)
+  shadow (flat cards): none — use border only
+
+Hero right-panel card (as on live site):
+  border-radius: 16px
+  padding: 32px
+  shadow: 0 1px 3px rgba(0,0,0,0.06), 0 8px 32px rgba(30,45,107,0.10)
+
+━━━ COMPONENTS ━━━
+
+BUTTONS — match live site exactly:
+
+Primary (e.g. "Get Instant Profile Insight"):
+  bg: #1E2D6B
+  text: #FFFFFF, 15px Plus Jakarta Sans SemiBold
+  padding: 12px 24px
+  border-radius: 8px
+  hover: bg #141B52
+  active: transform scale(0.98)
+  With right arrow → icon when used as primary page CTA
+
+Secondary (e.g. "Explore Programs"):
+  bg: #FFFFFF
+  text: #1A1A2E, 15px Plus Jakarta Sans SemiBold
+  border: 1.5px solid #C8CCE0
+  padding: 12px 24px
+  border-radius: 8px
+  hover: bg #F8F9FC, border-color #A8B3D8
+
+Ghost/text link:
+  bg: transparent, no border
+  text: #3D4FA8, 15px Medium
+  hover: color #1E2D6B, text-decoration underline
+
+Danger:
+  bg: transparent
+  text: #991B1B
+  border: 1.5px solid #991B1B
+  hover: bg #FEE2E2
+
+NAVBAR — match live site exactly:
+  bg: #FFFFFF
+  border-bottom: 1px solid #E8EAF0
+  height: 64px, position fixed, z-index 50
+  Logo: [pinnacle]³ left-aligned
+    Font: Plus Jakarta Sans Bold 20px
+    Color: brackets + text = #1E2D6B, superscript ³ = #5B6BAE
+  Nav links (center):
+    "How It Works" | "Products" | "Who It's For"
+    Font: 15px Medium, color #4A4A6A, hover color #1A1A2E
+  Right side logged-out: "Log in" (ghost) + primary CTA button
+  Right side logged-in: "Where You Stand" + notification bell + "Hi, {name}" + logout
+
+CHIPS AND PILLS:
+
+Eyebrow pill (e.g. "EB1A · EB2 NIW · O1"):
+  bg: #EEF0F8, text: #4A4A6A 13px Medium
+  border: 1px solid #D4D9EE, border-radius: 9999px, padding: 6px 14px
+
+Feature chip (e.g. "Structured evaluation"):
+  bg: #FFFFFF, text: #7A7A9A 13px Regular
+  border: 1px solid #E8EAF0, border-radius: 9999px, padding: 6px 14px
+
+Status badges:
+  Active:   bg #DCFCE7, text #166534, border-radius 6px, padding 3px 10px, 12px SemiBold
+  Pending:  bg #FEF3C7, text #92400E
+  Draft:    bg #EEF0F8, text #4A4A6A
+  Approved: bg #DBEAFE, text #1E40AF
+  Generating: bg #EEF0F8, text #4A4A6A, animated pulse
+
+CAROUSEL DOTS (as on live site hero):
+  Active: bg #1E2D6B, width 24px, height 8px, border-radius 4px (pill shape)
+  Inactive: bg #D4D9EE, width 8px, height 8px, border-radius 50%
+  Transition: width animates between 8px and 24px
+
+FORM INPUTS:
+  height: 42px
+  border: 1px solid #E8EAF0
+  border-radius: 8px
+  padding: 0 14px
+  font: 15px Plus Jakarta Sans Regular
+  placeholder: color #A8A8C0
+  focus: border-color #3D4FA8, box-shadow 0 0 0 3px rgba(61,79,168,0.12)
+  error: border-color #991B1B, box-shadow 0 0 0 3px rgba(153,27,27,0.10)
+  label: 14px SemiBold, color #1A1A2E, display block, margin-bottom 6px
+  helper text: 12px Regular, color #7A7A9A, margin-top 4px
+
+HERO TWO-COLUMN LAYOUT (signature pattern — replicate throughout):
+  Left (60%):
+    Eyebrow pill
+    Large heading with one indigo-gradient accent word
+    Body text: 17px, color #4A4A6A, max-width 520px
+    Two buttons: primary CTA + secondary CTA, gap 12px
+    Feature chips row
+    Carousel dots
+  Right (40%):
+    Elevated white card with shadow
+    "WHAT YOU GET FIRST" eyebrow in #3D4FA8
+    Heading + bullet list with circle-check icons in #3D4FA8
+    Summary statement in #4A4A6A
+
+BULLET ICONS in feature lists:
+  Circle with checkmark stroke style (⊙), color #3D4FA8, size 20px
+  Use lucide-react CheckCircle icon, strokeWidth 1.5
+
+━━━ ICONS ━━━
+
+Library: lucide-react throughout
+Size: 18px default, 20px for feature lists, 16px for inline/small
+strokeWidth: 1.5 (not the default 2 — keep it refined)
+Color: match context
+
+━━━ MOTION AND ANIMATION ━━━
+
+Subtle and purposeful. Professional platform, not consumer app.
+
+Transitions:
+  Hover/state changes: 150ms ease-out
+  Modals and panels: 200ms ease-out (fade + slight translate)
+  Page transitions: 250ms ease-out (fade)
+
+Hero carousel: opacity fade + 8px upward translate, 300ms ease-out
+Auto-advance: 5 seconds
+
+Never use:
+  Bounce, spring, elastic easings
+  Confetti or celebration effects
+  Parallax scrolling
+  Heavy stagger animations across many elements
+
+━━━ BUSINESS IDENTITY ━━━
+
+App name: Pinnacle³
+Domain: pinnaclecube.com
+Tagline: Clarity for Extraordinary Talent
+
+What we do:
+A premium coaching and preparation platform helping high-achieving
+tech professionals build their case for EB-1A, EB-2 NIW, and O-1A
+visas. Not a law firm. Not legal advice. We prepare professionals
+to work more effectively with their immigration attorneys.
+
+Business model:
+  Excellence Lab:   Stripe checkout (self-serve)
+  Evidence Vault:   Stripe checkout (self-serve), bundled with Blueprint
+  Elite Blueprint:  Application-only, offline payment, staff-grants access
+
+━━━ TARGET USER ━━━
+
+Primary: Senior tech professional. ML Engineer, Research Scientist,
+Product Director. 7–15 years experience. H-1B or F-1 OPT.
+Time-poor. High standards. Skeptical of generic advice.
+
+Secondary (staff): Immigration consultants managing 20–100 cases.
+
+━━━ TONE OF VOICE ━━━
+
+Professional, precise, confident, empowering.
+Never casual, salesy, vague, or condescending.
+Address users in second person. Reference real USCIS criteria names.
+Respect their intelligence. Be honest about complexity.
+
+Correct: "Your Scholarly Articles criterion has 3 items. A strong
+          EB-1A case typically needs 5 or more."
+Wrong:   "Great job! Keep uploading your documents! 🎉"
+
+Empty states — informative:
+Correct: "No evidence uploaded for Scholarly Articles. This criterion
+          typically requires 5+ items for a strong showing."
+Wrong:   "Nothing here yet! Start adding your evidence."
+
+━━━ PRODUCT AND FEATURE NAMING ━━━
+
+Products (never substitute these names):
+  Excellence Lab    (not Courses, Learning, Academy)
+  Evidence Vault    (not Documents, Files, Storage)
+  Elite Blueprint   (not Premium Plan, Strategy, Pro)
+
+Features:
+  Instant Profile Insight
+  Where You Stand
+  Readiness Intake
+  Criteria Exhibit
+  Petition Package
+  Personalized Learning Plan
+
+Visa types in UI: EB-1A | EB-2 NIW | O-1A (always hyphenated)
+In code/DB: eb1a | niw | o1
+
+Nav labels (match live site): How It Works | Products | Who It's For
+Primary CTA label: Get Instant Profile Insight
+
+━━━ LEGAL AND COMPLIANCE ━━━
+
+Not a law firm. No legal advice. All AI output labeled.
+Users must verify AI content. Build disclaimers architecturally:
+  - Every page: legal footer bar
+  - Every AI output block: AI output banner above it
+  - Every generated PDF: disclaimer block page 1 + footer every page
+  - Registration: two required consent checkboxes
+These are non-negotiable and never dismissable.
+
+━━━ TAILWIND CONFIG ━━━
+
+Add to tailwind.config.js:
+
+colors: {
+  pinnacle: {
+    50:  '#EEF0F8',
+    100: '#D4D9EE',
+    200: '#A8B3D8',
+    300: '#7D8EC4',
+    400: '#5B6BAE',
+    500: '#3D4FA8',
+    600: '#2A3D8F',
+    700: '#1E2D6B',
+    800: '#141B52',
+    900: '#0D1340',
+  },
+}
+
+fontFamily: {
+  sans: ['Plus Jakarta Sans', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+}
+
+━━━ ABSOLUTE DO-NOTS ━━━
+
+- Never use Inter, Roboto, or system-ui as the primary font
+- Never use dark/black page backgrounds (light theme throughout)
+- Never use purple gradient hero backgrounds
+- Never use pill-shaped (border-radius 9999px) primary CTA buttons
+- Never add Stripe checkout to Elite Blueprint (offline payment only)
+- Never let clients trigger document generation (staff only)
+- Never make disclaimer banners or footers dismissable or conditional
+- Never use emoji in the product UI
+- Never write generic copy ("Awesome!", "Let's go!", "You're all set!")
+
+━━━ VISUAL REFERENCE ━━━
+
+Live site: pinnaclecube.com
+When uncertain about any visual decision, ask: does this match
+the precision, restraint, and professionalism of what is already
+live on that site? If yes, proceed. If not, revise.
