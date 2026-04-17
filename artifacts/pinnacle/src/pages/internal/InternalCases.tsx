@@ -1,11 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
-import { Search, User, ChevronRight } from "lucide-react";
+import { Search, User, ChevronRight, Database, Loader2, CheckCircle, AlertTriangle } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface CaseProfile {
   id: number;
@@ -16,26 +17,59 @@ interface CaseProfile {
   createdAt: string;
 }
 
+function staffFetch(path: string, opts: RequestInit = {}) {
+  return fetch(`/api${path}`, {
+    ...opts,
+    headers: {
+      "X-Staff-Token": getStaffToken() ?? "",
+      ...(opts.body ? { "Content-Type": "application/json" } : {}),
+      ...(opts.headers ?? {}),
+    },
+  });
+}
+
 export default function InternalCases() {
   const [profiles, setProfiles] = useState<CaseProfile[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [seeding, setSeeding] = useState(false);
+  const [seedMsg, setSeedMsg] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await fetch("/api/admin/profiles", {
-          headers: { "X-Staff-Token": getStaffToken() ?? "" },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setProfiles(data.profiles ?? []);
-        }
-      } catch { /* ignore */ }
-      setLoading(false);
-    };
-    load();
+  const loadProfiles = useCallback(async () => {
+    try {
+      const res = await staffFetch("/admin/profiles");
+      if (res.ok) {
+        const data = await res.json();
+        setProfiles(data.profiles ?? []);
+      }
+    } catch { /* ignore */ }
+    setLoading(false);
   }, []);
+
+  useEffect(() => { loadProfiles(); }, [loadProfiles]);
+
+  const seedDemo = async () => {
+    setSeeding(true);
+    setSeedMsg(null);
+    try {
+      const r = await staffFetch("/admin/seed-demo", { method: "POST" });
+      const d = await r.json();
+      if (r.ok) {
+        if (d.alreadySeeded) {
+          setSeedMsg({ type: "info", text: "Demo data already present — nothing changed." });
+        } else {
+          setSeedMsg({ type: "success", text: `Seeded ${d.summary.profiles} clients, ${d.summary.prospects} prospects, and ${d.summary.applications} Blueprint applications.` });
+          await loadProfiles();
+        }
+      } else {
+        setSeedMsg({ type: "error", text: d.detail ?? d.error ?? "Seed failed — check server logs." });
+      }
+    } catch {
+      setSeedMsg({ type: "error", text: "Network error — could not reach the API." });
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   const filtered = profiles.filter((p) =>
     (p.name ?? "").toLowerCase().includes(search.toLowerCase()) ||
@@ -56,8 +90,33 @@ export default function InternalCases() {
 
       <main className="px-8 py-8 max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-foreground">Active Cases</h2>
-          <Badge variant="secondary">{profiles.length} clients</Badge>
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">Active Cases</h2>
+            {seedMsg && (
+              <div className={cn(
+                "flex items-center gap-1.5 mt-1 text-sm",
+                seedMsg.type === "success" ? "text-green-700" : seedMsg.type === "error" ? "text-red-600" : "text-blue-700",
+              )}>
+                {seedMsg.type === "success" && <CheckCircle className="w-3.5 h-3.5" />}
+                {seedMsg.type === "error" && <AlertTriangle className="w-3.5 h-3.5" />}
+                {seedMsg.text}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <Badge variant="secondary">{profiles.length} clients</Badge>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 text-xs"
+              onClick={seedDemo}
+              disabled={seeding}
+              title="Load demo client data into this environment"
+            >
+              {seeding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Database className="w-3.5 h-3.5" />}
+              {seeding ? "Seeding…" : "Load Demo Data"}
+            </Button>
+          </div>
         </div>
 
         <div className="relative mb-6">
@@ -76,9 +135,23 @@ export default function InternalCases() {
           </div>
         ) : filtered.length === 0 ? (
           <Card>
-            <CardContent className="py-16 text-center">
-              <User className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+            <CardContent className="py-16 text-center space-y-4">
+              <User className="w-10 h-10 text-muted-foreground mx-auto" />
               <p className="text-muted-foreground">{search ? "No results found." : "No cases yet."}</p>
+              {!search && (
+                <div className="pt-2">
+                  <p className="text-xs text-muted-foreground mb-3">This is a fresh environment — load demo client data to get started.</p>
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    onClick={seedDemo}
+                    disabled={seeding}
+                  >
+                    {seeding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+                    {seeding ? "Loading demo data…" : "Load Demo Data"}
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         ) : (
