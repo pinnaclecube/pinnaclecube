@@ -17,6 +17,7 @@ import {
   activityTable,
   clientActivityLogTable,
   visaCriteriaTable,
+  profilesTable,
 } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import {
@@ -25,7 +26,7 @@ import {
   generateExhibitIndex,
   generateCoverLetter,
 } from "../services/petitionDocumentGenerator";
-import { createPetitionFolders, publishPetitionFile } from "../services/googleDrive";
+import { createClientRootFolders, createPetitionFolders, publishPetitionFile } from "../services/googleDrive";
 import { z } from "zod/v4";
 
 const router: IRouter = Router();
@@ -41,12 +42,20 @@ function getExhibitNumber(index: number, style: string): string {
   return String(index + 1);
 }
 
-async function tryCreatePetitionFolders(userId: number): Promise<void> {
+async function tryCreatePetitionFolders(userId: number, clientEmail: string): Promise<void> {
   try {
-    await createPetitionFolders(userId);
+    await createClientRootFolders(userId, clientEmail);
+    console.info(`[petitionAdmin] Drive root folders created for user ${userId}`);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`[petitionAdmin] Drive folder creation skipped: ${msg}`);
+    console.warn(`[petitionAdmin] Drive root folder creation skipped: ${msg}`);
+  }
+  try {
+    await createPetitionFolders(userId);
+    console.info(`[petitionAdmin] Drive petition folders created for user ${userId}`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[petitionAdmin] Drive petition folder creation skipped: ${msg}`);
   }
 }
 
@@ -93,6 +102,18 @@ router.post(
     }
 
     const { userId, visaPath, selectedCriteria, exhibitNumberingStyle } = parsed.data;
+
+    // Fetch client profile for Drive folder creation
+    const [clientProfile] = await db
+      .select({ email: profilesTable.email })
+      .from(profilesTable)
+      .where(eq(profilesTable.id, userId))
+      .limit(1);
+
+    if (!clientProfile) {
+      res.status(400).json({ error: `No profile found for userId ${userId}` });
+      return;
+    }
 
     // Fetch visa criteria details for selected IDs
     const criteriaDetails = await db
@@ -143,7 +164,7 @@ router.post(
 
     // Fire-and-forget: create petition Drive folders
     setImmediate(() => {
-      tryCreatePetitionFolders(userId).catch(() => {});
+      tryCreatePetitionFolders(userId, clientProfile.email).catch(() => {});
     });
 
     res.status(201).json({ setup, exhibits, package: pkg });
