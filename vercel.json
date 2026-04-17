@@ -1,0 +1,17 @@
+{
+  "buildCommand": "npm install -g pnpm && pnpm install --frozen-lockfile && pnpm --filter @workspace/pinnacle run build",
+  "outputDirectory": "artifacts/pinnacle/dist/public",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://your-api.railway.app/api/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
+}

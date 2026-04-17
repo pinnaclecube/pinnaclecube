@@ -71,14 +71,12 @@ export interface CriteriaExhibitJson {
 // ─── AI client ────────────────────────────────────────────────────────────────
 
 function getAI(): Anthropic {
-  const apiKey = process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY;
+  const apiKey = process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY ?? process.env.ANTHROPIC_API_KEY;
   const baseURL = process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL;
-  if (!apiKey || !baseURL) {
-    throw new Error(
-      "Anthropic AI integration is not provisioned. Add AI_INTEGRATIONS_ANTHROPIC_API_KEY.",
-    );
+  if (!apiKey) {
+    throw new Error("Set ANTHROPIC_API_KEY or provision the Replit Anthropic AI integration.");
   }
-  return new Anthropic({ apiKey, baseURL });
+  return new Anthropic({ apiKey, ...(baseURL ? { baseURL } : {}) });
 }
 
 // ─── Client context builder ───────────────────────────────────────────────────

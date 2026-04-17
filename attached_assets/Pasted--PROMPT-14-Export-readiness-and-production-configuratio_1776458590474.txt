@@ -1,0 +1,83 @@
+## PROMPT 14 — Export readiness and production configuration
+
+Prepare Pinnacle³ for export from Replit and deployment to Vercel + Railway.
+
+**Create /vercel.json:**
+```json
+{
+  "buildCommand": "cd client && npm install && npm run build",
+  "outputDirectory": "client/dist",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "https://your-railway-app.railway.app/api/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
+```
+Replace railway URL placeholder with env var: use BACKEND_URL environment variable.
+
+**Update /server/index.js for production:**
+- When NODE_ENV=production: serve client/dist as static files
+- All unknown routes return index.html (client-side routing fallback)
+- Keep all /api routes working in both modes
+
+**Create /Dockerfile (for Railway):**
+```dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY server/package*.json ./server/
+RUN cd server && npm install --production
+COPY server/ ./server/
+COPY shared/ ./shared/
+EXPOSE 5000
+CMD ["node", "server/index.js"]
+```
+
+**Create /README.md — deployment checklist:**
+
+### Supabase Setup
+1. Create new Supabase project
+2. Run all migrations in /server/db/migrations/ in order (001, 002, 003)
+3. Copy SUPABASE_URL and service role key (not anon key) to env
+
+### Google Cloud Setup
+1. Create a Google Cloud project
+2. Enable Google Drive API
+3. Create a Service Account
+4. Download JSON key — paste as single line string to GOOGLE_SERVICE_ACCOUNT_JSON
+5. In Google Drive: share your org's root folder with the service account email (Editor access)
+6. Copy the root folder ID from the Drive URL to GOOGLE_DRIVE_ROOT_FOLDER_ID
+
+### Anthropic Setup
+1. Get API key from console.anthropic.com
+2. Set ANTHROPIC_API_KEY in env
+
+### Stripe Setup (Excellence Lab and Evidence Vault only)
+1. Get secret key from Stripe dashboard
+2. Create webhook pointing to {your-backend-url}/api/webhooks/stripe
+3. Events to listen: checkout.session.completed
+4. Set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET
+
+### Gmail Setup (for email sending)
+1. Enable Gmail API in Google Cloud Console
+2. Create OAuth credentials
+3. Get refresh token via OAuth playground
+4. Set GMAIL_USER, GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN
+
+### Vercel Deployment
+1. Connect GitHub repo to Vercel
+2. Set BACKEND_URL to your Railway app URL
+3. Deploy
+
+### Railway Deployment
+1. Connect GitHub repo to Railway
+2. Set all server environment variables
+3. Railway auto-deploys on push to main
+
+### Post-deployment
+1. Test registration flow end-to-end
+2. Test Drive folder creation on intake completion
+3. Test evidence upload routes to correct criterion folder
+4. Test lesson generation (first load will generate, subsequent loads from cache)
+5. Confirm PDF disclaimers appear on all generated documents
+6. Confirm all screens show legal footer
+```
