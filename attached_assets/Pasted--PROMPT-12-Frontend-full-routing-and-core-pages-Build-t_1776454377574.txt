@@ -1,0 +1,96 @@
+## PROMPT 12 — Frontend: full routing and core pages
+
+Build the complete React frontend.
+
+**Create /client/src/context/AuthContext.tsx:**
+- Stores: clientUser, JWT, isLoading
+- login(email, password) → calls API, stores JWT in localStorage, handles requiresReconsent
+- logout() → clears localStorage, redirects to /login
+- updateClientUser(updates) → updates local state
+
+**Create /client/src/hooks/useProductAccess.ts:**
+- Reads clientUser.products (fetched from GET /api/auth/me which includes products)
+- Returns: { hasExcellenceLab, hasEvidenceVault, hasEliteBlueprint, isLoading }
+
+**Create /client/src/lib/api.ts:**
+- Axios instance with baseURL='/api'
+- Request interceptor: add Authorization: Bearer {JWT} from localStorage
+- Response interceptor: catch 403 { requiresReconsent: true } → trigger DisclaimerContext
+
+**Set up routing in /client/src/App.tsx:**
+
+Public routes:
+/ → HomePage
+/excellence-lab → ExcellenceLabMarketing
+/evidence-vault → EvidenceVaultMarketing
+/elite-blueprint → EliteBlueprintMarketing
+/instant-profile-insight/start → InstantProfileInsightStart
+/instant-profile-insight/results → InstantProfileInsightResults
+/quiz → Quiz
+/register → ClientRegister
+/login → ClientLogin
+
+Protected client routes (redirect to /login if no JWT):
+/dashboard → Dashboard
+/dashboard/readiness-intake → ReadinessIntake
+/dashboard/excellence-lab → ExcellenceLabDashboard
+/dashboard/excellence-lab/module/:id → ExcellenceLabModule
+/dashboard/excellence-lab/lesson/:id → ExcellenceLabLesson
+/dashboard/evidence-vault → EvidenceVaultDashboard
+/dashboard/evidence-vault/:id → EvidenceDetail
+/dashboard/elite-blueprint → EliteBlueprintDashboard
+
+Checkout routes:
+/excellence-lab/checkout → ExcellenceLabCheckout
+/excellence-lab/success → ExcellenceLabSuccess
+/excellence-lab/cancel → ExcellenceLabCancel
+/evidence-vault/checkout → EvidenceVaultCheckout
+/evidence-vault/success → EvidenceVaultSuccess
+/evidence-vault/cancel → EvidenceVaultCancel
+
+Elite Blueprint (no checkout — application flow only):
+/elite-blueprint/apply → EliteBlueprintApply
+/elite-blueprint/submitted → EliteBlueprintSubmitted
+
+Internal routes (require X-Staff-Token header or staff session):
+/internal/cases → InternalCases
+/internal/case/:user_id → InternalCaseDetail
+/internal/case/:user_id/activity-log → InternalCaseActivityLog
+/internal/case/:user_id/evidence/:evidence_id → InternalEvidenceDetail
+/internal/prospects → InternalProspects
+/internal/prospect/:id → InternalProspectDetail
+/internal/elite-blueprint-applications → InternalEliteBlueprintApplications
+/internal/elite-blueprint-applications/:id → InternalEliteBlueprintApplicationDetail
+
+**Build these pages fully (not placeholders):**
+
+1. ClientRegister — form with: first_name, last_name, email, password, two disclaimer checkboxes (required). Calls POST /api/auth/register.
+
+2. ClientLogin — email + password form. Handles requiresReconsent by showing ReconsentModal.
+
+3. ReadinessIntake — multi-step form collecting all intake fields. On completion calls intake complete endpoint which triggers Drive folder creation. Shows progress bar.
+
+4. Dashboard — welcome panel, AI profile summary button, product status cards (Excellence Lab, Evidence Vault, Elite Blueprint), action items section, My Documents section (published docs only, read-only).
+
+5. EvidenceVaultDashboard — criteria-mapped view:
+   - One card per criterion for client's visa path
+   - Shows evidence count per criterion
+   - Drive folder link per criterion
+   - "Add Evidence" button on each card (pre-selects that criterion)
+   - AddEvidenceDialog: criterion dropdown (pre-filtered to visa path), description of legal standard shown, "will save to: {folderName}" preview
+   - AIOutputBanner above gap analysis section
+
+6. ExcellenceLabLesson — fetches lesson content from GET /api/lessons/:id. Shows LessonDisclaimer at top. Renders personalized content sections. Complete button. Evidence prompt with link to add evidence.
+
+7. EliteBlueprintApply — full application form. On submit shows confirmation page.
+
+**Build Navbar component:**
+- Fixed top, brand logo, public links when logged out
+- When logged in: "Where You Stand" button, notification bell, "Hi, {firstName}" → opens ClientProfileDialog, logout
+- ClientProfileDialog: edit profile fields + reset password
+
+**Build Notification system:**
+- NotificationBell component with unread count badge
+- Slide-over panel: list notifications, mark read, mark all read, archive, navigate by link
+
+---

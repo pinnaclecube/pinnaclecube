@@ -12,6 +12,8 @@ import petitionClientRouter from "./petitionClient";
 import coursesRouter from "./courses";
 import dashboardRouter from "./dashboard";
 import lessonsRouter from "./lessons";
+import notificationsRouter from "./notifications";
+import intakeRouter from "./intake";
 
 const router: IRouter = Router();
 
@@ -28,5 +30,7 @@ router.use(petitionClientRouter);
 router.use(coursesRouter);
 router.use(dashboardRouter);
 router.use(lessonsRouter);
+router.use(notificationsRouter);
+router.use(intakeRouter);
 
 export default router;

@@ -30,19 +30,48 @@ Premium immigration advisory coaching platform for high-achieving tech professio
 
 ## Products
 
-- **Excellence Lab** — Learning courses (Stripe checkout, self-serve)
-- **Evidence Vault** — Document/evidence tracking (Stripe checkout, self-serve)
+- **Excellence Lab** — Learning courses (Stripe checkout, self-serve, $297 one-time)
+- **Evidence Vault** — Document/evidence tracking (Stripe checkout, self-serve, $497 one-time)
 - **Elite Blueprint** — Personalized strategy (application-only, offline payment)
+
+## Authentication System (Prompt 12)
+
+JWT-based auth stored in `localStorage['pinnacle_token']`.
+
+- `POST /api/auth/register` — Create account, requires dual disclaimer checkboxes, returns JWT
+- `POST /api/auth/login` — Login, returns JWT; 403 if disclaimerVersion mismatch
+- `GET /api/auth/me` — Get current user from JWT
+- `POST /api/auth/accept-disclaimer` — Accept new disclaimer version
+- `POST /api/auth/update-profile` — Update profile fields
+- `POST /api/auth/reset-password` — Change password (requires JWT)
+
+Frontend: `AuthContext.tsx` stores JWT, calls `setAuthTokenGetter` to wire custom-fetch.
+`requireClientAuth` middleware attaches `req.clientUser` (full profile object).
+
+Staff auth: `X-Staff-Token` header, sessionStorage key `pinnacle_staff_token`.
 
 ## Key Pages
 
-### Public
+### Public (no auth required)
 - `/` — Landing page (marketing)
 - `/how-it-works` — Process explanation
 - `/products` — Three products detail
+- `/excellence-lab` — Excellence Lab marketing + pricing
+- `/evidence-vault` — Evidence Vault marketing + pricing
+- `/elite-blueprint` — Elite Blueprint marketing
+- `/elite-blueprint/apply` — Application form
+- `/elite-blueprint/submitted` — Post-application confirmation
+- `/quiz` — 6-question visa readiness quiz
+- `/instant-profile-insight/start` — AI profile insight form
+- `/instant-profile-insight/results` — AI profile insight results
+- `/login` — JWT login
+- `/register` — Account creation with dual disclaimer checkboxes
+- `/excellence-lab/checkout|success|cancel` — Stripe checkout flow
+- `/evidence-vault/checkout|success|cancel` — Stripe checkout flow
 
-### App
+### Protected (requires JWT)
 - `/dashboard` — Overview with readiness score, evidence, milestones
+- `/dashboard/readiness-intake` — Multi-step onboarding form (5 steps)
 - `/where-you-stand` — Readiness score and criterion breakdown
 - `/evidence` — Evidence Vault list
 - `/evidence/:id` — Evidence item detail
@@ -53,9 +82,36 @@ Premium immigration advisory coaching platform for high-achieving tech professio
 - `/courses/:id` — Course detail with lesson progress
 - `/profile` — User profile
 
+### Internal Staff (requires X-Staff-Token)
+- `/internal/cases` — All client profiles list
+- `/internal/case/:id` — Client case detail + stats
+- `/internal/case/:id/activity-log` — Client activity feed
+- `/internal/case/:id/evidence/:eid` — Evidence review
+- `/internal/prospects` — Lead/prospect CRM
+- `/internal/prospect/:id` — Prospect detail
+- `/internal/elite-blueprint-applications` — Blueprint application review
+- `/internal/elite-blueprint-applications/:id` — Application detail + status update
+
+## Components
+
+### Auth Components
+- `contexts/AuthContext.tsx` — JWT auth state, login/logout/register
+- `hooks/useProductAccess.ts` — Access level gating (excellence_lab/evidence_vault/elite_blueprint)
+- `components/auth/ProtectedRoute.tsx` — JWT auth guard
+- `components/auth/StaffProtectedRoute.tsx` — Staff token gate
+- `components/auth/ClientProfileDialog.tsx` — Profile edit + password change dialog
+
+### Notification Components
+- `components/notifications/NotificationBell.tsx` — Bell icon with unread count badge; polls every 60s
+- `components/notifications/NotificationPanel.tsx` — Slide-over panel; mark read, dismiss, link out
+
+### Navigation
+- `components/layout/Navbar.tsx` — Auth-aware: public (Sign In + Get Started + product links) vs. authenticated (Where You Stand + bell + user menu with profile dialog + logout)
+- `components/ui/logo.tsx` — Accepts `href` prop (default `/`)
+
 ## DB Schema (lib/db/src/schema/)
 
-- `profiles` — User profile (visa target, profession, access level)
+- `profiles` — User profile (visa target, profession, access level, password hash)
 - `criteria` — USCIS criteria (eb1a / niw / o1)
 - `evidence` — Evidence items per criterion
 - `blueprints` — Elite Blueprint strategy
@@ -64,15 +120,36 @@ Premium immigration advisory coaching platform for high-achieving tech professio
 - `lessons` — Course lessons
 - `course_progress` — Per-lesson progress tracking
 - `activity` — Activity feed
+- `notifications` — Client notifications (unread/read, userType, priority)
+- `readiness_intake` — Multi-step intake form (linked to profile, triggers Drive setup)
+- `client_action_items` — Staff-assigned tasks
+- `client_drive_folders` — Google Drive folder mappings
+- `visa_criteria` — Detailed EB-1A/NIW/O-1A criteria (separate from criteria table)
+- `blueprints_applications` — Elite Blueprint applications (public apply form)
 
-## Key Commands
+## API Routes
 
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- `pnpm --filter @workspace/api-server run dev` — run API server locally
-- `pnpm --filter @workspace/pinnacle run dev` — run frontend locally
+### Auth
+- `POST /api/auth/register|login|me|accept-disclaimer|update-profile|reset-password`
+
+### Client (requires JWT Bearer)
+- `GET/PATCH /api/profile` — Profile management
+- `GET /api/profile/readiness` — Readiness score
+- `GET /api/dashboard/summary` — Dashboard stats
+- `GET /api/dashboard/activity` — Recent activity
+- `GET /api/courses`, `GET /api/courses/:id`, `PATCH /api/courses/:id/progress`
+- `GET /api/blueprint`, `GET/POST /api/blueprint/milestones`, `PATCH /api/blueprint/milestones/:id`
+- `GET /api/evidence`, `POST /api/evidence`, `GET/PATCH /api/evidence/:id`, etc.
+- `GET /api/notifications`, `PATCH /api/notifications/:id/read`, `POST /api/notifications/read-all`, `DELETE /api/notifications/:id`
+- `GET/POST /api/intake`, `POST /api/intake/complete`
+- `GET /api/lessons/:path` (lessons require Excellence Lab access)
+
+### Public
+- `GET /api/criteria` — Reference visa criteria
+- `POST /api/blueprint/apply` — Elite Blueprint application (no auth)
+
+### Staff (requires X-Staff-Token)
+- `/api/admin/*` — Client management, blueprint application review
 
 ## Legal / Disclaimer System (Prompt 11)
 
@@ -94,9 +171,11 @@ Backend: `requireClientAuth` middleware (clientAuth.ts) enforces disclaimer vers
 
 Every page includes the non-negotiable, non-dismissable legal footer bar. All AI output blocks show variant-specific disclaimers.
 
-## Important Notes
+## Key Commands
 
-- Single demo profile (ID=1, Dr. Priya Mehta) — no auth yet
-- All API routes use DEFAULT_PROFILE_ID = 1
-- api-zod/src/index.ts only exports from ./generated/api (codegen script patches this)
-- orval config removes schemas: option to avoid duplicate exports
+- `pnpm run typecheck` — full typecheck across all packages
+- `pnpm run build` — typecheck + build all packages
+- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
+- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
+- `pnpm --filter @workspace/api-server run dev` — run API server locally
+- `pnpm --filter @workspace/pinnacle run dev` — run frontend locally

@@ -10,9 +10,9 @@ import {
   UpdateMilestoneResponse,
   ListMilestonesResponseItem,
 } from "@workspace/api-zod";
+import { requireClientAuth } from "../middlewares/clientAuth";
 
 const router: IRouter = Router();
-const DEFAULT_USER_ID = 1;
 
 function formatMilestone(m: typeof milestonesTable.$inferSelect) {
   return {
@@ -24,22 +24,21 @@ function formatMilestone(m: typeof milestonesTable.$inferSelect) {
   };
 }
 
-router.get("/blueprint", async (req, res): Promise<void> => {
-  const [blueprint] = await db.select().from(blueprintsTable).where(eq(blueprintsTable.userId, DEFAULT_USER_ID));
+router.get("/blueprint", requireClientAuth, async (req: any, res): Promise<void> => {
+  const [blueprint] = await db.select().from(blueprintsTable).where(eq(blueprintsTable.userId, req.clientUser.id));
   if (!blueprint) {
     res.status(404).json({ error: "No blueprint found" });
     return;
   }
-  const result = {
+  res.json(GetBlueprintResponse.parse({
     ...blueprint,
     targetFilingDate: blueprint.targetFilingDate ? blueprint.targetFilingDate.toString() : null,
     assignedConsultant: blueprint.assignedConsultant ?? null,
-  };
-  res.json(GetBlueprintResponse.parse(result));
+  }));
 });
 
-router.get("/blueprint/milestones", async (req, res): Promise<void> => {
-  const [blueprint] = await db.select().from(blueprintsTable).where(eq(blueprintsTable.userId, DEFAULT_USER_ID));
+router.get("/blueprint/milestones", requireClientAuth, async (req: any, res): Promise<void> => {
+  const [blueprint] = await db.select().from(blueprintsTable).where(eq(blueprintsTable.userId, req.clientUser.id));
   if (!blueprint) {
     res.json(ListMilestonesResponse.parse([]));
     return;
@@ -51,14 +50,14 @@ router.get("/blueprint/milestones", async (req, res): Promise<void> => {
   res.json(ListMilestonesResponse.parse(milestones.map(formatMilestone)));
 });
 
-router.post("/blueprint/milestones", async (req, res): Promise<void> => {
+router.post("/blueprint/milestones", requireClientAuth, async (req: any, res): Promise<void> => {
   const parsed = CreateMilestoneBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
 
-  const [blueprint] = await db.select().from(blueprintsTable).where(eq(blueprintsTable.userId, DEFAULT_USER_ID));
+  const [blueprint] = await db.select().from(blueprintsTable).where(eq(blueprintsTable.userId, req.clientUser.id));
   if (!blueprint) {
     res.status(404).json({ error: "No blueprint found. Elite Blueprint access required." });
     return;
@@ -75,7 +74,7 @@ router.post("/blueprint/milestones", async (req, res): Promise<void> => {
   res.status(201).json(ListMilestonesResponseItem.parse(formatMilestone(milestone)));
 });
 
-router.patch("/blueprint/milestones/:milestoneId", async (req, res): Promise<void> => {
+router.patch("/blueprint/milestones/:milestoneId", requireClientAuth, async (req: any, res): Promise<void> => {
   const params = UpdateMilestoneParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -95,9 +94,7 @@ router.patch("/blueprint/milestones/:milestoneId", async (req, res): Promise<voi
   if (parsed.data.sortOrder !== undefined) updateData.sortOrder = parsed.data.sortOrder;
   if (parsed.data.completed !== undefined) {
     updateData.completed = parsed.data.completed ? "true" : "false";
-    if (parsed.data.completed) {
-      updateData.completedAt = new Date();
-    }
+    if (parsed.data.completed) updateData.completedAt = new Date();
   }
 
   const [milestone] = await db
@@ -113,7 +110,7 @@ router.patch("/blueprint/milestones/:milestoneId", async (req, res): Promise<voi
 
   if (parsed.data.completed) {
     await db.insert(activityTable).values({
-      profileId: DEFAULT_USER_ID,
+      profileId: req.clientUser.id,
       type: "milestone_completed",
       description: `Milestone completed: ${milestone.title}`,
       metadata: { milestoneId: milestone.id },

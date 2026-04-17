@@ -1,38 +1,22 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
-import { db, profilesTable, criteriaTable, evidenceTable, blueprintsTable, milestonesTable, coursesTable, courseProgressTable } from "@workspace/db";
+import { db, profilesTable, criteriaTable, evidenceTable } from "@workspace/db";
 import {
   GetProfileResponse,
-  CreateProfileBody,
   UpdateProfileBody,
   UpdateProfileResponse,
   GetReadinessResponse,
 } from "@workspace/api-zod";
+import { requireClientAuth } from "../middlewares/clientAuth";
 
 const router: IRouter = Router();
 
-const DEFAULT_PROFILE_ID = 1;
-
-router.get("/profile", async (req, res): Promise<void> => {
-  const [profile] = await db.select().from(profilesTable).where(eq(profilesTable.id, DEFAULT_PROFILE_ID));
-  if (!profile) {
-    res.status(404).json({ error: "Profile not found" });
-    return;
-  }
+router.get("/profile", requireClientAuth, async (req: any, res): Promise<void> => {
+  const profile = req.clientUser;
   res.json(GetProfileResponse.parse(profile));
 });
 
-router.post("/profile", async (req, res): Promise<void> => {
-  const parsed = CreateProfileBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
-  const [profile] = await db.insert(profilesTable).values(parsed.data).returning();
-  res.status(201).json(GetProfileResponse.parse(profile));
-});
-
-router.patch("/profile", async (req, res): Promise<void> => {
+router.patch("/profile", requireClientAuth, async (req: any, res): Promise<void> => {
   const parsed = UpdateProfileBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -41,7 +25,7 @@ router.patch("/profile", async (req, res): Promise<void> => {
   const [profile] = await db
     .update(profilesTable)
     .set(parsed.data)
-    .where(eq(profilesTable.id, DEFAULT_PROFILE_ID))
+    .where(eq(profilesTable.id, req.clientUser.id))
     .returning();
   if (!profile) {
     res.status(404).json({ error: "Profile not found" });
@@ -50,15 +34,10 @@ router.patch("/profile", async (req, res): Promise<void> => {
   res.json(UpdateProfileResponse.parse(profile));
 });
 
-router.get("/profile/readiness", async (req, res): Promise<void> => {
-  const [profile] = await db.select().from(profilesTable).where(eq(profilesTable.id, DEFAULT_PROFILE_ID));
-  if (!profile) {
-    res.status(404).json({ error: "Profile not found" });
-    return;
-  }
-
+router.get("/profile/readiness", requireClientAuth, async (req: any, res): Promise<void> => {
+  const profile = req.clientUser;
   const allCriteria = await db.select().from(criteriaTable).where(eq(criteriaTable.visaType, profile.visaTarget));
-  const allEvidence = await db.select().from(evidenceTable).where(eq(evidenceTable.profileId, DEFAULT_PROFILE_ID));
+  const allEvidence = await db.select().from(evidenceTable).where(eq(evidenceTable.profileId, profile.id));
 
   const criteriaScores = allCriteria.map((c) => {
     const evidenceForCriterion = allEvidence.filter((e) => e.criterionId === c.id);
@@ -82,17 +61,15 @@ router.get("/profile/readiness", async (req, res): Promise<void> => {
 
   const recommendation = readyToFile
     ? `Your profile shows a strong foundation for an ${profile.visaTarget.toUpperCase()} petition. ${strongCount} of ${criteriaScores.length} criteria are well-documented. Consider scheduling a petition review with your attorney.`
-    : `Your ${profile.visaTarget.toUpperCase()} case needs additional evidence. Focus on criteria with fewer than ${3} items. A strong case typically requires 5+ items per qualifying criterion.`;
+    : `Your ${profile.visaTarget.toUpperCase()} case needs additional evidence. Focus on criteria with fewer than 3 items. A strong case typically requires 5+ items per qualifying criterion.`;
 
-  const report = {
+  res.json(GetReadinessResponse.parse({
     overallScore,
     visaTarget: profile.visaTarget,
     criteriaScores,
     recommendation,
     readyToFile,
-  };
-
-  res.json(GetReadinessResponse.parse(report));
+  }));
 });
 
 export default router;

@@ -5,33 +5,15 @@ import {
   GetDashboardSummaryResponse,
   GetRecentActivityResponse,
 } from "@workspace/api-zod";
+import { requireClientAuth } from "../middlewares/clientAuth";
 
 const router: IRouter = Router();
-const DEFAULT_PROFILE_ID = 1;
 
-router.get("/dashboard/summary", async (req, res): Promise<void> => {
-  const [profile] = await db.select().from(profilesTable).where(eq(profilesTable.id, DEFAULT_PROFILE_ID));
-  if (!profile) {
-    res.json(GetDashboardSummaryResponse.parse({
-      readinessScore: 0,
-      visaTarget: "eb1a",
-      totalEvidence: 0,
-      approvedEvidence: 0,
-      pendingEvidence: 0,
-      criteriaStrong: 0,
-      criteriaDeveloping: 0,
-      criteriaWeak: 0,
-      milestonesTotal: 0,
-      milestonesCompleted: 0,
-      coursesEnrolled: 0,
-      coursesCompleted: 0,
-      hasBlueprint: false,
-      accessLevel: "free",
-    }));
-    return;
-  }
+router.get("/dashboard/summary", requireClientAuth, async (req: any, res): Promise<void> => {
+  const profileId = req.clientUser.id;
+  const profile = req.clientUser;
 
-  const allEvidence = await db.select().from(evidenceTable).where(eq(evidenceTable.profileId, DEFAULT_PROFILE_ID));
+  const allEvidence = await db.select().from(evidenceTable).where(eq(evidenceTable.profileId, profileId));
   const allCriteria = await db.select().from(criteriaTable).where(eq(criteriaTable.visaType, profile.visaTarget));
 
   const criteriaWithCounts = allCriteria.map((c) => {
@@ -43,7 +25,7 @@ router.get("/dashboard/summary", async (req, res): Promise<void> => {
 
   const criteriaStrong = criteriaWithCounts.filter((c) => c.strength === "strong" || c.strength === "excellent").length;
   const criteriaDeveloping = criteriaWithCounts.filter((c) => c.strength === "developing").length;
-  const criteriaWeak = criteriaWithCounts.filter((c) => c.strength === "weak" || c.strength === "none").length;
+  const criteriaWeak = criteriaWithCounts.filter((c) => c.strength === "weak").length;
 
   const readinessScore = allCriteria.length > 0
     ? Math.round(criteriaWithCounts.reduce((sum, c) => {
@@ -52,14 +34,14 @@ router.get("/dashboard/summary", async (req, res): Promise<void> => {
       }, 0) / allCriteria.length)
     : 0;
 
-  const [blueprint] = await db.select().from(blueprintsTable).where(eq(blueprintsTable.userId, DEFAULT_PROFILE_ID));
+  const [blueprint] = await db.select().from(blueprintsTable).where(eq(blueprintsTable.userId, profileId));
   const milestones = blueprint
     ? await db.select().from(milestonesTable).where(eq(milestonesTable.blueprintId, blueprint.id))
     : [];
 
   const allCourses = await db.select().from(coursesTable);
   const allLessons = await db.select().from(lessonsTable);
-  const allProgress = await db.select().from(courseProgressTable).where(eq(courseProgressTable.profileId, DEFAULT_PROFILE_ID));
+  const allProgress = await db.select().from(courseProgressTable).where(eq(courseProgressTable.profileId, profileId));
 
   const coursesCompleted = allCourses.filter((course) => {
     const courseLessons = allLessons.filter((l) => l.courseId === course.id);
@@ -87,9 +69,9 @@ router.get("/dashboard/summary", async (req, res): Promise<void> => {
   }));
 });
 
-router.get("/dashboard/activity", async (req, res): Promise<void> => {
+router.get("/dashboard/activity", requireClientAuth, async (req: any, res): Promise<void> => {
   const activity = await db.select().from(activityTable)
-    .where(eq(activityTable.profileId, DEFAULT_PROFILE_ID))
+    .where(eq(activityTable.profileId, req.clientUser.id))
     .orderBy(desc(activityTable.createdAt))
     .limit(20);
 
