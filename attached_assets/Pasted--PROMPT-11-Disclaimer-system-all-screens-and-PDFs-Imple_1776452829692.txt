@@ -1,0 +1,55 @@
+## PROMPT 11 — Disclaimer system (all screens and PDFs)
+
+Implement the legal compliance and disclaimer system across the entire app.
+
+**Create /server/middleware/disclaimerCheck.js:**
+- Applied to all protected client routes
+- Checks req.clientUser.disclaimer_version === process.env.CURRENT_DISCLAIMER_VERSION
+- If mismatch: 403 { requiresReconsent: true }
+
+**Create /client/src/components/disclaimers/ directory with these components:**
+
+LegalFooterBar.tsx — slim footer bar, always visible on every page including internal:
+- Left: "© {year} Pinnacle³ — Not a law firm. Not legal advice."
+- Center: full LEGAL_DISCLAIMER text (collapsible on mobile)
+- Never conditional, never removable
+
+AIOutputBanner.tsx — props: variant ('analysis'|'lesson'|'document'|'summary'|'strength')
+- Purple left-border, non-dismissable
+- Uses AI_VARIANTS[variant] text from shared/disclaimers.js
+- Place above any AI-generated content block
+
+LessonDisclaimer.tsx — top of every Excellence Lab lesson:
+- Combines AI lesson variant + "Immigration laws change — verify with an attorney"
+- Amber-tinted, full width
+
+DocumentDisclaimer.tsx — props: docType
+- Both legal + AI disclaimers stacked
+- Cover letter shows strongest warning
+- Used in My Documents section
+
+AIBadge.tsx — tiny inline "AI" badge with tooltip showing full disclaimer
+
+ReconsentModal.tsx — full-screen overlay when disclaimer version changes:
+- Cannot be dismissed without accepting
+- Two required checkboxes
+- On submit: POST /api/auth/accept-disclaimer
+
+DisclaimerContext.tsx — React context:
+- Provides: { requiresReconsent, setRequiresReconsent }
+- AuthContext checks login response for requiresReconsent flag
+- Axios response interceptor catches 403 { requiresReconsent: true } globally
+
+**Apply disclaimers to these pages:**
+- ClientRegister: two required consent checkboxes before submit
+- InstantProfileInsightResults: AIOutputBanner variant="analysis" at top
+- ProfileSummaryDialog: AIOutputBanner variant="summary" inside dialog
+- WhereYouStandModal: AIOutputBanner variant="analysis" at top
+- ExcellenceLabLesson: LessonDisclaimer at top of every lesson
+- EvidenceVaultDashboard: AIOutputBanner variant="analysis" above gap analysis
+- EliteBlueprintDashboard: AIOutputBanner variant="analysis" above strategic overview
+- Dashboard My Documents: DocumentDisclaimer above document list
+- InternalEliteBlueprintApplicationDetail: AIOutputBanner variant="analysis" above AI section
+- All internal petition document panels: AIOutputBanner variant="document"
+- Global Footer: LegalFooterBar always rendered
+- InternalShell: LegalFooterBar always rendered
