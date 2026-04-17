@@ -1,147 +1,707 @@
-import { Router, type IRouter } from "express";
-import { eq, and } from "drizzle-orm";
-import { db, evidenceTable, activityTable } from "@workspace/db";
+/**
+ * Evidence Vault API — Pinnacle³
+ *
+ * All routes require client auth (JWT Bearer token).
+ * Static routes (/criteria, /coverage, /gap-analysis) are declared BEFORE /:id
+ * so Express doesn't treat "criteria" as an ID param.
+ */
+
+import { Router } from "express";
+import { eq, and, sql } from "drizzle-orm";
+import multer from "multer";
+import Anthropic from "@anthropic-ai/sdk";
+import { db } from "@workspace/db";
 import {
-  ListEvidenceQueryParams,
-  CreateEvidenceBody,
-  GetEvidenceParams,
-  GetEvidenceResponse,
-  UpdateEvidenceParams,
-  UpdateEvidenceBody,
-  UpdateEvidenceResponse,
-  DeleteEvidenceParams,
-  ListEvidenceResponse,
-} from "@workspace/api-zod";
+  evidenceTable,
+  clientDriveFoldersTable,
+  readinessIntakeTable,
+  visaCriteriaTable,
+  profilesTable,
+} from "@workspace/db";
+import { requireClientAuth } from "../middlewares/clientAuth";
+import { uploadEvidenceFile } from "../services/googleDrive";
+import { getCriteriaForVisaPath, AI_DISCLAIMER, type VisaPathKey } from "@workspace/shared";
 
-const router: IRouter = Router();
-const DEFAULT_PROFILE_ID = 1;
+const router = Router();
 
-function formatEvidence(e: typeof evidenceTable.$inferSelect) {
-  return {
-    ...e,
-    description: e.description ?? null,
-    sourceUrl: e.sourceUrl ?? null,
-    dateAchieved: e.dateAchieved ? e.dateAchieved.toString() : null,
-  };
+// ─── Multer (memory storage) ──────────────────────────────────────────────────
+
+const upload = multer({ storage: multer.memoryStorage() });
+
+// ─── Lazy Anthropic client (safe when AI integration not provisioned) ─────────
+
+function getAI(): Anthropic | null {
+  const apiKey = process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY;
+  const baseURL = process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL;
+  if (!apiKey || !baseURL) return null;
+  return new Anthropic({ apiKey, baseURL });
 }
 
-router.get("/evidence", async (req, res): Promise<void> => {
-  const parsed = ListEvidenceQueryParams.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+// ─── Text extraction helpers ──────────────────────────────────────────────────
+
+async function extractText(
+  buffer: Buffer,
+  mimeType: string,
+  originalName: string,
+): Promise<string> {
+  const lowerName = originalName.toLowerCase();
+
+  if (mimeType === "application/pdf" || lowerName.endsWith(".pdf")) {
+    try {
+      const pdfParse = (await import("pdf-parse")).default;
+      const data = await pdfParse(buffer);
+      return data.text ?? "";
+    } catch {
+      return "";
+    }
+  }
+
+  if (
+    mimeType ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    lowerName.endsWith(".docx")
+  ) {
+    try {
+      const mammoth = await import("mammoth");
+      const result = await mammoth.extractRawText({ buffer });
+      return result.value ?? "";
+    } catch {
+      return "";
+    }
+  }
+
+  if (mimeType === "text/plain" || lowerName.endsWith(".txt")) {
+    return buffer.toString("utf8");
+  }
+
+  return "";
+}
+
+// ─── Claude summary helper ────────────────────────────────────────────────────
+
+async function generateAISummary(
+  extractedText: string,
+  legalStandard: string,
+  clientField: string,
+): Promise<string | null> {
+  const ai = getAI();
+  if (!ai || !extractedText.trim()) return null;
+
+  try {
+    const msg = await ai.messages.create({
+      model: "claude-sonnet-4-5",
+      max_tokens: 300,
+      messages: [
+        {
+          role: "user",
+          content: `You are an immigration evidence analyst assisting with a US visa petition.
+
+Client's professional field: ${clientField}
+
+USCIS criterion legal standard:
+"${legalStandard}"
+
+Extracted text from evidence document (first 3000 chars):
+${extractedText.slice(0, 3000)}
+
+Write a concise 2-3 sentence summary explaining what this document demonstrates specifically in relation to the USCIS criterion above. Be factual, specific, and use language suitable for a petition support letter. Do not speculate beyond what the text shows.`,
+        },
+      ],
+    });
+
+    const block = msg.content[0];
+    return block.type === "text" ? block.text : null;
+  } catch {
+    return null;
+  }
+}
+
+// ─── GET /api/evidence/criteria ───────────────────────────────────────────────
+
+router.get("/evidence/criteria", requireClientAuth, async (req: any, res) => {
+  const userId: number = req.clientUser.id;
+
+  const [intake] = await db
+    .select({ visaPath: readinessIntakeTable.visaPath })
+    .from(readinessIntakeTable)
+    .where(eq(readinessIntakeTable.profileId, userId))
+    .limit(1);
+
+  if (!intake?.visaPath) {
+    res.json({ criteria: [], requiresIntake: true });
     return;
   }
 
-  let query = db.select().from(evidenceTable).where(eq(evidenceTable.profileId, DEFAULT_PROFILE_ID)).$dynamic();
+  const visaPath = intake.visaPath as VisaPathKey;
+  const criteria = getCriteriaForVisaPath(visaPath);
 
-  if (parsed.data.criterionId) {
-    query = query.where(and(
-      eq(evidenceTable.profileId, DEFAULT_PROFILE_ID),
-      eq(evidenceTable.criterionId, parsed.data.criterionId)
-    ));
-  }
+  const counts = await db
+    .select({
+      primaryCriteriaId: evidenceTable.primaryCriteriaId,
+      count: sql<number>`cast(count(*) as int)`,
+    })
+    .from(evidenceTable)
+    .where(eq(evidenceTable.profileId, userId))
+    .groupBy(evidenceTable.primaryCriteriaId);
 
-  if (parsed.data.status) {
-    query = query.where(and(
-      eq(evidenceTable.profileId, DEFAULT_PROFILE_ID),
-      eq(evidenceTable.status, parsed.data.status)
-    ));
-  }
+  const countMap = Object.fromEntries(
+    counts.map((c) => [c.primaryCriteriaId, c.count]),
+  );
 
-  const evidence = await db.select().from(evidenceTable).where(eq(evidenceTable.profileId, DEFAULT_PROFILE_ID));
-  res.json(ListEvidenceResponse.parse(evidence.map(formatEvidence)));
+  const driveFolders = await db
+    .select({
+      criteriaId: clientDriveFoldersTable.criteriaId,
+      driveFolderUrl: clientDriveFoldersTable.driveFolderUrl,
+    })
+    .from(clientDriveFoldersTable)
+    .where(eq(clientDriveFoldersTable.profileId, userId));
+
+  const driveMap = Object.fromEntries(
+    driveFolders.map((f) => [f.criteriaId, f.driveFolderUrl]),
+  );
+
+  const enriched = criteria.map((c) => ({
+    criteria_id: c.id,
+    display_name: c.displayName,
+    folder_name: c.folderName,
+    legal_standard: c.legalStandard,
+    visa_path: c.visaPath,
+    display_order: c.displayOrder,
+    item_count: countMap[c.id] ?? 0,
+    drive_folder_url: driveMap[c.id] ?? null,
+  }));
+
+  res.json({ criteria: enriched, requiresIntake: false });
 });
 
-router.post("/evidence", async (req, res): Promise<void> => {
-  const parsed = CreateEvidenceBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+// ─── GET /api/evidence/coverage ───────────────────────────────────────────────
+
+router.get("/evidence/coverage", requireClientAuth, async (req: any, res) => {
+  const userId: number = req.clientUser.id;
+
+  const [intake] = await db
+    .select({ visaPath: readinessIntakeTable.visaPath })
+    .from(readinessIntakeTable)
+    .where(eq(readinessIntakeTable.profileId, userId))
+    .limit(1);
+
+  if (!intake?.visaPath) {
+    res.json({ coverage: [], requiresIntake: true });
     return;
   }
 
-  const [evidence] = await db.insert(evidenceTable).values({
-    ...parsed.data,
-    profileId: DEFAULT_PROFILE_ID,
-    description: parsed.data.description ?? null,
-    sourceUrl: parsed.data.sourceUrl ?? null,
-  }).returning();
+  const visaPath = intake.visaPath as VisaPathKey;
+  const criteria = getCriteriaForVisaPath(visaPath);
 
-  await db.insert(activityTable).values({
-    profileId: DEFAULT_PROFILE_ID,
-    type: "evidence_added",
-    description: `Added evidence: ${evidence.title}`,
-    metadata: { evidenceId: evidence.id, criterionId: evidence.criterionId },
+  const counts = await db
+    .select({
+      primaryCriteriaId: evidenceTable.primaryCriteriaId,
+      count: sql<number>`cast(count(*) as int)`,
+    })
+    .from(evidenceTable)
+    .where(eq(evidenceTable.profileId, userId))
+    .groupBy(evidenceTable.primaryCriteriaId);
+
+  const countMap = Object.fromEntries(
+    counts.map((c) => [c.primaryCriteriaId, c.count]),
+  );
+
+  const driveFolders = await db
+    .select({
+      criteriaId: clientDriveFoldersTable.criteriaId,
+      driveFolderUrl: clientDriveFoldersTable.driveFolderUrl,
+    })
+    .from(clientDriveFoldersTable)
+    .where(eq(clientDriveFoldersTable.profileId, userId));
+
+  const driveMap = Object.fromEntries(
+    driveFolders.map((f) => [f.criteriaId, f.driveFolderUrl]),
+  );
+
+  const coverage = criteria.map((c) => {
+    const itemCount = countMap[c.id] ?? 0;
+    return {
+      criteria_id: c.id,
+      display_name: c.displayName,
+      item_count: itemCount,
+      drive_folder_url: driveMap[c.id] ?? null,
+      has_evidence: itemCount > 0,
+    };
   });
 
-  res.status(201).json(GetEvidenceResponse.parse(formatEvidence(evidence)));
+  res.json({ coverage, visa_path: visaPath });
 });
 
-router.get("/evidence/:evidenceId", async (req, res): Promise<void> => {
-  const params = GetEvidenceParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+// ─── GET /api/evidence/gap-analysis ──────────────────────────────────────────
+
+router.get("/evidence/gap-analysis", requireClientAuth, async (req: any, res) => {
+  const userId: number = req.clientUser.id;
+
+  const [intake] = await db
+    .select()
+    .from(readinessIntakeTable)
+    .where(eq(readinessIntakeTable.profileId, userId))
+    .limit(1);
+
+  if (!intake?.visaPath) {
+    res.status(400).json({ error: "Complete your readiness intake first", requiresIntake: true });
     return;
   }
 
-  const [evidence] = await db.select().from(evidenceTable).where(eq(evidenceTable.id, params.data.evidenceId));
-  if (!evidence) {
-    res.status(404).json({ error: "Evidence not found" });
+  const [profile] = await db
+    .select({ name: profilesTable.name, profession: profilesTable.profession })
+    .from(profilesTable)
+    .where(eq(profilesTable.id, userId))
+    .limit(1);
+
+  const visaPath = intake.visaPath as VisaPathKey;
+  const criteria = getCriteriaForVisaPath(visaPath);
+
+  const evidence = await db
+    .select({
+      primaryCriteriaId: evidenceTable.primaryCriteriaId,
+      title: evidenceTable.title,
+      aiSummary: evidenceTable.aiSummary,
+    })
+    .from(evidenceTable)
+    .where(eq(evidenceTable.profileId, userId));
+
+  const grouped: Record<string, typeof evidence> = {};
+  for (const item of evidence) {
+    const key = item.primaryCriteriaId ?? "unknown";
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(item);
+  }
+
+  const criteriaContext = criteria
+    .map((c) => {
+      const items = grouped[c.id] ?? [];
+      const itemList = items.length
+        ? items
+            .map((i) => `  - ${i.title}${i.aiSummary ? `: ${i.aiSummary}` : ""}`)
+            .join("\n")
+        : "  (no evidence uploaded)";
+      return `${c.displayName} (${c.id}):\n${itemList}`;
+    })
+    .join("\n\n");
+
+  const ai = getAI();
+  if (!ai) {
+    res.status(503).json({
+      error: "AI analysis not available. AI integration not provisioned.",
+    });
     return;
   }
 
-  res.json(GetEvidenceResponse.parse(formatEvidence(evidence)));
+  try {
+    const msg = await ai.messages.create({
+      model: "claude-sonnet-4-5",
+      max_tokens: 1200,
+      messages: [
+        {
+          role: "user",
+          content: `You are an expert US immigration consultant reviewing evidence for a ${visaPath.toUpperCase()} visa petition.
+
+Client: ${profile?.name ?? "Unknown"} | Field: ${profile?.profession ?? intake.currentRole ?? "Technology"}
+Visa target: ${visaPath.toUpperCase()}
+
+Evidence uploaded, organized by criterion:
+
+${criteriaContext}
+
+Provide a practical gap analysis:
+1. Which criteria are well-supported (2+ strong items)
+2. Which criteria need more evidence
+3. Which criteria have nothing yet (gaps)
+4. 3-5 specific, actionable suggestions for the weakest areas
+
+Be direct and specific. Format with clear sections. Do not include legal advice.`,
+        },
+      ],
+    });
+
+    const block = msg.content[0];
+    const analysis = block.type === "text" ? block.text : "";
+
+    res.json({
+      analysis,
+      aiGenerated: true,
+      disclaimer: AI_DISCLAIMER,
+      visa_path: visaPath,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Gap analysis failed", detail: err?.message });
+  }
 });
 
-router.patch("/evidence/:evidenceId", async (req, res): Promise<void> => {
-  const params = UpdateEvidenceParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+// ─── POST /api/evidence/upload ────────────────────────────────────────────────
+
+router.post(
+  "/evidence/upload",
+  requireClientAuth,
+  upload.single("file"),
+  async (req: any, res) => {
+    const userId: number = req.clientUser.id;
+
+    const [intake] = await db
+      .select({
+        visaPath: readinessIntakeTable.visaPath,
+        driveFoldersCreated: readinessIntakeTable.driveFoldersCreated,
+      })
+      .from(readinessIntakeTable)
+      .where(eq(readinessIntakeTable.profileId, userId))
+      .limit(1);
+
+    if (!intake) {
+      res.status(400).json({ error: "Complete your readiness intake first", requiresIntake: true });
+      return;
+    }
+
+    if (!intake.driveFoldersCreated) {
+      res.status(400).json({
+        error: "Complete your readiness intake first",
+        requiresIntake: true,
+      });
+      return;
+    }
+
+    const {
+      criteria_id,
+      title,
+      description,
+    } = req.body as {
+      criteria_id?: string;
+      title?: string;
+      description?: string;
+    };
+
+    let additionalCriteriaIds: string[] = [];
+    try {
+      const raw = req.body.additional_criteria_ids;
+      if (raw) additionalCriteriaIds = JSON.parse(raw);
+    } catch {
+      additionalCriteriaIds = [];
+    }
+
+    if (!criteria_id) {
+      res.status(400).json({ error: "criteria_id is required" });
+      return;
+    }
+    if (!title) {
+      res.status(400).json({ error: "title is required" });
+      return;
+    }
+    if (!req.file) {
+      res.status(400).json({ error: "file is required" });
+      return;
+    }
+
+    // Validate criteria_id belongs to client's visa_path
+    const visaPath = intake.visaPath as VisaPathKey;
+    const validCriteria = getCriteriaForVisaPath(visaPath);
+    const criteriaEntry = validCriteria.find((c) => c.id === criteria_id);
+
+    if (!criteriaEntry) {
+      res.status(400).json({
+        error: `criteria_id "${criteria_id}" is not valid for visa path "${visaPath}"`,
+      });
+      return;
+    }
+
+    // Upload to Drive (graceful fail if Drive not configured)
+    let driveFileId: string | null = null;
+    let driveFileUrl: string | null = null;
+    let uploadedFileName: string | null = null;
+    let driveFolderId: string | null = null;
+
+    try {
+      const uploaded = await uploadEvidenceFile(
+        userId,
+        criteria_id,
+        req.file.buffer,
+        req.file.originalname,
+        req.file.mimetype,
+      );
+      driveFileId = uploaded.driveFileId;
+      driveFileUrl = uploaded.driveFileUrl;
+      uploadedFileName = uploaded.fileName;
+
+      const [folder] = await db
+        .select({ driveFolderId: clientDriveFoldersTable.driveFolderId })
+        .from(clientDriveFoldersTable)
+        .where(
+          and(
+            eq(clientDriveFoldersTable.profileId, userId),
+            eq(clientDriveFoldersTable.criteriaId, criteria_id),
+          ),
+        )
+        .limit(1);
+      driveFolderId = folder?.driveFolderId ?? null;
+    } catch {
+      // Drive not configured — evidence record still created
+    }
+
+    // Create evidence record
+    const [evidenceItem] = await db
+      .insert(evidenceTable)
+      .values({
+        profileId: userId,
+        primaryCriteriaId: criteria_id,
+        title,
+        description: description ?? null,
+        evidenceType: "document",
+        status: "draft",
+        extractionStatus: "pending",
+        driveFolderId,
+        driveFileId,
+        driveFileUrl,
+        fileName: uploadedFileName ?? req.file.originalname,
+        additionalCriteriaIds,
+      })
+      .returning();
+
+    // Respond immediately — extraction + AI runs async
+    res.status(201).json({ item: evidenceItem });
+
+    // Capture references for async closure
+    const fileBuffer = req.file.buffer;
+    const fileMime = req.file.mimetype;
+    const fileOrigName = req.file.originalname;
+    const itemId = evidenceItem.id;
+
+    setImmediate(async () => {
+      try {
+        const extracted = await extractText(fileBuffer, fileMime, fileOrigName);
+
+        const [profile] = await db
+          .select({ profession: profilesTable.profession })
+          .from(profilesTable)
+          .where(eq(profilesTable.id, userId))
+          .limit(1);
+
+        const clientField = profile?.profession ?? "technology";
+
+        const aiSummary = await generateAISummary(
+          extracted,
+          criteriaEntry.legalStandard,
+          clientField,
+        );
+
+        await db
+          .update(evidenceTable)
+          .set({
+            extractedText: extracted || null,
+            aiSummary,
+            extractionStatus: "completed",
+          })
+          .where(eq(evidenceTable.id, itemId));
+      } catch {
+        await db
+          .update(evidenceTable)
+          .set({ extractionStatus: "failed" })
+          .where(eq(evidenceTable.id, itemId));
+      }
+    });
+  },
+);
+
+// ─── GET /api/evidence ────────────────────────────────────────────────────────
+
+router.get("/evidence", requireClientAuth, async (req: any, res) => {
+  const userId: number = req.clientUser.id;
+
+  const items = await db
+    .select()
+    .from(evidenceTable)
+    .where(eq(evidenceTable.profileId, userId))
+    .orderBy(evidenceTable.primaryCriteriaId, evidenceTable.createdAt);
+
+  const driveFolders = await db
+    .select({
+      criteriaId: clientDriveFoldersTable.criteriaId,
+      driveFolderUrl: clientDriveFoldersTable.driveFolderUrl,
+    })
+    .from(clientDriveFoldersTable)
+    .where(eq(clientDriveFoldersTable.profileId, userId));
+
+  const driveMap = Object.fromEntries(
+    driveFolders.map((f) => [f.criteriaId, f.driveFolderUrl]),
+  );
+
+  // Group by primaryCriteriaId
+  const grouped: Record<string, unknown[]> = {};
+  for (const item of items) {
+    const key = item.primaryCriteriaId ?? "uncategorized";
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push({ ...item, drive_folder_url: driveMap[key] ?? null });
+  }
+
+  res.json({ items, grouped, total: items.length });
+});
+
+// ─── GET /api/evidence/:id ────────────────────────────────────────────────────
+
+router.get("/evidence/:id", requireClientAuth, async (req: any, res) => {
+  const userId: number = req.clientUser.id;
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid evidence ID" });
     return;
   }
 
-  const parsed = UpdateEvidenceBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+  const [item] = await db
+    .select()
+    .from(evidenceTable)
+    .where(and(eq(evidenceTable.id, id), eq(evidenceTable.profileId, userId)))
+    .limit(1);
+
+  if (!item) {
+    res.status(404).json({ error: "Evidence item not found" });
     return;
   }
 
-  const [evidence] = await db
+  res.json({ item });
+});
+
+// ─── PUT /api/evidence/:id ────────────────────────────────────────────────────
+
+router.put("/evidence/:id", requireClientAuth, async (req: any, res) => {
+  const userId: number = req.clientUser.id;
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid evidence ID" });
+    return;
+  }
+
+  const [existing] = await db
+    .select({ id: evidenceTable.id })
+    .from(evidenceTable)
+    .where(and(eq(evidenceTable.id, id), eq(evidenceTable.profileId, userId)))
+    .limit(1);
+
+  if (!existing) {
+    res.status(404).json({ error: "Evidence item not found" });
+    return;
+  }
+
+  const { title, description, additional_criteria_ids, ai_summary_ignored } = req.body as {
+    title?: string;
+    description?: string;
+    additional_criteria_ids?: string[];
+    ai_summary_ignored?: boolean;
+  };
+
+  const updates: Record<string, unknown> = {};
+  if (title !== undefined) updates.title = title;
+  if (description !== undefined) updates.description = description;
+  if (additional_criteria_ids !== undefined)
+    updates.additionalCriteriaIds = additional_criteria_ids;
+  if (ai_summary_ignored !== undefined) updates.aiSummaryIgnored = ai_summary_ignored;
+
+  if (Object.keys(updates).length === 0) {
+    res.status(400).json({ error: "No updatable fields provided" });
+    return;
+  }
+
+  const [updated] = await db
     .update(evidenceTable)
-    .set(parsed.data)
-    .where(eq(evidenceTable.id, params.data.evidenceId))
+    .set(updates)
+    .where(eq(evidenceTable.id, id))
     .returning();
 
-  if (!evidence) {
-    res.status(404).json({ error: "Evidence not found" });
-    return;
-  }
-
-  if (parsed.data.status === "approved") {
-    await db.insert(activityTable).values({
-      profileId: DEFAULT_PROFILE_ID,
-      type: "evidence_approved",
-      description: `Evidence approved: ${evidence.title}`,
-      metadata: { evidenceId: evidence.id },
-    });
-  }
-
-  res.json(UpdateEvidenceResponse.parse(formatEvidence(evidence)));
+  res.json({ item: updated });
 });
 
-router.delete("/evidence/:evidenceId", async (req, res): Promise<void> => {
-  const params = DeleteEvidenceParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+// ─── DELETE /api/evidence/:id ─────────────────────────────────────────────────
+
+router.delete("/evidence/:id", requireClientAuth, async (req: any, res) => {
+  const userId: number = req.clientUser.id;
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid evidence ID" });
     return;
   }
 
-  const [evidence] = await db.delete(evidenceTable).where(eq(evidenceTable.id, params.data.evidenceId)).returning();
-  if (!evidence) {
-    res.status(404).json({ error: "Evidence not found" });
+  const [deleted] = await db
+    .delete(evidenceTable)
+    .where(and(eq(evidenceTable.id, id), eq(evidenceTable.profileId, userId)))
+    .returning({ id: evidenceTable.id });
+
+  if (!deleted) {
+    res.status(404).json({ error: "Evidence item not found" });
     return;
   }
 
-  res.sendStatus(204);
+  // Drive file intentionally NOT deleted — staff may still need it
+  res.json({ success: true, deleted_id: id });
 });
+
+// ─── POST /api/evidence/:id/regenerate-summary ────────────────────────────────
+
+router.post(
+  "/evidence/:id/regenerate-summary",
+  requireClientAuth,
+  async (req: any, res) => {
+    const userId: number = req.clientUser.id;
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid evidence ID" });
+      return;
+    }
+
+    const [item] = await db
+      .select()
+      .from(evidenceTable)
+      .where(and(eq(evidenceTable.id, id), eq(evidenceTable.profileId, userId)))
+      .limit(1);
+
+    if (!item) {
+      res.status(404).json({ error: "Evidence item not found" });
+      return;
+    }
+
+    if (!item.extractedText) {
+      res.status(400).json({
+        error: "No extracted text available. Re-upload the document to extract text.",
+      });
+      return;
+    }
+
+    if (!item.primaryCriteriaId) {
+      res.status(400).json({ error: "Evidence has no criteria association" });
+      return;
+    }
+
+    const [criteriaRow] = await db
+      .select({ legalStandard: visaCriteriaTable.legalStandard })
+      .from(visaCriteriaTable)
+      .where(eq(visaCriteriaTable.id, item.primaryCriteriaId))
+      .limit(1);
+
+    const [profile] = await db
+      .select({ profession: profilesTable.profession })
+      .from(profilesTable)
+      .where(eq(profilesTable.id, userId))
+      .limit(1);
+
+    const legalStandard = criteriaRow?.legalStandard ?? "";
+    const clientField = profile?.profession ?? "technology";
+
+    const aiSummary = await generateAISummary(item.extractedText, legalStandard, clientField);
+
+    if (!aiSummary) {
+      res.status(503).json({ error: "AI not available or no text to summarize" });
+      return;
+    }
+
+    const [updated] = await db
+      .update(evidenceTable)
+      .set({ aiSummary, aiSummaryIgnored: false })
+      .where(eq(evidenceTable.id, id))
+      .returning();
+
+    res.json({ item: updated });
+  },
+);
 
 export default router;

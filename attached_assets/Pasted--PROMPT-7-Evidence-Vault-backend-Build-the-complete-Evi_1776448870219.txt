@@ -1,0 +1,70 @@
+## PROMPT 7 — Evidence Vault backend
+
+Build the complete Evidence Vault API.
+
+Install: multer (memoryStorage), pdf-parse, mammoth
+
+**Create /server/routes/evidence.js:**
+
+GET /api/evidence/criteria
+- Client auth required
+- Fetch visa_path from readiness_intake WHERE user_id = req.clientUser.id
+- If no intake or no visa_path: return { criteria: [], requiresIntake: true }
+- Return getCriteriaForVisaPath(visaPath) enriched with:
+  - item_count per criteria_id (count from evidence_items)
+  - drive_folder_url per criteria_id (from client_drive_folders)
+  - legal_standard from CRITERIA_FOLDER_MAP
+
+GET /api/evidence/coverage
+- Client auth required
+- Returns ALL criteria for client's visa_path with item counts
+- Zero-count criteria included (shows gaps)
+- { criteria_id, display_name, item_count, drive_folder_url, has_evidence }
+
+POST /api/evidence/upload
+- Client auth required
+- Check: readiness_intake.drive_folders_created = true. If false → 400 { error: 'Complete your readiness intake first', requiresIntake: true }
+- Multipart: file + { criteria_id, title, description, additional_criteria_ids (JSON) }
+- Validate criteria_id belongs to client's visa_path
+- Call googleDrive.uploadEvidenceFile(userId, criteria_id, buffer, originalname, mimetype)
+- Create evidence_items record with drive info, primary_criteria_id, extraction_status='pending'
+- Fire async AI extraction (setImmediate):
+  - Extract text: pdf-parse for PDFs, mammoth for docx, raw text for txt
+  - Call Claude Sonnet: given extracted_text + criteria legal_standard + client field,
+    generate a concise ai_summary (2-3 sentences) explaining what this evidence demonstrates
+    for this specific USCIS criterion
+  - Update evidence_items: extracted_text, ai_summary, extraction_status='completed'
+- Return created evidence_item immediately
+
+GET /api/evidence
+- Client auth required
+- Return all evidence_items for user
+- Include drive_folder_url from client_drive_folders JOIN
+- Grouped by primary_criteria_id in response
+
+GET /api/evidence/:id
+- Client auth required (verify user owns this item)
+- Return full evidence item
+
+PUT /api/evidence/:id
+- Client auth required
+- Updatable: title, description, additional_criteria_ids, ai_summary_ignored
+
+DELETE /api/evidence/:id
+- Client auth required
+- Delete from evidence_items (keep Drive file — staff may need it)
+- Do NOT delete from Drive on client delete (safety measure)
+
+POST /api/evidence/:id/regenerate-summary
+- Client auth required
+- Re-call Claude on extracted_text to regenerate ai_summary
+- Return updated record
+
+GET /api/evidence/gap-analysis
+- Client auth required
+- Fetch all evidence + intake for user
+- Call Claude Sonnet with full context: visa_path, field, all evidence grouped by criteria
+- Returns narrative gap analysis: which criteria are strong, which need work, specific suggestions
+- Response wrapped with AI disclaimer flag: { analysis: '...', aiGenerated: true }
+
+---
