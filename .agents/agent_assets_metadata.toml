@@ -1,0 +1,20 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "tdWxzBL1uhFB_AClMDGu3"
+uri = "file://artifacts/mockup-sandbox/public/images/bold-ascent-hero.png"
+type = "image"
+title = "Abstract indigo upward trajectory graphic"
+
+[[generated]]
+id = "2kgtDHhtT7q62ay0H3uwM"
+uri = "file://artifacts/mockup-sandbox/public/images/editorial-hero-bg.png"
+type = "image"
+title = "Abstract editorial background"
+
+[[generated]]
+id = "IBJZ8gZJTY185JAtglAwD"
+uri = "file://artifacts/mockup-sandbox/public/images/dark-command-hero.png"
+type = "image"
+title = "Dark abstract tech grid background"

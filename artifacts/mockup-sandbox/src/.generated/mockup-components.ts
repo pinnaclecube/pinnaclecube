@@ -3,5 +3,9 @@ type ModuleMap = Record<string, () => Promise<Record<string, unknown>>>;
 export const modules: ModuleMap = {
   "./components/mockups/pinnacle-home/AccessibilityReadability.tsx": () => import("../components/mockups/pinnacle-home/AccessibilityReadability.tsx"),
   "./components/mockups/pinnacle-home/InformationHierarchy.tsx": () => import("../components/mockups/pinnacle-home/InformationHierarchy.tsx"),
-  "./components/mockups/pinnacle-home/InteractionAffordance.tsx": () => import("../components/mockups/pinnacle-home/InteractionAffordance.tsx")
+  "./components/mockups/pinnacle-home/InteractionAffordance.tsx": () => import("../components/mockups/pinnacle-home/InteractionAffordance.tsx"),
+  "./components/mockups/public-redesign/BoldAscent.tsx": () => import("../components/mockups/public-redesign/BoldAscent.tsx"),
+  "./components/mockups/public-redesign/ClarityFirst.tsx": () => import("../components/mockups/public-redesign/ClarityFirst.tsx"),
+  "./components/mockups/public-redesign/DarkCommand.tsx": () => import("../components/mockups/public-redesign/DarkCommand.tsx"),
+  "./components/mockups/public-redesign/EditorialPrestige.tsx": () => import("../components/mockups/public-redesign/EditorialPrestige.tsx")
 };
