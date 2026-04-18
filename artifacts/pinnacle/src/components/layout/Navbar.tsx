@@ -30,7 +30,8 @@ export function Navbar() {
   const isPublicPath = PUBLIC_PATHS.includes(location)
     || location.startsWith("/elite-blueprint/")
     || location.startsWith("/excellence-lab/")
-    || location.startsWith("/evidence-vault/");
+    || location.startsWith("/evidence-vault/")
+    || location.startsWith("/resources/");
 
   const isPublicAnon = isPublicPath && !user;
 
