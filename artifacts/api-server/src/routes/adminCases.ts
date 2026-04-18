@@ -26,7 +26,7 @@ import {
   notificationsTable,
 } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
-import { createClientRootFolders } from "../services/googleDrive";
+import { createClientRootFolders, createCriteriaEvidenceFolders } from "../services/googleDrive";
 import { z } from "zod/v4";
 import bcrypt from "bcrypt";
 
@@ -96,23 +96,34 @@ router.post(
     const id = parseId(req.params.id);
     if (!id) { res.status(400).json({ error: "Invalid profile ID" }); return; }
 
-    const [profile] = await db.select({ id: profilesTable.id, email: profilesTable.email })
+    const [profile] = await db
+      .select({ id: profilesTable.id, email: profilesTable.email, visaTarget: profilesTable.visaTarget })
       .from(profilesTable).where(eq(profilesTable.id, id)).limit(1);
     if (!profile) { res.status(404).json({ error: "Profile not found" }); return; }
 
-    const [intake] = await db.select({ id: readinessIntakeTable.id, driveFoldersCreated: readinessIntakeTable.driveFoldersCreated })
+    const [intake] = await db
+      .select({ id: readinessIntakeTable.id, visaPath: readinessIntakeTable.visaPath })
       .from(readinessIntakeTable).where(eq(readinessIntakeTable.profileId, id)).limit(1);
 
-    const [existingRoot] = await db.select({ id: clientDriveRootsTable.id })
+    // Resolve visa path: prefer intake value, fall back to profile's visaTarget
+    const rawVisaPath = (intake?.visaPath ?? profile.visaTarget ?? "eb1a") as string;
+    const visaPathMap: Record<string, string> = {
+      eb1a: "eb1a", "EB-1A": "eb1a", "EB1A": "eb1a",
+      niw: "niw", "EB-2 NIW": "niw", "NIW": "niw",
+      o1a: "o1a", "O-1A": "o1a", "O1A": "o1a",
+    };
+    const visaPath = (visaPathMap[rawVisaPath] ?? "eb1a") as "eb1a" | "niw" | "o1a";
+
+    const [existingRoot] = await db
+      .select({ id: clientDriveRootsTable.id })
       .from(clientDriveRootsTable).where(eq(clientDriveRootsTable.profileId, id)).limit(1);
 
-    if (existingRoot) {
-      res.json({ success: true, message: "Drive workspace already exists.", alreadyProvisioned: true });
-      return;
-    }
-
     try {
+      // Step 1: Root folders (idempotent — findOrCreate handles duplicates)
       await createClientRootFolders(id, profile.email);
+
+      // Step 2: Per-criterion evidence subfolders inside Evidence/
+      const criteriaFolders = await createCriteriaEvidenceFolders(id, visaPath);
 
       if (intake) {
         await db.update(readinessIntakeTable)
@@ -123,10 +134,19 @@ router.post(
       await db.insert(clientActivityLogTable).values({
         profileId: id,
         eventType: "drive_provisioned",
-        eventData: { message: "Staff manually provisioned Google Drive workspace." },
+        eventData: {
+          message: `Staff provisioned Google Drive workspace (${visaPath.toUpperCase()}).`,
+          criteriaFoldersCreated: criteriaFolders.length,
+          wasNewRoot: !existingRoot,
+        },
       });
 
-      res.json({ success: true, message: "Google Drive workspace created successfully." });
+      res.json({
+        success: true,
+        message: `Google Drive workspace fully provisioned — root folders + ${criteriaFolders.length} criteria evidence folders created.`,
+        criteriaFoldersCreated: criteriaFolders.length,
+        visaPath,
+      });
     } catch (err: any) {
       console.error(`[provision-drive] Failed for profile ${id}:`, err);
       res.status(500).json({ error: "Drive provisioning failed", detail: err?.message ?? "Unknown error" });

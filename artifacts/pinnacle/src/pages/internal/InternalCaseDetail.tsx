@@ -122,7 +122,7 @@ function OverviewTab({ userId, data, onReload }: { userId: string; data: any; on
       const r = await staffFetch(`/admin/profiles/${userId}/provision-drive`, { method: "POST" });
       const d = await r.json();
       if (r.ok) {
-        setProvisionMsg({ type: "success", text: d.alreadyProvisioned ? "Drive workspace already exists." : "Drive workspace created successfully." });
+        setProvisionMsg({ type: "success", text: d.message ?? "Drive workspace provisioned successfully." });
         onReload();
       } else {
         setProvisionMsg({ type: "error", text: d.detail ?? d.error ?? "Drive provisioning failed." });
