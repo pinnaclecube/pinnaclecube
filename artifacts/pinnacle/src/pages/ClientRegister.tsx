@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Logo } from "@/components/ui/logo";
 import { PublicFooter } from "@/components/layout/PublicFooter";
 import { useAuth } from "@/contexts/AuthContext";
+import { TestimonialsCarousel } from "@/components/ui/TestimonialsCarousel";
 
 const DISCLAIMER_VERSION = "1.0";
 
@@ -64,28 +65,16 @@ export default function ClientRegister() {
           <div className="relative z-10">
             <Logo href="/" variant="light" />
           </div>
-          <div className="relative z-10 space-y-10">
+          <div className="relative z-10 space-y-8">
             <div>
-              <h2 className="text-3xl font-extrabold text-white leading-tight mb-4">
+              <h2 className="text-2xl font-extrabold text-white leading-tight mb-2">
                 Your career has already proven you're extraordinary.
               </h2>
-              <p className="text-white/60 text-lg leading-relaxed">
-                Now let's make sure USCIS agrees. Start your free readiness assessment — and see exactly where your petition stands today.
+              <p className="text-white/50 text-sm leading-relaxed">
+                Now let's make USCIS see it the same way.
               </p>
             </div>
-            <ul className="space-y-4">
-              {[
-                "No attorney required to start",
-                "See your readiness score in minutes",
-                "Know exactly which criteria you satisfy",
-                "Strategic advice, not legal advice",
-              ].map((p) => (
-                <li key={p} className="flex items-start gap-3 text-white/80 text-sm">
-                  <span className="text-[#F59E0B] mt-0.5 shrink-0">✓</span>
-                  {p}
-                </li>
-              ))}
-            </ul>
+            <TestimonialsCarousel variant="compact" intervalMs={8000} />
           </div>
           <p className="text-white/30 text-xs relative z-10">Advisory coaching service. Not a law firm.</p>
         </div>

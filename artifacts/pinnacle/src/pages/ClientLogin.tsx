@@ -7,6 +7,7 @@ import { PublicFooter } from "@/components/layout/PublicFooter";
 import { ReconsentModal } from "@/components/disclaimers/ReconsentModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDisclaimer } from "@/contexts/DisclaimerContext";
+import { TestimonialsCarousel } from "@/components/ui/TestimonialsCarousel";
 
 export default function ClientLogin() {
   const { login } = useAuth();
@@ -44,14 +45,8 @@ export default function ClientLogin() {
             <Logo href="/" variant="light" />
           </div>
           <div className="relative z-10 space-y-8">
-            <div>
-              <div className="text-4xl text-[#F59E0B] mb-4 leading-none font-serif">❝</div>
-              <p className="text-2xl font-bold text-white leading-snug mb-4">
-                Pinnacle³ helped me understand exactly what I needed to build — and how to tell the story of my career to USCIS.
-              </p>
-              <p className="text-white/60 font-medium">Staff ML Engineer · EB-1A Approved</p>
-            </div>
-            <div className="grid grid-cols-2 gap-5 pt-4">
+            <TestimonialsCarousel variant="compact" intervalMs={7000} />
+            <div className="grid grid-cols-2 gap-5 pt-2">
               <div>
                 <div className="text-3xl font-extrabold text-[#F59E0B]">94%</div>
                 <div className="text-white/50 text-sm mt-1">Client approval rate</div>
