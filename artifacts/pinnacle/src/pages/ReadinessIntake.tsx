@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { Logo } from "@/components/ui/logo";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronRight, ChevronLeft } from "lucide-react";
+import { ChevronRight, ChevronLeft, Upload, FileText, CheckCircle2, X } from "lucide-react";
 
 const STEPS = [
   { id: 1, title: "About You", description: "Basic professional information" },
@@ -18,6 +18,7 @@ const STEPS = [
   { id: 3, title: "Achievements", description: "Awards, publications, and recognition" },
   { id: 4, title: "Evidence", description: "Documentation readiness" },
   { id: 5, title: "Visa Goals", description: "Your immigration objective" },
+  { id: 6, title: "Resume Upload", description: "Upload your CV to your secure workspace" },
 ];
 
 export default function ReadinessIntake() {
@@ -27,6 +28,12 @@ export default function ReadinessIntake() {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [completing, setCompleting] = useState(false);
+
+  // Resume upload state
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [resumeUploaded, setResumeUploaded] = useState<{ fileName: string; driveFileUrl: string } | null>(null);
+  const [resumeUploading, setResumeUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState({
     fullName: user ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() : "",
@@ -64,14 +71,22 @@ export default function ReadinessIntake() {
         if (res.ok) {
           const data = await res.json();
           if (data.intake) {
-            setForm((f) => ({ ...f, ...Object.fromEntries(
-              Object.entries(data.intake).filter(([k, v]) => k in f && v !== null && v !== undefined)
-            )}));
+            setForm((f) => ({
+              ...f,
+              ...Object.fromEntries(
+                Object.entries(data.intake).filter(([k, v]) => k in f && v !== null && v !== undefined),
+              ),
+            }));
+          }
+          if (data.resume) {
+            setResumeUploaded({ fileName: data.resume.fileName, driveFileUrl: data.resume.driveFileUrl });
           }
         }
-      } catch { /* ignore */ }
+      } catch {
+        // ignore
+      }
     };
-    load();
+    if (token) load();
   }, [token]);
 
   const saveStep = async () => {
@@ -90,15 +105,57 @@ export default function ReadinessIntake() {
   };
 
   const next = async () => {
-    await saveStep();
-    if (step < STEPS.length) setStep((s) => s + 1);
+    if (step < STEPS.length) {
+      await saveStep();
+      setStep((s) => s + 1);
+    }
   };
 
   const prev = () => setStep((s) => Math.max(1, s - 1));
 
+  const handleResumeSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) setResumeFile(file);
+  };
+
+  const uploadResume = async () => {
+    if (!resumeFile) return;
+    setResumeUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("resume", resumeFile);
+      const res = await fetch("/api/intake/resume", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Upload failed");
+      }
+      const data = await res.json();
+      setResumeUploaded({ fileName: data.resume.fileName, driveFileUrl: data.resume.driveFileUrl });
+      setResumeFile(null);
+      toast({ title: "Resume uploaded to your secure Drive workspace" });
+    } catch (err) {
+      toast({
+        title: "Upload failed",
+        description: err instanceof Error ? err.message : "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setResumeUploading(false);
+    }
+  };
+
   const complete = async () => {
     setCompleting(true);
-    await saveStep();
+    // Save step 5 data if we're on step 6 (no form data on step 6)
+    if (step === STEPS.length) {
+      // No form data to save on resume step, just complete
+    } else {
+      await saveStep();
+    }
     try {
       const res = await fetch("/api/intake/complete", {
         method: "POST",
@@ -117,6 +174,7 @@ export default function ReadinessIntake() {
     setForm((f) => ({ ...f, [key]: value }));
 
   const progress = ((step - 1) / (STEPS.length - 1)) * 100;
+  const isLastStep = step === STEPS.length;
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -203,13 +261,13 @@ export default function ReadinessIntake() {
               {step === 3 && (
                 <>
                   <StepHeader title="Your achievements and recognition" description="Be as specific as possible — this directly maps to EB-1A / NIW criteria." />
-                  <Field label="Key Achievements & Impact" description="Major accomplishments with quantifiable results (patents, products shipped, funding raised, users impacted).">
+                  <Field label="Key Achievements & Impact" description="Major accomplishments with quantifiable results.">
                     <Textarea value={form.keyAchievements} onChange={(e) => set("keyAchievements", e.target.value)} rows={4} placeholder="Led development of X that impacted Y million users..." />
                   </Field>
-                  <Field label="Publications" description="Peer-reviewed papers, books, technical reports. Include titles and venues if possible.">
+                  <Field label="Publications" description="Peer-reviewed papers, books, technical reports.">
                     <Textarea value={form.publications} onChange={(e) => set("publications", e.target.value)} rows={3} placeholder="Author of 8 papers in NeurIPS, ACL, ICML..." />
                   </Field>
-                  <Field label="Awards & Prizes" description="Nationally or internationally recognized awards for excellence.">
+                  <Field label="Awards & Prizes" description="Nationally or internationally recognized awards.">
                     <Textarea value={form.awards} onChange={(e) => set("awards", e.target.value)} rows={2} placeholder="Best Paper Award at ACL 2023..." />
                   </Field>
                   <Field label="Media Coverage" description="Articles, interviews, or features about you or your work.">
@@ -234,9 +292,9 @@ export default function ReadinessIntake() {
                 <>
                   <StepHeader title="Evidence and documentation" description="Help us understand what documentation you currently have available." />
                   <Field label="What documentation do you have available?" description="Letters of recommendation, contracts, patents, pay stubs, publication PDFs, etc.">
-                    <Textarea value={form.documentationAvailable} onChange={(e) => set("documentationAvailable", e.target.value)} rows={3} placeholder="I have: 3 recommendation letters from professors, PDF copies of 5 published papers, screenshots of media coverage..." />
+                    <Textarea value={form.documentationAvailable} onChange={(e) => set("documentationAvailable", e.target.value)} rows={3} placeholder="I have: 3 recommendation letters from professors, PDF copies of 5 published papers..." />
                   </Field>
-                  <Field label="How organized is your evidence?" description="Honest assessment of your current documentation state.">
+                  <Field label="How organized is your evidence?">
                     <Select value={form.evidenceOrganization} onValueChange={(v) => set("evidenceOrganization", v)}>
                       <SelectTrigger><SelectValue placeholder="Select level" /></SelectTrigger>
                       <SelectContent>
@@ -301,6 +359,97 @@ export default function ReadinessIntake() {
                   </Field>
                 </>
               )}
+
+              {step === 6 && (
+                <>
+                  <StepHeader
+                    title="Upload your resume / CV"
+                    description="Your resume is securely stored in your private Google Drive workspace and used to personalize your analysis."
+                  />
+
+                  {resumeUploaded ? (
+                    <div className="rounded-lg border border-green-200 bg-green-50 p-4 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium text-green-800">Resume uploaded successfully</p>
+                          <p className="text-xs text-green-700 mt-0.5 font-mono">{resumeUploaded.fileName}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={resumeUploaded.driveFileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-[#1E2D6B] hover:underline font-medium"
+                        >
+                          View in Drive
+                        </a>
+                        <button
+                          onClick={() => { setResumeUploaded(null); setResumeFile(null); }}
+                          className="text-gray-400 hover:text-gray-600"
+                          title="Replace file"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".pdf,.doc,.docx,.txt"
+                        onChange={handleResumeSelect}
+                        className="hidden"
+                        id="resume-upload"
+                      />
+
+                      {resumeFile ? (
+                        <div className="rounded-lg border border-border bg-muted/30 p-4">
+                          <div className="flex items-center gap-3 mb-4">
+                            <FileText className="w-8 h-8 text-[#1E2D6B] shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-foreground truncate">{resumeFile.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {(resumeFile.size / 1024 / 1024).toFixed(2)} MB
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => setResumeFile(null)}
+                              className="text-gray-400 hover:text-gray-600"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <Button
+                            onClick={uploadResume}
+                            disabled={resumeUploading}
+                            className="w-full bg-[#1E2D6B] hover:bg-[#3D4FA8]"
+                          >
+                            {resumeUploading ? "Uploading to Drive..." : "Upload to My Workspace"}
+                          </Button>
+                        </div>
+                      ) : (
+                        <div>
+                          <label
+                            htmlFor="resume-upload"
+                            className="flex flex-col items-center justify-center w-full border-2 border-dashed border-[#1E2D6B]/30 rounded-xl p-10 cursor-pointer hover:border-[#1E2D6B]/60 hover:bg-[#1E2D6B]/5 transition-colors"
+                          >
+                            <Upload className="w-10 h-10 text-[#1E2D6B]/50 mb-3" />
+                            <p className="text-sm font-medium text-foreground mb-1">Click to select your resume</p>
+                            <p className="text-xs text-muted-foreground">PDF, DOC, DOCX, or TXT · Max 20 MB</p>
+                          </label>
+                        </div>
+                      )}
+
+                      <p className="text-xs text-muted-foreground mt-3 text-center">
+                        Uploading a resume is optional — you can skip this step and complete it later from your profile.
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -309,15 +458,24 @@ export default function ReadinessIntake() {
               <ChevronLeft className="w-4 h-4 mr-1" /> Back
             </Button>
 
-            {step < STEPS.length ? (
-              <Button onClick={next} disabled={saving} className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
-                {saving ? "Saving..." : "Next"} <ChevronRight className="w-4 h-4 ml-1" />
-              </Button>
-            ) : (
-              <Button onClick={complete} disabled={completing} className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
-                {completing ? "Completing..." : "Complete Intake"} <ChevronRight className="w-4 h-4 ml-1" />
-              </Button>
-            )}
+            <div className="flex items-center gap-3">
+              {isLastStep && !resumeUploaded && (
+                <Button variant="ghost" onClick={complete} disabled={completing} className="text-muted-foreground">
+                  Skip & Complete
+                </Button>
+              )}
+
+              {!isLastStep ? (
+                <Button onClick={next} disabled={saving} className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
+                  {saving ? "Saving..." : "Next"} <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              ) : (
+                <Button onClick={complete} disabled={completing} className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
+                  {completing ? "Completing..." : resumeUploaded ? "Complete Intake" : "Complete Without Resume"}
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </main>
@@ -334,11 +492,22 @@ function StepHeader({ title, description }: { title: string; description: string
   );
 }
 
-function Field({ label, required, description, children }: { label: string; required?: boolean; description?: string; children: React.ReactNode }) {
+function Field({
+  label,
+  required,
+  description,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  description?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
       <Label className="text-sm font-medium">
-        {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+        {label}
+        {required && <span className="text-red-500 ml-0.5">*</span>}
       </Label>
       {description && <p className="text-xs text-muted-foreground mt-0.5 mb-1.5">{description}</p>}
       <div className="mt-1">{children}</div>

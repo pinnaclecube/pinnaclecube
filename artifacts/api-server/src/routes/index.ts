@@ -16,6 +16,7 @@ import dashboardRouter from "./dashboard";
 import lessonsRouter from "./lessons";
 import notificationsRouter from "./notifications";
 import intakeRouter from "./intake";
+import stripeRouter from "./stripe";
 import adminSeedRouter from "./adminSeed";
 
 const router: IRouter = Router();
@@ -37,6 +38,7 @@ router.use(dashboardRouter);
 router.use(lessonsRouter);
 router.use(notificationsRouter);
 router.use(intakeRouter);
+router.use(stripeRouter);
 router.use(adminSeedRouter);
 
 export default router;

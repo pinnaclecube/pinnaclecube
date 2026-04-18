@@ -34,6 +34,35 @@ Premium immigration advisory coaching platform for high-achieving tech professio
 - **Evidence Vault** — Document/evidence tracking (Stripe checkout, self-serve, $497 one-time)
 - **Elite Blueprint** — Personalized strategy (application-only, offline payment)
 
+## Product Access Gating
+
+Product pages are locked behind purchase. `ProductProtectedRoute` (`artifacts/pinnacle/src/components/auth/ProductProtectedRoute.tsx`) wraps product routes and redirects unpurchased users to checkout:
+- `/courses`, `/courses/:id` → `/excellence-lab/checkout` (requires `excellence_lab` accessLevel)
+- `/evidence`, `/evidence/:id` → `/evidence-vault/checkout` (requires `evidence_vault` accessLevel)
+- `/blueprint` → `/elite-blueprint` (requires `elite_blueprint` accessLevel)
+
+Free pages (no purchase needed): `/dashboard`, `/where-you-stand`, `/criteria`, `/criteria/:id`
+
+## Stripe Integration
+
+- **Route:** `POST /api/stripe/checkout` creates Stripe Checkout sessions for `excellence_lab` ($297) and `evidence_vault` ($497)
+- **Webhook:** `POST /api/stripe/webhook` handles `checkout.session.completed` to grant `accessLevel` on `profiles` and insert into `client_user_products`
+- **Raw body:** `app.ts` applies `express.raw()` for `/api/stripe/webhook` BEFORE `express.json()` to preserve signature verification
+
+## AI Readiness Analysis (Where You Stand)
+
+`GET /api/intake/analysis` — Claude analyzes intake data and returns:
+- `sufficientData` flag (false if intake is too sparse, with message for UI)
+- `overallReadiness`: "strong" | "moderate" | "developing"
+- `strongAreas`: array of criteria where the client is well-positioned
+- `recommendedAreas`: prioritized gaps with specific action recommendations
+- `roadmap`: 4-phase plan from evidence audit to filing
+- 30-minute in-process cache (invalidated on intake save)
+
+## Readiness Intake
+
+6-step wizard (now includes Step 6: Resume Upload). Resume is uploaded to the client's `Resume/` folder in Google Drive via `POST /api/intake/resume`. Stored in `resume_uploads` table, linked to intake via `resumeUploadId`.
+
 ## Internal Staff Portal (Prompt 13)
 
 All internal staff pages are complete at `/internal/` path prefix. Staff access is gated by `X-Staff-Token` header and the `StaffProtectedRoute` component.

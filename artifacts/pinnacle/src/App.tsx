@@ -8,6 +8,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ReconsentModal } from "@/components/disclaimers/ReconsentModal";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { StaffProtectedRoute } from "@/components/auth/StaffProtectedRoute";
+import { ProductProtectedRoute } from "@/components/auth/ProductProtectedRoute";
 import NotFound from "@/pages/not-found";
 
 import Home from "@/pages/Home";
@@ -95,25 +96,49 @@ function Router() {
         <ProtectedRoute><WhereYouStand /></ProtectedRoute>
       </Route>
       <Route path="/evidence">
-        <ProtectedRoute><EvidenceVault /></ProtectedRoute>
+        <ProtectedRoute>
+          <ProductProtectedRoute product="evidence_vault" redirectTo="/evidence-vault/checkout">
+            <EvidenceVault />
+          </ProductProtectedRoute>
+        </ProtectedRoute>
       </Route>
       <Route path="/evidence/:id">
-        {(params) => <ProtectedRoute><EvidenceDetail /></ProtectedRoute>}
+        {() => (
+          <ProtectedRoute>
+            <ProductProtectedRoute product="evidence_vault" redirectTo="/evidence-vault/checkout">
+              <EvidenceDetail />
+            </ProductProtectedRoute>
+          </ProtectedRoute>
+        )}
       </Route>
       <Route path="/criteria">
         <ProtectedRoute><CriteriaExhibit /></ProtectedRoute>
       </Route>
       <Route path="/criteria/:id">
-        {(params) => <ProtectedRoute><CriterionDetail /></ProtectedRoute>}
+        {() => <ProtectedRoute><CriterionDetail /></ProtectedRoute>}
       </Route>
       <Route path="/blueprint">
-        <ProtectedRoute><EliteBlueprint /></ProtectedRoute>
+        <ProtectedRoute>
+          <ProductProtectedRoute product="elite_blueprint" redirectTo="/elite-blueprint">
+            <EliteBlueprint />
+          </ProductProtectedRoute>
+        </ProtectedRoute>
       </Route>
       <Route path="/courses">
-        <ProtectedRoute><Courses /></ProtectedRoute>
+        <ProtectedRoute>
+          <ProductProtectedRoute product="excellence_lab" redirectTo="/excellence-lab/checkout">
+            <Courses />
+          </ProductProtectedRoute>
+        </ProtectedRoute>
       </Route>
       <Route path="/courses/:id">
-        {(params) => <ProtectedRoute><CourseDetail /></ProtectedRoute>}
+        {() => (
+          <ProtectedRoute>
+            <ProductProtectedRoute product="excellence_lab" redirectTo="/excellence-lab/checkout">
+              <CourseDetail />
+            </ProductProtectedRoute>
+          </ProtectedRoute>
+        )}
       </Route>
       <Route path="/profile">
         <ProtectedRoute><ProfilePage /></ProtectedRoute>
