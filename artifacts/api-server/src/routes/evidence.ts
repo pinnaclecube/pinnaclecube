@@ -24,6 +24,18 @@ import { getCriteriaForVisaPath, AI_DISCLAIMER, type VisaPathKey } from "@worksp
 
 const router = Router();
 
+// ─── Visa path normalizer ─────────────────────────────────────────────────────
+// Intake rows store values like "EB-1A" / "EB-2 NIW" / "O-1A".
+// getCriteriaForVisaPath expects "eb1a" | "niw" | "o1".
+
+function normalizeVisaPath(raw: string): VisaPathKey | null {
+  const key = raw.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (key === "eb1a") return "eb1a";
+  if (key === "eb2niw" || key === "niw") return "niw";
+  if (key === "o1a" || key === "o1") return "o1";
+  return null;
+}
+
 // ─── Multer (memory storage) ──────────────────────────────────────────────────
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -132,7 +144,11 @@ router.get("/evidence/criteria", requireClientAuth, async (req: any, res) => {
     return;
   }
 
-  const visaPath = intake.visaPath as VisaPathKey;
+  const visaPath = normalizeVisaPath(intake.visaPath);
+  if (!visaPath) {
+    res.json({ criteria: [], requiresIntake: false });
+    return;
+  }
   const criteria = getCriteriaForVisaPath(visaPath);
 
   const counts = await db
@@ -190,7 +206,11 @@ router.get("/evidence/coverage", requireClientAuth, async (req: any, res) => {
     return;
   }
 
-  const visaPath = intake.visaPath as VisaPathKey;
+  const visaPath = normalizeVisaPath(intake.visaPath);
+  if (!visaPath) {
+    res.json({ coverage: [], requiresIntake: false });
+    return;
+  }
   const criteria = getCriteriaForVisaPath(visaPath);
 
   const counts = await db
@@ -254,7 +274,11 @@ router.get("/evidence/gap-analysis", requireClientAuth, async (req: any, res) =>
     .where(eq(profilesTable.id, userId))
     .limit(1);
 
-  const visaPath = intake.visaPath as VisaPathKey;
+  const visaPath = normalizeVisaPath(intake.visaPath ?? "");
+  if (!visaPath) {
+    res.status(400).json({ error: "Unrecognized visa path in your profile. Please contact support." });
+    return;
+  }
   const criteria = getCriteriaForVisaPath(visaPath);
 
   const evidence = await db
@@ -381,7 +405,11 @@ router.post(
     }
 
     // Validate criteria_id belongs to client's visa_path
-    const visaPath = intake.visaPath as VisaPathKey;
+    const visaPath = normalizeVisaPath(intake.visaPath ?? "");
+    if (!visaPath) {
+      res.status(400).json({ error: "Unrecognized visa path in your profile. Please contact support." });
+      return;
+    }
     const validCriteria = getCriteriaForVisaPath(visaPath);
     const criteriaEntry = validCriteria.find((c) => c.id === criteria_id);
 
