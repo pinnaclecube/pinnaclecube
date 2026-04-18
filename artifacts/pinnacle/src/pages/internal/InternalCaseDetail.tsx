@@ -446,13 +446,27 @@ function EvidenceTab({ userId }: { userId: string }) {
                         <p className="font-medium text-sm">{item.title}</p>
                         <StatusBadge status={item.status} />
                         <Badge variant="outline" className="text-xs">{item.evidenceType}</Badge>
+                        {item.extractionStatus && (
+                          <span className={cn("text-xs px-1.5 py-0.5 rounded font-medium",
+                            item.extractionStatus === "completed" ? "bg-green-50 text-green-700" :
+                            item.extractionStatus === "failed" ? "bg-red-50 text-red-700" :
+                            "bg-gray-50 text-gray-500")}>
+                            {item.extractionStatus === "completed" ? "Extracted" :
+                             item.extractionStatus === "failed" ? "Extract failed" : "Pending extract"}
+                          </span>
+                        )}
                       </div>
+                      {item.fileName && (
+                        <p className="text-xs text-muted-foreground mt-1 font-mono truncate">{item.fileName}</p>
+                      )}
                       {item.description && <p className="text-xs text-muted-foreground mt-1">{item.description}</p>}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       {item.driveFileUrl && (
                         <a href={item.driveFileUrl} target="_blank" rel="noopener noreferrer">
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0"><ExternalLink className="w-3 h-3" /></Button>
+                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5">
+                            <ExternalLink className="w-3 h-3" /> Drive
+                          </Button>
                         </a>
                       )}
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Regenerate AI summary"

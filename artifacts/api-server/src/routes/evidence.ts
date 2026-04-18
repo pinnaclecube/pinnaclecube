@@ -335,11 +335,13 @@ Be direct and specific. Format with clear sections. Do not include legal advice.
 });
 
 // ─── POST /api/evidence/upload ────────────────────────────────────────────────
+// Accepts one OR many files (field name "files") plus shared metadata.
+// Creates one evidence record per file; all uploaded to the criteria Drive folder.
 
 router.post(
   "/evidence/upload",
   requireClientAuth,
-  upload.single("file"),
+  upload.array("files", 20),
   async (req: any, res) => {
     const userId: number = req.clientUser.id;
 
@@ -358,41 +360,23 @@ router.post(
     }
 
     if (!intake.driveFoldersCreated) {
-      res.status(400).json({
-        error: "Complete your readiness intake first",
-        requiresIntake: true,
-      });
+      res.status(400).json({ error: "Complete your readiness intake first", requiresIntake: true });
       return;
     }
 
-    const {
-      criteria_id,
-      title,
-      description,
-    } = req.body as {
+    const files = (req.files ?? []) as Express.Multer.File[];
+    if (files.length === 0) {
+      res.status(400).json({ error: "At least one file is required" });
+      return;
+    }
+
+    const { criteria_id, description } = req.body as {
       criteria_id?: string;
-      title?: string;
       description?: string;
     };
 
-    let additionalCriteriaIds: string[] = [];
-    try {
-      const raw = req.body.additional_criteria_ids;
-      if (raw) additionalCriteriaIds = JSON.parse(raw);
-    } catch {
-      additionalCriteriaIds = [];
-    }
-
     if (!criteria_id) {
       res.status(400).json({ error: "criteria_id is required" });
-      return;
-    }
-    if (!title) {
-      res.status(400).json({ error: "title is required" });
-      return;
-    }
-    if (!req.file) {
-      res.status(400).json({ error: "file is required" });
       return;
     }
 
@@ -408,100 +392,98 @@ router.post(
       return;
     }
 
-    // Upload to Drive (graceful fail if Drive not configured)
-    let driveFileId: string | null = null;
-    let driveFileUrl: string | null = null;
-    let uploadedFileName: string | null = null;
-    let driveFolderId: string | null = null;
+    // Resolve shared Drive folder for this criterion
+    const [folderRow] = await db
+      .select({ driveFolderId: clientDriveFoldersTable.driveFolderId })
+      .from(clientDriveFoldersTable)
+      .where(
+        and(
+          eq(clientDriveFoldersTable.profileId, userId),
+          eq(clientDriveFoldersTable.criteriaId, criteria_id),
+        ),
+      )
+      .limit(1);
+    const sharedDriveFolderId = folderRow?.driveFolderId ?? null;
 
-    try {
-      const uploaded = await uploadEvidenceFile(
-        userId,
-        criteria_id,
-        req.file.buffer,
-        req.file.originalname,
-        req.file.mimetype,
-      );
-      driveFileId = uploaded.driveFileId;
-      driveFileUrl = uploaded.driveFileUrl;
-      uploadedFileName = uploaded.fileName;
+    // Fetch client profession once for AI summaries
+    const [profileRow] = await db
+      .select({ profession: profilesTable.profession })
+      .from(profilesTable)
+      .where(eq(profilesTable.id, userId))
+      .limit(1);
+    const clientField = profileRow?.profession ?? "technology";
 
-      const [folder] = await db
-        .select({ driveFolderId: clientDriveFoldersTable.driveFolderId })
-        .from(clientDriveFoldersTable)
-        .where(
-          and(
-            eq(clientDriveFoldersTable.profileId, userId),
-            eq(clientDriveFoldersTable.criteriaId, criteria_id),
-          ),
-        )
-        .limit(1);
-      driveFolderId = folder?.driveFolderId ?? null;
-    } catch {
-      // Drive not configured — evidence record still created
+    // Process each file
+    const createdItems: typeof evidenceTable.$inferSelect[] = [];
+
+    for (const file of files) {
+      // Derive title from filename (strip extension)
+      const titleFromFile = file.originalname.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ").trim() || file.originalname;
+
+      let driveFileId: string | null = null;
+      let driveFileUrl: string | null = null;
+      let uploadedFileName: string | null = null;
+
+      try {
+        const uploaded = await uploadEvidenceFile(
+          userId,
+          criteria_id,
+          file.buffer,
+          file.originalname,
+          file.mimetype,
+        );
+        driveFileId = uploaded.driveFileId;
+        driveFileUrl = uploaded.driveFileUrl;
+        uploadedFileName = uploaded.fileName;
+      } catch {
+        // Drive not configured — evidence record still created
+      }
+
+      const [evidenceItem] = await db
+        .insert(evidenceTable)
+        .values({
+          profileId: userId,
+          primaryCriteriaId: criteria_id,
+          title: titleFromFile,
+          description: description ?? null,
+          evidenceType: "document",
+          status: "draft",
+          extractionStatus: "pending",
+          driveFolderId: sharedDriveFolderId,
+          driveFileId,
+          driveFileUrl,
+          fileName: uploadedFileName ?? file.originalname,
+          additionalCriteriaIds: [],
+        })
+        .returning();
+
+      createdItems.push(evidenceItem);
+
+      // Fire-and-forget: extract text + AI summary for this file
+      const fileBuffer = file.buffer;
+      const fileMime = file.mimetype;
+      const fileOrigName = file.originalname;
+      const itemId = evidenceItem.id;
+      const legalStandard = criteriaEntry.legalStandard;
+
+      setImmediate(async () => {
+        try {
+          const extracted = await extractText(fileBuffer, fileMime, fileOrigName);
+          const aiSummary = await generateAISummary(extracted, legalStandard, clientField);
+          await db
+            .update(evidenceTable)
+            .set({ extractedText: extracted || null, aiSummary, extractionStatus: "completed" })
+            .where(eq(evidenceTable.id, itemId));
+        } catch {
+          await db
+            .update(evidenceTable)
+            .set({ extractionStatus: "failed" })
+            .where(eq(evidenceTable.id, itemId));
+        }
+      });
     }
 
-    // Create evidence record
-    const [evidenceItem] = await db
-      .insert(evidenceTable)
-      .values({
-        profileId: userId,
-        primaryCriteriaId: criteria_id,
-        title,
-        description: description ?? null,
-        evidenceType: "document",
-        status: "draft",
-        extractionStatus: "pending",
-        driveFolderId,
-        driveFileId,
-        driveFileUrl,
-        fileName: uploadedFileName ?? req.file.originalname,
-        additionalCriteriaIds,
-      })
-      .returning();
-
-    // Respond immediately — extraction + AI runs async
-    res.status(201).json({ item: evidenceItem });
-
-    // Capture references for async closure
-    const fileBuffer = req.file.buffer;
-    const fileMime = req.file.mimetype;
-    const fileOrigName = req.file.originalname;
-    const itemId = evidenceItem.id;
-
-    setImmediate(async () => {
-      try {
-        const extracted = await extractText(fileBuffer, fileMime, fileOrigName);
-
-        const [profile] = await db
-          .select({ profession: profilesTable.profession })
-          .from(profilesTable)
-          .where(eq(profilesTable.id, userId))
-          .limit(1);
-
-        const clientField = profile?.profession ?? "technology";
-
-        const aiSummary = await generateAISummary(
-          extracted,
-          criteriaEntry.legalStandard,
-          clientField,
-        );
-
-        await db
-          .update(evidenceTable)
-          .set({
-            extractedText: extracted || null,
-            aiSummary,
-            extractionStatus: "completed",
-          })
-          .where(eq(evidenceTable.id, itemId));
-      } catch {
-        await db
-          .update(evidenceTable)
-          .set({ extractionStatus: "failed" })
-          .where(eq(evidenceTable.id, itemId));
-      }
-    });
+    res.status(201).json({ items: createdItems, count: createdItems.length });
   },
 );
 
