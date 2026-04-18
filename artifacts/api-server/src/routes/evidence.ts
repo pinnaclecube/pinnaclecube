@@ -528,15 +528,7 @@ router.get("/evidence", requireClientAuth, async (req: any, res) => {
     driveFolders.map((f) => [f.criteriaId, f.driveFolderUrl]),
   );
 
-  // Group by primaryCriteriaId
-  const grouped: Record<string, unknown[]> = {};
-  for (const item of items) {
-    const key = item.primaryCriteriaId ?? "uncategorized";
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push({ ...item, drive_folder_url: driveMap[key] ?? null });
-  }
-
-  res.json({ items, grouped, total: items.length });
+  res.json(items);
 });
 
 // ─── GET /api/evidence/:id ────────────────────────────────────────────────────
