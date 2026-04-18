@@ -31,6 +31,7 @@ export function PublicFooter() {
             <h3 className="text-xs font-bold uppercase tracking-widest text-white/40">Company</h3>
             <ul className="space-y-3">
               <li><FooterLink href="/how-it-works">How It Works</FooterLink></li>
+              <li><FooterLink href="/resources">Resource Hub</FooterLink></li>
               <li><FooterLink href="/instant-profile-insight/start">Free Profile Insight</FooterLink></li>
               <li><FooterLink href="/quiz">Visa Readiness Quiz</FooterLink></li>
               <li><FooterLink href="/privacy-policy">Privacy Policy</FooterLink></li>

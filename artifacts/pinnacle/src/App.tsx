@@ -25,6 +25,7 @@ import EliteBlueprintMarketing from "@/pages/EliteBlueprintMarketing";
 import EliteBlueprintApply from "@/pages/EliteBlueprintApply";
 import EliteBlueprintSubmitted from "@/pages/EliteBlueprintSubmitted";
 import Quiz from "@/pages/Quiz";
+import Resources from "@/pages/Resources";
 import InstantProfileInsightStart from "@/pages/InstantProfileInsightStart";
 import InstantProfileInsightResults from "@/pages/InstantProfileInsightResults";
 
@@ -69,6 +70,7 @@ function Router() {
       <Route path="/elite-blueprint/apply" component={EliteBlueprintApply} />
       <Route path="/elite-blueprint/submitted" component={EliteBlueprintSubmitted} />
       <Route path="/quiz" component={Quiz} />
+      <Route path="/resources" component={Resources} />
       <Route path="/instant-profile-insight/start" component={InstantProfileInsightStart} />
       <Route path="/instant-profile-insight/results" component={InstantProfileInsightResults} />
       <Route path="/login" component={ClientLogin} />

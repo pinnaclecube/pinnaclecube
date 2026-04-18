@@ -17,7 +17,7 @@ import {
 const PUBLIC_PATHS = [
   "/", "/how-it-works", "/products",
   "/excellence-lab", "/evidence-vault", "/elite-blueprint",
-  "/quiz", "/login", "/register",
+  "/quiz", "/login", "/register", "/resources",
   "/instant-profile-insight/start", "/instant-profile-insight/results",
 ];
 
@@ -53,6 +53,9 @@ export function Navbar() {
               </Link>
               <Link href="/how-it-works" className="text-white/80 hover:text-white transition-colors">
                 How It Works
+              </Link>
+              <Link href="/resources" className="text-white/80 hover:text-white transition-colors">
+                Resources
               </Link>
             </nav>
 
@@ -91,6 +94,9 @@ export function Navbar() {
               </Link>
               <Link href="/how-it-works" className="block text-white/80 hover:text-white text-sm font-medium py-3 border-b border-white/5">
                 How It Works
+              </Link>
+              <Link href="/resources" className="block text-white/80 hover:text-white text-sm font-medium py-3 border-b border-white/5">
+                Resources
               </Link>
               <div className="pt-4 flex flex-col gap-3">
                 <Link href="/login">
