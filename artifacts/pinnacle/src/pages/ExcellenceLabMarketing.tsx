@@ -1,148 +1,154 @@
 import { Link } from "wouter";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Navbar } from "@/components/layout/Navbar";
-import { PublicFooter } from "@/components/layout/PublicFooter";
-import { AppLayout } from "@/components/layout/AppLayout";
-import {
-  BookOpen, Zap, BarChart2, CheckCircle2, Users, Lock, ChevronRight
-} from "lucide-react";
+import { PublicLayout } from "@/components/layout/PublicLayout";
+import { BookOpen, Zap, BarChart2, CheckCircle2, Users, Lock } from "lucide-react";
 
 const FEATURES = [
   {
     icon: BookOpen,
-    title: "Structured EB-1A / NIW Curriculum",
-    description: "Expert-authored courses covering every aspect of the petition process — from understanding the legal standard to crafting compelling evidence narratives.",
+    title: "Criterion-by-Criterion Playbooks",
+    description: "Every EB-1A and NIW criterion has its own dedicated module — with the legal standard explained in plain English, real examples from approved petitions, and step-by-step guidance on how to satisfy it.",
   },
   {
     icon: Zap,
-    title: "AI-Powered Personalized Learning",
-    description: "Adaptive lessons that prioritize the modules most relevant to your profile, visa category, and documentation gaps.",
+    title: "Frameworks You Can Act On Today",
+    description: "Not theory. Concrete templates, outreach scripts, and positioning frameworks for securing media coverage, peer review roles, and advisory board seats.",
   },
   {
     icon: BarChart2,
     title: "Progress Tracking",
-    description: "Visual dashboards track your completion across all courses and surface the highest-leverage actions to take next.",
+    description: "Visual dashboards surface the modules most relevant to your profile and track your progress through each criterion — so you always know what to focus on next.",
   },
   {
     icon: CheckCircle2,
-    title: "Criteria Deep-Dives",
-    description: "Dedicated modules for each EB-1A / NIW criterion, with legal standards explained in plain language and real examples.",
+    title: "Written for Engineers & Scientists",
+    description: "The immigration system was not designed with technical professionals in mind. We bridge that gap — translating academic impact, technical leadership, and product influence into USCIS language.",
   },
   {
     icon: Users,
-    title: "Expert-Curated Content",
-    description: "All content is reviewed for accuracy and alignment with current USCIS adjudication standards.",
+    title: "Vetted by Advisory Professionals",
+    description: "Every module is reviewed for accuracy and alignment with current USCIS adjudication standards. You learn what actually works — not outdated advice from forums.",
   },
   {
     icon: Lock,
-    title: "Lifetime Access",
-    description: "Purchase once and keep access forever, including all future updates to the curriculum.",
+    title: "Yours Forever",
+    description: "One payment. Lifetime access. Every update to the curriculum is included — because immigration policy evolves, and so should your knowledge.",
   },
 ];
 
 const MODULES = [
-  "Introduction to EB-1A & NIW — What qualifies as 'extraordinary'",
-  "The 10 Criteria Explained — Legal standards and how to satisfy them",
-  "Evidence Strategy — Building a compelling, layered evidence portfolio",
-  "Crafting Your Petitioner's Letter — Structure, tone, and key arguments",
-  "Working With Attorneys — How to maximize your legal team's effectiveness",
-  "The National Interest Waiver Framework — Prong-by-prong breakdown",
-  "Common Denial Reasons — And how to avoid them",
-  "Filing Timeline & Process — What to expect from submission to adjudication",
+  "Understanding 'Extraordinary Ability' — What it actually means for your career",
+  "The 10 EB-1A Criteria — Plain-English standards and how to satisfy them",
+  "Evidence Strategy — Building a portfolio that tells a coherent story",
+  "The National Interest Waiver — A prong-by-prong framework",
+  "Getting Media Coverage — A step-by-step outreach strategy that works",
+  "Peer Review & Judging — How to find, request, and document these opportunities",
+  "Crafting Your Petitioner's Letter — Structure, tone, and the arguments that matter",
+  "Working With Your Attorney — How to make their job easier and your case stronger",
 ];
 
 export default function ExcellenceLabMarketing() {
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
-      <main className="flex-1">
-        {/* Hero */}
-        <section className="py-20 px-4 bg-gradient-to-br from-[#1E2D6B]/5 via-white to-blue-50/40">
-          <div className="container mx-auto max-w-4xl text-center">
-            <div className="inline-flex items-center gap-2 bg-[#1E2D6B]/10 text-[#1E2D6B] text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-full mb-6">
-              <BookOpen className="w-3.5 h-3.5" />
-              Excellence Lab
-            </div>
-            <h1 className="text-5xl md:text-6xl font-bold text-foreground mb-6 leading-tight">
-              Master the EB-1A & NIW
-              <span className="text-[#1E2D6B]"> petition process</span>
-            </h1>
-            <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto leading-relaxed">
-              A structured learning platform built for high-achieving professionals who want to understand their case deeply — not just delegate it.
+    <PublicLayout>
+      {/* Hero */}
+      <section className="relative pt-40 pb-20 md:pt-52 md:pb-24 bg-[#1E2D6B] overflow-hidden">
+        <div className="absolute -right-20 -bottom-16 text-[300px] font-black text-white/[0.04] leading-none pointer-events-none select-none">³</div>
+        <div className="max-w-[1100px] mx-auto px-6 relative z-10">
+          <div className="inline-flex items-center gap-2 bg-white/10 text-white/80 text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-full mb-8">
+            <BookOpen className="w-3.5 h-3.5" />
+            Excellence Lab
+          </div>
+          <h1 className="text-5xl md:text-6xl font-extrabold text-white mb-4 leading-tight max-w-3xl">
+            You have the achievements.<br />
+            <span className="text-[#F59E0B]">Let's make USCIS see them.</span>
+          </h1>
+          <p className="text-xl text-white/70 max-w-2xl leading-relaxed mb-10">
+            You've published research, led significant projects, and built things that matter. The Excellence Lab teaches you how to present that career in the exact language USCIS requires — so nothing you've done gets overlooked.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4">
+            <Link href="/excellence-lab/checkout">
+              <button className="bg-white text-[#1E2D6B] px-8 py-4 rounded font-extrabold text-lg hover:bg-gray-100 transition-all hover:scale-[1.02] shadow-xl w-full sm:w-auto">
+                Get Access — $297
+              </button>
+            </Link>
+            <Link href="/register">
+              <button className="bg-transparent text-white border-2 border-white/30 px-8 py-4 rounded font-bold text-lg hover:border-white hover:bg-white/5 transition-all w-full sm:w-auto">
+                Create Free Account
+              </button>
+            </Link>
+          </div>
+          <p className="text-white/40 text-sm mt-5">One-time payment · Lifetime access · No subscription</p>
+        </div>
+      </section>
+
+      {/* Philosophy strip */}
+      <div className="bg-[#0F1F4A] border-y border-white/10 py-5">
+        <div className="max-w-[1100px] mx-auto px-6 text-center">
+          <p className="text-white/90 text-lg font-serif italic tracking-wide">
+            "Most professionals we work with had everything they needed. They just didn't know how to frame it."
+          </p>
+        </div>
+      </div>
+
+      {/* Features */}
+      <section className="py-24 md:py-32 bg-[#0A1128]">
+        <div className="max-w-[1100px] mx-auto px-6">
+          <div className="mb-16">
+            <h2 className="text-4xl md:text-5xl font-extrabold text-white mb-6">Built for the way you work</h2>
+            <p className="text-xl text-white/60 max-w-2xl">
+              Every feature is designed for senior technical and research professionals navigating extraordinary ability petitions.
             </p>
-            <div className="flex items-center justify-center gap-4 flex-wrap">
-              <Link href="/excellence-lab/checkout">
-                <Button size="lg" className="bg-[#1E2D6B] hover:bg-[#3D4FA8] text-lg px-8 h-14">
-                  Get Access — $297
-                </Button>
-              </Link>
-              <Link href="/register">
-                <Button variant="outline" size="lg" className="text-lg h-14">
-                  Create Free Account
-                </Button>
-              </Link>
-            </div>
-            <p className="text-sm text-muted-foreground mt-4">One-time payment · Lifetime access · No subscription</p>
           </div>
-        </section>
-
-        {/* Features */}
-        <section className="py-20 px-4 bg-white">
-          <div className="container mx-auto max-w-5xl">
-            <h2 className="text-3xl font-bold text-center mb-4">Everything you need to understand your case</h2>
-            <p className="text-muted-foreground text-center mb-12 max-w-2xl mx-auto">Built for engineers, scientists, and tech professionals navigating extraordinary ability petitions.</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {FEATURES.map((f) => (
-                <Card key={f.title} className="border-border hover:shadow-md transition-shadow">
-                  <CardContent className="pt-6">
-                    <div className="w-10 h-10 rounded-lg bg-[#1E2D6B]/10 flex items-center justify-center mb-4">
-                      <f.icon className="w-5 h-5 text-[#1E2D6B]" />
-                    </div>
-                    <h3 className="font-semibold text-foreground mb-2">{f.title}</h3>
-                    <p className="text-sm text-muted-foreground leading-relaxed">{f.description}</p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {FEATURES.map((f) => (
+              <div key={f.title} className="bg-white/5 border border-white/10 p-8 rounded-xl hover:bg-white/[0.08] transition-colors">
+                <div className="w-10 h-10 rounded-lg bg-[#1E2D6B] flex items-center justify-center mb-5">
+                  <f.icon className="w-5 h-5 text-white" />
+                </div>
+                <h3 className="font-bold text-white mb-3 text-lg">{f.title}</h3>
+                <p className="text-sm text-white/60 leading-relaxed">{f.description}</p>
+              </div>
+            ))}
           </div>
-        </section>
+        </div>
+      </section>
 
-        {/* Curriculum */}
-        <section className="py-20 px-4 bg-gray-50">
-          <div className="container mx-auto max-w-3xl">
-            <h2 className="text-3xl font-bold text-center mb-4">What's included</h2>
-            <p className="text-muted-foreground text-center mb-10">8 comprehensive modules covering the full petition lifecycle.</p>
+      {/* Curriculum */}
+      <section className="py-24 md:py-28 bg-slate-50">
+        <div className="max-w-[1100px] mx-auto px-6">
+          <div className="max-w-3xl mx-auto">
+            <h2 className="text-4xl font-extrabold text-[#0A1128] mb-4">What you'll walk through</h2>
+            <p className="text-slate-600 mb-12 text-lg">8 comprehensive modules covering the full petition lifecycle — in the order that actually makes sense.</p>
             <div className="space-y-3">
               {MODULES.map((m, i) => (
-                <div key={i} className="flex items-center gap-4 p-4 bg-white rounded-lg border border-border">
-                  <div className="w-8 h-8 rounded-full bg-[#1E2D6B] text-white text-sm font-bold flex items-center justify-center shrink-0">
+                <div key={i} className="flex items-center gap-5 p-5 bg-white rounded-xl border border-slate-200 shadow-sm">
+                  <div className="w-10 h-10 rounded-xl bg-[#1E2D6B] text-white text-sm font-bold flex items-center justify-center shrink-0">
                     {i + 1}
                   </div>
-                  <span className="text-foreground font-medium">{m}</span>
+                  <span className="text-[#0A1128] font-medium leading-snug">{m}</span>
                 </div>
               ))}
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        {/* CTA */}
-        <section className="py-20 px-4 bg-[#1E2D6B]">
-          <div className="container mx-auto max-w-2xl text-center">
-            <h2 className="text-3xl font-bold text-white mb-4">Invest in understanding your case</h2>
-            <p className="text-white/70 mb-8 text-lg">
-              One-time payment. No hidden fees. Full access to all current and future course content.
-            </p>
-            <Link href="/excellence-lab/checkout">
-              <Button size="lg" className="bg-white text-[#1E2D6B] hover:bg-gray-100 text-lg px-8 h-14 font-bold">
-                Get Excellence Lab — $297 <ChevronRight className="w-5 h-5 ml-1" />
-              </Button>
-            </Link>
-            <p className="text-white/50 text-sm mt-4">Advisory coaching service. Not legal advice.</p>
-          </div>
-        </section>
-      </main>
-      <PublicFooter />
-    </div>
+      {/* CTA */}
+      <section className="py-24 bg-white text-center">
+        <div className="max-w-2xl mx-auto px-6">
+          <h2 className="text-4xl md:text-5xl font-extrabold text-[#0A1128] mb-6 tracking-tight">
+            Stop guessing what USCIS wants.
+          </h2>
+          <p className="text-lg text-slate-600 mb-10 font-medium">
+            One-time payment. No hidden fees. Full access to all current and future course content — forever.
+          </p>
+          <Link href="/excellence-lab/checkout">
+            <button className="bg-[#1E2D6B] text-white px-10 py-4 rounded font-extrabold text-lg hover:bg-[#0F1F4A] transition-all hover:-translate-y-1 shadow-xl hover:shadow-[#1E2D6B]/30 inline-block">
+              Get Excellence Lab — $297
+            </button>
+          </Link>
+          <p className="text-slate-400 text-xs mt-4">Advisory coaching service. Not legal advice.</p>
+        </div>
+      </section>
+    </PublicLayout>
   );
 }

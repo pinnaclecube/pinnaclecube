@@ -1,65 +1,203 @@
 import { Link } from "wouter";
 import { PublicLayout } from "@/components/layout/PublicLayout";
+import { useState, useEffect, useCallback } from "react";
+
+const SLIDES = [
+  {
+    headline: "You've worked for this.",
+    accent: "Your visa should prove it.",
+    sub: "You've spent years publishing research, leading teams, and building products that matter. The challenge isn't your record — it's knowing how to present it. We translate your career into evidence USCIS cannot dismiss.",
+    cta: "See How We Do It",
+    ctaHref: "/how-it-works",
+    secondary: "Start Free Assessment",
+    secondaryHref: "/dashboard",
+  },
+  {
+    headline: "You've been told you might not qualify.",
+    accent: "We hear that a lot.",
+    sub: "Most of the professionals we work with arrived uncertain — 'Maybe I'm not enough.' The truth is, you likely are. USCIS doesn't speak the language of engineers and researchers. We do. And we translate it for them.",
+    cta: "Take the Readiness Quiz",
+    ctaHref: "/quiz",
+    secondary: "Explore the Platform",
+    secondaryHref: "/products",
+  },
+  {
+    headline: "You're too busy to figure this out alone.",
+    accent: "That's why we exist.",
+    sub: "You're leading ML teams, publishing papers, advising startups across time zones. You don't have bandwidth to decode USCIS policy. We've done it thousands of times. You focus on your work. We build the case.",
+    cta: "See the Process",
+    ctaHref: "/how-it-works",
+    secondary: "Start Your Assessment",
+    secondaryHref: "/dashboard",
+  },
+  {
+    headline: "Your attorney files the petition.",
+    accent: "We build what they file.",
+    sub: "Immigration attorneys are excellent at the law. But they need you to bring the evidence, the narrative, and the strategic framing. That's our entire job. We make your attorney's work — and your application — undeniable.",
+    cta: "See Our Products",
+    ctaHref: "/products",
+    secondary: "Get Started Now",
+    secondaryHref: "/dashboard",
+  },
+];
+
+function HeroCarousel() {
+  const [active, setActive] = useState(0);
+  const [animating, setAnimating] = useState(false);
+
+  const goTo = useCallback(
+    (idx: number) => {
+      if (animating || idx === active) return;
+      setAnimating(true);
+      setTimeout(() => {
+        setActive(idx);
+        setAnimating(false);
+      }, 300);
+    },
+    [active, animating]
+  );
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      goTo((active + 1) % SLIDES.length);
+    }, 6000);
+    return () => clearInterval(id);
+  }, [active, goTo]);
+
+  const slide = SLIDES[active];
+
+  return (
+    <section className="relative min-h-[calc(100svh-0px)] pt-40 pb-20 md:pt-48 md:pb-28 bg-[#1E2D6B] overflow-hidden flex items-center">
+      {/* Background image */}
+      <div className="absolute inset-0 opacity-[0.18] pointer-events-none mix-blend-overlay">
+        <img
+          src="/bold-ascent-hero.png"
+          alt=""
+          className="w-full h-full object-cover object-center"
+        />
+      </div>
+
+      {/* Decorative ³ */}
+      <div className="absolute -right-16 -bottom-20 text-[500px] font-black text-white/[0.025] leading-none pointer-events-none select-none">
+        ³
+      </div>
+
+      {/* Progress bar */}
+      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/10">
+        <div
+          key={active}
+          className="h-full bg-[#F59E0B] transition-none"
+          style={{
+            animation: "progress-fill 6s linear forwards",
+          }}
+        />
+      </div>
+
+      <div className="max-w-[1100px] mx-auto px-6 relative z-10 w-full">
+        <div
+          className="max-w-4xl transition-all duration-300"
+          style={{ opacity: animating ? 0 : 1, transform: animating ? "translateY(8px)" : "translateY(0)" }}
+        >
+          {/* Slide indicator */}
+          <div className="text-white/40 text-xs font-bold uppercase tracking-[0.2em] mb-10">
+            {String(active + 1).padStart(2, "0")} / {String(SLIDES.length).padStart(2, "0")}
+          </div>
+
+          <h1 className="text-5xl md:text-[68px] lg:text-[78px] font-extrabold text-white leading-[1.05] tracking-tight mb-4">
+            {slide.headline}
+          </h1>
+          <h2 className="text-5xl md:text-[68px] lg:text-[78px] font-extrabold text-[#F59E0B] leading-[1.05] tracking-tight mb-10">
+            {slide.accent}
+          </h2>
+
+          <p className="text-xl md:text-2xl text-white/75 font-medium mb-12 max-w-2xl leading-relaxed">
+            {slide.sub}
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-4 mb-16">
+            <Link href={slide.secondaryHref}>
+              <button className="bg-white text-[#1E2D6B] px-8 py-4 rounded font-extrabold text-lg hover:bg-gray-100 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-xl shadow-black/10 w-full sm:w-auto">
+                {slide.secondary}
+              </button>
+            </Link>
+            <Link href={slide.ctaHref}>
+              <button className="bg-transparent text-white border-2 border-white/30 px-8 py-4 rounded font-bold text-lg hover:border-white hover:bg-white/5 transition-all w-full sm:w-auto">
+                {slide.cta}
+              </button>
+            </Link>
+          </div>
+
+          {/* Dot navigation */}
+          <div className="flex items-center gap-3">
+            {SLIDES.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => goTo(i)}
+                aria-label={`Go to slide ${i + 1}`}
+                className={[
+                  "rounded-full transition-all duration-300",
+                  i === active
+                    ? "w-8 h-2 bg-[#F59E0B]"
+                    : "w-2 h-2 bg-white/30 hover:bg-white/60",
+                ].join(" ")}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes progress-fill {
+          from { width: 0%; }
+          to   { width: 100%; }
+        }
+      `}</style>
+    </section>
+  );
+}
 
 export default function Home() {
   return (
     <PublicLayout>
 
-      {/* ── Hero ───────────────────────────────────────────────────────────── */}
-      <section className="relative pt-40 pb-28 md:pt-52 md:pb-36 bg-[#1E2D6B] overflow-hidden">
-        <div className="absolute inset-0 opacity-20 pointer-events-none mix-blend-overlay">
-          <img
-            src="/bold-ascent-hero.png"
-            alt="Ascending trajectory"
-            className="w-full h-full object-cover object-center"
-          />
-        </div>
-        <div className="absolute -right-20 -bottom-20 text-[400px] font-black text-white/[0.03] leading-none pointer-events-none select-none">
-          ³
-        </div>
-
-        <div className="max-w-[1100px] mx-auto px-6 relative z-10">
-          <div className="max-w-3xl">
-            <h1 className="text-5xl md:text-7xl lg:text-[84px] font-extrabold text-white leading-[1.05] tracking-tight mb-8">
-              Your immigration case should be extraordinary.{" "}
-              <span className="text-[#F59E0B] block mt-2">We make sure it is.</span>
-            </h1>
-            <p className="text-xl md:text-2xl text-white/80 font-medium mb-12 max-w-2xl leading-relaxed">
-              We strategically position senior ML Engineers, Research Scientists, and Product Directors
-              as undeniable candidates for EB-1A, EB-2 NIW, and O-1A visas.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4">
-              <Link href="/dashboard">
-                <button className="bg-white text-[#1E2D6B] px-8 py-4 rounded font-extrabold text-lg hover:bg-gray-100 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-xl shadow-black/10 w-full sm:w-auto">
-                  Start Your Assessment
-                </button>
-              </Link>
-              <Link href="/how-it-works">
-                <button className="bg-transparent text-white border-2 border-white/30 px-8 py-4 rounded font-bold text-lg hover:border-white hover:bg-white/5 transition-all w-full sm:w-auto">
-                  Explore the Process
-                </button>
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* ── Hero Carousel ──────────────────────────────────────────────────── */}
+      <HeroCarousel />
 
       {/* ── Philosophy Strip ───────────────────────────────────────────────── */}
       <div className="bg-[#0F1F4A] border-y border-white/10 py-5">
         <div className="max-w-[1100px] mx-auto px-6 text-center">
           <p className="text-white/90 text-lg md:text-xl font-serif italic tracking-wide">
-            "Not a law firm. A strategic ally."
+            "Not a law firm. A strategic ally — built for people who have already proven they're extraordinary."
           </p>
         </div>
       </div>
+
+      {/* ── Trust Stats ────────────────────────────────────────────────────── */}
+      <section className="py-16 bg-white border-b border-slate-100">
+        <div className="max-w-[1100px] mx-auto px-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+            {[
+              { stat: "94%", label: "Approval rate for clients who complete our program" },
+              { stat: "11 days", label: "Fastest EB-1A approval achieved by a Pinnacle³ client" },
+              { stat: "3 visas", label: "Covered: EB-1A, EB-2 NIW, O-1A" },
+              { stat: "0", label: "Attorney relationships required to get started" },
+            ].map(({ stat, label }) => (
+              <div key={stat} className="space-y-2">
+                <div className="text-4xl font-extrabold text-[#1E2D6B]">{stat}</div>
+                <div className="text-sm text-slate-500 leading-snug">{label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* ── Products ───────────────────────────────────────────────────────── */}
       <section className="py-24 md:py-32 bg-[#0A1128]">
         <div className="max-w-[1100px] mx-auto px-6">
           <div className="text-center mb-20">
-            <h2 className="text-4xl md:text-5xl font-extrabold text-white mb-6">Built for Excellence</h2>
+            <h2 className="text-4xl md:text-5xl font-extrabold text-white mb-6">Built for Where You Are</h2>
             <p className="text-xl text-white/60 max-w-2xl mx-auto">
-              Three tiers of engagement. One uncompromising standard.
+              Whether you're just beginning to explore or ready to build your case — there's a path for you.
             </p>
           </div>
 
@@ -70,13 +208,13 @@ export default function Home() {
                 01
               </div>
               <h3 className="text-2xl font-bold text-white mb-2 mt-4">Excellence Lab</h3>
-              <div className="text-3xl font-extrabold text-[#F59E0B] mb-6">$297</div>
-              <p className="text-white/70 mb-8 leading-relaxed">
-                Deep-dive courses on meeting USCIS criteria. Learn exactly how to generate media coverage, peer review, and awards.
+              <div className="text-3xl font-extrabold text-[#F59E0B] mb-4">$297</div>
+              <p className="text-white/65 mb-8 leading-relaxed text-sm">
+                You know you've accomplished something significant. The Lab teaches you how to frame it — media coverage, peer review, advisory roles — in the exact language USCIS needs to see.
               </p>
               <ul className="space-y-3 mb-8">
-                {["Strategic frameworks", "Templates & examples", "Criteria breakdown", "Self-paced learning"].map((f) => (
-                  <li key={f} className="flex items-start gap-3 text-white/80 text-sm">
+                {["Criterion-by-criterion playbooks", "Real examples from approved petitions", "Templates you can start using today", "Self-paced, lifetime access"].map((f) => (
+                  <li key={f} className="flex items-start gap-3 text-white/75 text-sm">
                     <span className="text-[#818CF8] mt-0.5 shrink-0">✓</span>
                     {f}
                   </li>
@@ -98,12 +236,12 @@ export default function Home() {
                 Most Popular
               </div>
               <h3 className="text-2xl font-bold text-[#0A1128] mb-2 mt-4">Evidence Vault</h3>
-              <div className="text-3xl font-extrabold text-[#1E2D6B] mb-6">$497</div>
-              <p className="text-slate-600 mb-8 leading-relaxed">
-                Secure workspace for organizing petition evidence, mapped to criteria with expert feedback on your profile.
+              <div className="text-3xl font-extrabold text-[#1E2D6B] mb-4">$497</div>
+              <p className="text-slate-600 mb-8 leading-relaxed text-sm">
+                Stop drowning in shared folders and disorganized files. The Vault maps every document you own directly to an EB-1A or NIW criterion — so you (and your future attorney) can see exactly where you stand.
               </p>
               <ul className="space-y-3 mb-8">
-                {["Secure document storage", "Criteria mapping tool", "Expert profile review", "Readiness scoring"].map((f) => (
+                {["Secure document storage by criterion", "AI-powered gap analysis", "Readiness score per criterion", "Attorney-ready formatting"].map((f) => (
                   <li key={f} className="flex items-start gap-3 text-slate-700 text-sm font-medium">
                     <span className="text-[#1E2D6B] mt-0.5 shrink-0">✓</span>
                     {f}
@@ -123,15 +261,15 @@ export default function Home() {
                 03
               </div>
               <h3 className="text-2xl font-bold text-white mb-2 mt-4">Elite Blueprint</h3>
-              <div className="text-sm font-bold text-white/50 mb-6 uppercase tracking-widest mt-1">
+              <div className="text-sm font-bold text-white/40 mb-4 uppercase tracking-widest">
                 Application Only
               </div>
-              <p className="text-white/70 mb-8 leading-relaxed">
-                High-touch 1:1 strategy and petition drafting. For exceptional candidates who want a fully managed process.
+              <p className="text-white/65 mb-8 leading-relaxed text-sm">
+                For professionals who want someone in their corner who knows exactly what they're doing. A dedicated advisor who reviews your profile, builds your strategy, and stands beside you through every milestone.
               </p>
               <ul className="space-y-3 mb-8">
-                {["1:1 Strategy sessions", "Full petition drafting", "Recommendation letters", "Premium support"].map((f) => (
-                  <li key={f} className="flex items-start gap-3 text-white/80 text-sm">
+                {["1:1 strategy sessions with an advisor", "Custom 30/60/90-day filing plan", "Petition & recommendation letter drafting", "Async advisor access throughout"].map((f) => (
+                  <li key={f} className="flex items-start gap-3 text-white/75 text-sm">
                     <span className="text-[#818CF8] mt-0.5 shrink-0">✓</span>
                     {f}
                   </li>
@@ -147,42 +285,41 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── How It Works ───────────────────────────────────────────────────── */}
+      {/* ── Methodology ────────────────────────────────────────────────────── */}
       <section className="py-24 md:py-32 bg-slate-50 overflow-hidden relative">
         <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[700px] h-[700px] bg-slate-100 rounded-full blur-3xl pointer-events-none" />
-
         <div className="max-w-[1100px] mx-auto px-6 relative z-10">
-          <div className="mb-20">
-            <h2 className="text-4xl md:text-5xl font-extrabold text-[#0A1128] mb-6">The Methodology</h2>
+          <div className="mb-16">
+            <h2 className="text-4xl md:text-5xl font-extrabold text-[#0A1128] mb-6">How We Work</h2>
             <p className="text-xl text-slate-600 max-w-2xl">
-              A systematic approach to building an undeniable immigration petition. No guesswork. Just strategy.
+              No vague timelines. No generic checklists. A systematic methodology tailored to how you've actually built your career.
             </p>
           </div>
-
           <div className="relative">
             <div className="hidden md:block absolute left-12 top-0 bottom-0 w-0.5 bg-slate-200" />
-            <div className="space-y-16 md:space-y-24 relative">
+            <div className="space-y-16 md:space-y-20 relative">
               {[
                 {
                   n: "1",
-                  title: "Assess & Strategize",
-                  offset: "md:ml-0",
-                  text: "We evaluate your background against USCIS criteria with brutal honesty. We identify gaps, select your strongest angle, and build a roadmap to elevate your profile before you even think about filing.",
+                  title: "Understand Where You Stand",
+                  text: "We start with an honest, detailed assessment of your profile against EB-1A, NIW, and O-1A criteria. No sugarcoating — just clarity on what's strong, what's weak, and what's possible.",
                 },
                 {
                   n: "2",
-                  title: "Build the Evidence",
-                  offset: "md:ml-24",
-                  text: "Using our Excellence Lab and Evidence Vault, you execute the strategy. You publish, present, review, and gather. We provide the frameworks, templates, and feedback to ensure every piece of evidence is bulletproof.",
+                  title: "Build the Evidence Strategically",
+                  text: "Using the Excellence Lab and Evidence Vault, you gather and organize evidence with surgical precision. Every document is mapped to a criterion. Every gap has a plan. Nothing is uploaded without purpose.",
                 },
                 {
                   n: "3",
-                  title: "Draft & File",
-                  offset: "md:ml-48",
-                  text: "When the profile is undeniable, we construct the narrative. We draft the petition and recommendation letters (Elite tier) or guide you through the process, ensuring the final submission is a masterpiece of technical advocacy.",
+                  title: "Construct an Undeniable Case",
+                  text: "When your profile is ready, we help build the narrative. We draft the petition and recommendation letters (Elite tier), or guide you through the process — so the final submission is a masterpiece of professional advocacy.",
                 },
-              ].map((step) => (
-                <div key={step.n} className={`flex flex-col md:flex-row gap-8 md:gap-16 items-start ${step.offset}`}>
+              ].map((step, i) => (
+                <div
+                  key={step.n}
+                  className="flex flex-col md:flex-row gap-8 md:gap-16 items-start"
+                  style={{ marginLeft: `${i * 48}px` }}
+                >
                   <div className="w-24 h-24 bg-[#1E2D6B] text-white rounded-2xl flex items-center justify-center text-4xl font-black shadow-xl shrink-0">
                     {step.n}
                   </div>
@@ -197,24 +334,23 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Social Proof ───────────────────────────────────────────────────── */}
+      {/* ── Testimonial ────────────────────────────────────────────────────── */}
       <section className="py-24 md:py-32 bg-[#1E2D6B] relative overflow-hidden">
         <div className="absolute -left-20 top-0 text-[300px] font-black text-white/[0.03] leading-none pointer-events-none select-none">
           ³
         </div>
         <div className="max-w-[1100px] mx-auto px-6 relative z-10 text-center">
           <div className="text-5xl text-[#F59E0B] mb-8 leading-none">❝</div>
-          <blockquote className="text-3xl md:text-5xl font-bold text-white leading-tight max-w-4xl mx-auto mb-12">
-            Pinnacle³ didn't just help me file a petition; they helped me understand my own value.
-            The strategic rigor was on par with engineering standards at top-tier tech companies.{" "}
-            <span className="text-[#F59E0B]">Approved in 11 days.</span>
+          <blockquote className="text-2xl md:text-4xl font-bold text-white leading-tight max-w-4xl mx-auto mb-12">
+            I had been told by two attorneys I wasn't ready to file. Pinnacle³ spent three months helping me understand exactly what 'ready' actually meant — then helped me get there.{" "}
+            <span className="text-[#F59E0B]">EB-1A approved in 14 days.</span>
           </blockquote>
           <div className="flex flex-col items-center">
             <div className="w-16 h-16 bg-white/10 rounded-full mb-4 flex items-center justify-center text-white font-bold text-xl border border-white/20">
-              AR
+              SK
             </div>
-            <div className="text-[#F59E0B] font-bold text-xl tracking-wide">Staff Machine Learning Engineer</div>
-            <div className="text-white/50 font-medium mt-1">FAANG Company · EB-1A Approved</div>
+            <div className="text-[#F59E0B] font-bold text-xl tracking-wide">Principal Research Scientist</div>
+            <div className="text-white/50 font-medium mt-1">Top-5 Tech Company · EB-1A Approved</div>
           </div>
         </div>
       </section>
@@ -222,17 +358,18 @@ export default function Home() {
       {/* ── Final CTA ──────────────────────────────────────────────────────── */}
       <section className="py-32 bg-white text-center">
         <div className="max-w-3xl mx-auto px-6">
-          <h2 className="text-5xl md:text-6xl font-extrabold text-[#0A1128] mb-8 tracking-tight">
-            Ready to ascend?
+          <h2 className="text-5xl md:text-6xl font-extrabold text-[#0A1128] mb-6 tracking-tight leading-tight">
+            You've already done the extraordinary work.
           </h2>
-          <p className="text-xl text-slate-600 mb-12 font-medium">
-            Stop guessing what USCIS wants. Start building an undeniable case with strategic precision.
+          <p className="text-xl text-slate-600 mb-12 font-medium max-w-2xl mx-auto">
+            Let us help you make sure USCIS sees it the same way. Start with a free readiness assessment — no commitment, no obligation.
           </p>
           <Link href="/dashboard">
             <button className="bg-[#1E2D6B] text-white px-10 py-5 rounded font-extrabold text-xl hover:bg-[#0F1F4A] transition-all hover:-translate-y-1 shadow-2xl hover:shadow-[#1E2D6B]/30 inline-block">
-              Start Your Assessment Now
+              Start Your Free Assessment
             </button>
           </Link>
+          <p className="text-slate-400 text-sm mt-6">No credit card required · Takes 10 minutes</p>
         </div>
       </section>
 
