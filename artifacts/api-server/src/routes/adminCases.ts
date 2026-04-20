@@ -6,7 +6,7 @@
  */
 
 import { Router, type IRouter, type Request, type Response } from "express";
-import { eq, desc, and, inArray } from "drizzle-orm";
+import { eq, desc, and, inArray, sql } from "drizzle-orm";
 import {
   db,
   profilesTable,
@@ -18,6 +18,7 @@ import {
   readinessIntakeTable,
   resumeUploadsTable,
   clientDriveRootsTable,
+  clientDriveFoldersTable,
   courseProgressTable,
   coursesTable,
   lessonsTable,
@@ -523,6 +524,49 @@ router.patch(
 );
 
 // ─── Drive Sync ────────────────────────────────────────────────────────────────
+
+router.get(
+  "/admin/profiles/:id/drive-sync-status",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const id = parseId(req.params.id);
+    if (!id) { res.status(400).json({ error: "Invalid profile ID" }); return; }
+
+    const folders = await db
+      .select({
+        criteriaId: clientDriveFoldersTable.criteriaId,
+        folderName: clientDriveFoldersTable.folderName,
+        driveFolderId: clientDriveFoldersTable.driveFolderId,
+        driveFolderUrl: clientDriveFoldersTable.driveFolderUrl,
+        lastDriveSyncAt: clientDriveFoldersTable.lastDriveSyncAt,
+      })
+      .from(clientDriveFoldersTable)
+      .where(eq(clientDriveFoldersTable.profileId, id));
+
+    const driveIngestedCount = await db
+      .select({ count: sql<number>`cast(count(*) as int)` })
+      .from(evidenceTable)
+      .where(
+        and(
+          eq(evidenceTable.profileId, id),
+          eq(evidenceTable.source, "drive_ingest"),
+        ),
+      );
+
+    const lastSyncAt = folders.reduce<Date | null>((latest, f) => {
+      if (!f.lastDriveSyncAt) return latest;
+      if (!latest || f.lastDriveSyncAt > latest) return f.lastDriveSyncAt;
+      return latest;
+    }, null);
+
+    res.json({
+      foldersConfigured: folders.length,
+      driveIngestedCount: driveIngestedCount[0]?.count ?? 0,
+      lastSyncAt: lastSyncAt?.toISOString() ?? null,
+      folders,
+    });
+  },
+);
 
 router.post(
   "/admin/profiles/:id/sync-drive",

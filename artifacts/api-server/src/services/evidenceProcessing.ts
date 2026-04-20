@@ -9,7 +9,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 // ─── Lazy Anthropic client ────────────────────────────────────────────────────
 
-function getAI(): Anthropic | null {
+export function getAI(): Anthropic | null {
   const apiKey = process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY ?? process.env.ANTHROPIC_API_KEY;
   const baseURL = process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL;
   if (!apiKey) return null;

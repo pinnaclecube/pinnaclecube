@@ -19,7 +19,7 @@ import {
 } from "@workspace/db";
 import { requireClientAuth } from "../middlewares/clientAuth";
 import { uploadEvidenceFile } from "../services/googleDrive";
-import { extractText, generateAISummary } from "../services/evidenceProcessing";
+import { extractText, generateAISummary, getAI } from "../services/evidenceProcessing";
 import { getCriteriaForVisaPath, AI_DISCLAIMER, type VisaPathKey } from "@workspace/shared";
 
 const router = Router();

@@ -16,7 +16,7 @@ import {
   visaCriteriaTable,
   profilesTable,
 } from "@workspace/db";
-import { getDriveClient, listFolderFiles, downloadDriveFile } from "./googleDrive";
+import { getDriveClient, listFolderFiles, downloadDriveFile, type DownloadedFile } from "./googleDrive";
 import { extractText, generateAISummary } from "./evidenceProcessing";
 import { logger } from "../lib/logger";
 
@@ -78,16 +78,12 @@ export async function ingestFolder(
       return result;
     }
 
-    // Collect already-ingested driveFileIds for this profile + criterion
+    // Collect ALL already-ingested driveFileIds for this profile (profile-wide dedup,
+    // not per-criterion — prevents re-ingestion if a file is moved across folders)
     const existingRows = await db
       .select({ driveFileId: evidenceTable.driveFileId })
       .from(evidenceTable)
-      .where(
-        and(
-          eq(evidenceTable.profileId, folderRecord.profileId),
-          eq(evidenceTable.primaryCriteriaId, folderRecord.criteriaId),
-        ),
-      );
+      .where(eq(evidenceTable.profileId, folderRecord.profileId));
 
     const existingFileIds = new Set(
       existingRows.map((r) => r.driveFileId).filter(Boolean) as string[],
@@ -123,15 +119,16 @@ export async function ingestFolder(
         let extractedText = "";
         let aiSummary: string | null = null;
 
+        let effectiveFileName = file.name;
         if (isSupportedType) {
-          const buffer = await downloadDriveFile(drive, file.id, file.mimeType);
-
-          // Map Google Docs export MIME type back to docx for extraction
-          const effectiveMime = file.mimeType === "application/vnd.google-apps.document"
-            ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            : file.mimeType;
-
-          extractedText = await extractText(buffer, effectiveMime, file.name);
+          const downloaded: DownloadedFile = await downloadDriveFile(
+            drive,
+            file.id,
+            file.mimeType,
+            file.name,
+          );
+          effectiveFileName = downloaded.fileName;
+          extractedText = await extractText(downloaded.buffer, downloaded.mimeType, downloaded.fileName);
 
           if (extractedText.trim()) {
             aiSummary = await generateAISummary(extractedText, legalStandard, clientField);
@@ -150,7 +147,7 @@ export async function ingestFolder(
           status: "draft",
           driveFileId: file.id,
           driveFileUrl: file.webViewLink ?? driveDownloadUrl,
-          fileName: file.name,
+          fileName: effectiveFileName,
           extractionStatus: isSupportedType ? (extractedText ? "completed" : "failed") : "skipped",
           extractedText: extractedText || null,
           aiSummary,

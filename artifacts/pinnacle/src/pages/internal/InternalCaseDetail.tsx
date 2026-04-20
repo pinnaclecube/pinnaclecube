@@ -372,6 +372,12 @@ function OverviewTab({ userId, data, onReload }: { userId: string; data: any; on
 
 // ─── Tab 2: Evidence ────────────────────────────────────────────────────────────
 
+interface DriveSyncStatus {
+  foldersConfigured: number;
+  driveIngestedCount: number;
+  lastSyncAt: string | null;
+}
+
 function EvidenceTab({ userId }: { userId: string }) {
   const [groups, setGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -381,6 +387,15 @@ function EvidenceTab({ userId }: { userId: string }) {
   const [saving, setSaving] = useState<Record<number, boolean>>({});
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [driveSyncStatus, setDriveSyncStatus] = useState<DriveSyncStatus | null>(null);
+
+  const reloadSyncStatus = useCallback(async () => {
+    const r = await staffFetch(`/admin/profiles/${userId}/drive-sync-status`);
+    if (r.ok) {
+      const d = await r.json();
+      setDriveSyncStatus(d);
+    }
+  }, [userId]);
 
   const reload = useCallback(async () => {
     const r = await staffFetch(`/admin/profiles/${userId}/evidence`);
@@ -392,9 +407,11 @@ function EvidenceTab({ userId }: { userId: string }) {
     Promise.all([
       staffFetch(`/admin/profiles/${userId}/evidence`).then((r) => r.json()),
       staffFetch("/criteria").then((r) => r.json()),
-    ]).then(([ev, cr]) => {
+      staffFetch(`/admin/profiles/${userId}/drive-sync-status`).then((r) => r.json()),
+    ]).then(([ev, cr, ds]) => {
       setGroups(ev.evidence ?? []);
       setCriteriaOptions(cr.criteria ?? []);
+      setDriveSyncStatus(ds);
       setLoading(false);
     });
   }, [userId]);
@@ -411,6 +428,7 @@ function EvidenceTab({ userId }: { userId: string }) {
           : `Sync complete — no new files found (${d.foldersScanned} folders scanned).`;
         setSyncResult({ type: "success", text: msg });
         if (d.totalIngested > 0) await reload();
+        await reloadSyncStatus();
       } else {
         setSyncResult({ type: "error", text: d.detail ?? d.error ?? "Sync failed." });
       }
@@ -454,22 +472,41 @@ function EvidenceTab({ userId }: { userId: string }) {
   return (
     <div className="space-y-6">
       {/* Drive sync controls */}
-      <div className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-gray-50">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <CloudDownload className="w-4 h-4 shrink-0" />
-          <span>Scan client Google Drive folders for new files and auto-ingest them as evidence.</span>
+      <div className="rounded-lg border bg-gray-50 p-3 space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CloudDownload className="w-4 h-4 shrink-0 text-blue-600" />
+            <span>Google Drive auto-ingest</span>
+            {driveSyncStatus !== null && driveSyncStatus.foldersConfigured > 0 && (
+              <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
+                {driveSyncStatus.foldersConfigured} folder{driveSyncStatus.foldersConfigured !== 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            {syncResult && (
+              <p className={cn("text-xs font-medium", syncResult.type === "success" ? "text-green-700" : "text-red-600")}>
+                {syncResult.text}
+              </p>
+            )}
+            <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={syncDrive} disabled={syncing}>
+              {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <CloudDownload className="w-3 h-3" />}
+              {syncing ? "Syncing…" : "Sync Drive Now"}
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          {syncResult && (
-            <p className={cn("text-xs font-medium", syncResult.type === "success" ? "text-green-700" : "text-red-600")}>
-              {syncResult.text}
-            </p>
-          )}
-          <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={syncDrive} disabled={syncing}>
-            {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <CloudDownload className="w-3 h-3" />}
-            {syncing ? "Syncing…" : "Sync Drive Now"}
-          </Button>
-        </div>
+        {driveSyncStatus !== null && (
+          <div className="flex items-center gap-4 text-xs text-muted-foreground border-t pt-2">
+            <span>
+              <span className="font-semibold text-foreground">{driveSyncStatus.driveIngestedCount}</span> file{driveSyncStatus.driveIngestedCount !== 1 ? "s" : ""} auto-imported from Drive
+            </span>
+            {driveSyncStatus.lastSyncAt ? (
+              <span>Last synced {new Date(driveSyncStatus.lastSyncAt).toLocaleString()}</span>
+            ) : (
+              <span className="italic">Never synced</span>
+            )}
+          </div>
+        )}
       </div>
 
       {groups.length === 0 && (

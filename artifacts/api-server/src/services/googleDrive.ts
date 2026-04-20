@@ -578,33 +578,48 @@ export async function listFolderFiles(
 
 // ─── 12. downloadDriveFile ────────────────────────────────────────────────────
 
+export interface DownloadedFile {
+  buffer: Buffer;
+  mimeType: string;
+  fileName: string;
+}
+
 export async function downloadDriveFile(
   drive: drive_v3.Drive,
   fileId: string,
-  mimeType: string,
-): Promise<Buffer> {
-  const isGoogleDoc = mimeType.startsWith("application/vnd.google-apps.");
+  originalMimeType: string,
+  originalFileName: string,
+): Promise<DownloadedFile> {
+  const isGoogleDoc = originalMimeType.startsWith("application/vnd.google-apps.");
 
   if (isGoogleDoc) {
-    const exportMime =
-      mimeType === "application/vnd.google-apps.document"
-        ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        : mimeType === "application/vnd.google-apps.spreadsheet"
-          ? "text/csv"
-          : "text/plain";
+    // Export Google Workspace files as PDF for consistent text extraction
+    const exportMime = "application/pdf";
+    const exportExt = ".pdf";
 
     const res = await drive.files.export(
       { fileId, mimeType: exportMime },
       { responseType: "arraybuffer" },
     );
-    return Buffer.from(res.data as ArrayBuffer);
+
+    const baseName = originalFileName.replace(/\.[^/.]+$/, "");
+    return {
+      buffer: Buffer.from(res.data as ArrayBuffer),
+      mimeType: exportMime,
+      fileName: baseName + exportExt,
+    };
   }
 
   const res = await drive.files.get(
     { fileId, alt: "media" },
     { responseType: "arraybuffer" },
   );
-  return Buffer.from(res.data as ArrayBuffer);
+
+  return {
+    buffer: Buffer.from(res.data as ArrayBuffer),
+    mimeType: originalMimeType,
+    fileName: originalFileName,
+  };
 }
 
 // ─── File name builders (re-exported for route use) ───────────────────────────
