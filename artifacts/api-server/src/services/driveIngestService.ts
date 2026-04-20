@@ -16,6 +16,7 @@ import {
   visaCriteriaTable,
   profilesTable,
   driveIngestLogsTable,
+  notificationsTable,
 } from "@workspace/db";
 import { getDriveClient, listFolderFiles, downloadDriveFile, type DownloadedFile } from "./googleDrive";
 import { extractText, generateAISummary } from "./evidenceProcessing";
@@ -192,6 +193,24 @@ export async function ingestFolder(
         });
         result.errors++;
       }
+    }
+
+    // Create a client notification when new files were ingested
+    if (result.ingested > 0) {
+      const fileWord = result.ingested === 1 ? "file" : "files";
+      const criterionLabel = criterionRow?.displayName ?? folderRecord.criteriaId;
+      await db.insert(notificationsTable).values({
+        profileId: folderRecord.profileId,
+        userType: "client",
+        notificationType: "drive_ingest",
+        title: `${result.ingested} new ${fileWord} synced from Google Drive`,
+        message: `${result.ingested} ${fileWord} were automatically imported from your Drive folder for ${criterionLabel}.`,
+        link: "/evidence",
+        status: "unread",
+        priority: "medium",
+      }).catch((err) => {
+        logger.error({ err }, "[driveIngest] Failed to create ingest notification");
+      });
     }
 
     // Update last sync timestamp

@@ -5,7 +5,7 @@ import type { Evidence } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Upload, X, FileText, AlertCircle, CloudDownload } from "lucide-react";
+import { Plus, Search, Upload, X, FileText, AlertCircle, CloudDownload, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
@@ -54,11 +54,56 @@ function useEvidenceCriteria() {
   return { criteria, requiresIntake, loading };
 }
 
+interface DriveSyncInfo {
+  lastDriveSyncAt: string | null;
+  unreadDriveNotifications: number;
+}
+
+function useDriveSync() {
+  const [syncInfo, setSyncInfo] = useState<DriveSyncInfo | null>(null);
+
+  useEffect(() => {
+    fetch("/api/evidence/drive-sync", {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setSyncInfo(d))
+      .catch(() => {});
+  }, []);
+
+  return syncInfo;
+}
+
+function formatRelativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 export default function EvidenceVault() {
   const { data: evidenceList, isLoading, refetch } = useListEvidence();
   const { criteria, requiresIntake, loading: criteriaLoading } = useEvidenceCriteria();
+  const driveSync = useDriveSync();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
+  const driveToastShown = useRef(false);
+
+  useEffect(() => {
+    if (driveToastShown.current) return;
+    if (driveSync && driveSync.unreadDriveNotifications > 0) {
+      driveToastShown.current = true;
+      const count = driveSync.unreadDriveNotifications;
+      toast({
+        title: `${count} new Drive file${count > 1 ? "s" : ""} synced`,
+        description: "New evidence from your Google Drive is ready to review.",
+      });
+    }
+  }, [driveSync, toast]);
 
   // Form state
   const [criteriaId, setCriteriaId] = useState("");
@@ -150,6 +195,17 @@ export default function EvidenceVault() {
         <div>
           <h1 className="text-3xl font-bold text-foreground">Evidence Vault</h1>
           <p className="text-muted-foreground mt-2">Secure repository for your professional artifacts, mapped to USCIS criteria.</p>
+          {driveSync?.lastDriveSyncAt && (
+            <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
+              <RefreshCw className="w-3 h-3" />
+              <span>Last Drive sync: {formatRelativeTime(driveSync.lastDriveSyncAt)}</span>
+              {driveSync.unreadDriveNotifications > 0 && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 border border-blue-200">
+                  {driveSync.unreadDriveNotifications} new
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>

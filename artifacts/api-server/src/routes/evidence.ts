@@ -7,7 +7,7 @@
  */
 
 import { Router } from "express";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, max } from "drizzle-orm";
 import multer from "multer";
 import { db } from "@workspace/db";
 import {
@@ -16,6 +16,7 @@ import {
   readinessIntakeTable,
   visaCriteriaTable,
   profilesTable,
+  notificationsTable,
 } from "@workspace/db";
 import { requireClientAuth } from "../middlewares/clientAuth";
 import { uploadEvidenceFile } from "../services/googleDrive";
@@ -100,6 +101,34 @@ router.get("/evidence/criteria", requireClientAuth, async (req: any, res) => {
   }));
 
   res.json({ criteria: enriched, requiresIntake: false });
+});
+
+// ─── GET /api/evidence/drive-sync ─────────────────────────────────────────────
+
+router.get("/evidence/drive-sync", requireClientAuth, async (req: any, res) => {
+  const userId: number = req.clientUser.id;
+
+  const [syncRow] = await db
+    .select({ lastSyncAt: max(clientDriveFoldersTable.lastDriveSyncAt) })
+    .from(clientDriveFoldersTable)
+    .where(eq(clientDriveFoldersTable.profileId, userId));
+
+  const [unreadRow] = await db
+    .select({ count: sql<number>`cast(count(*) as int)` })
+    .from(notificationsTable)
+    .where(
+      and(
+        eq(notificationsTable.profileId, userId),
+        eq(notificationsTable.userType, "client"),
+        eq(notificationsTable.notificationType, "drive_ingest"),
+        eq(notificationsTable.status, "unread"),
+      ),
+    );
+
+  res.json({
+    lastDriveSyncAt: syncRow?.lastSyncAt ?? null,
+    unreadDriveNotifications: unreadRow?.count ?? 0,
+  });
 });
 
 // ─── GET /api/evidence/coverage ───────────────────────────────────────────────
