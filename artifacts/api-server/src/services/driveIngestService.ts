@@ -21,17 +21,23 @@ import { extractText, generateAISummary } from "./evidenceProcessing";
 import { logger } from "../lib/logger";
 
 const INTERVAL_MS = parseInt(process.env.DRIVE_INGEST_INTERVAL_MS ?? "300000", 10);
+// All Google Workspace types are supported via PDF export.
+// Binary image types are listed but produce empty extracted text (handled gracefully).
 const SUPPORTED_MIME_TYPES = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.google-apps.document",
   "text/plain",
   "text/csv",
-  "image/png",
-  "image/jpeg",
-  "image/gif",
-  "image/webp",
+  // Google Workspace types — all exported as PDF by downloadDriveFile
+  "application/vnd.google-apps.document",
+  "application/vnd.google-apps.spreadsheet",
+  "application/vnd.google-apps.presentation",
+  "application/vnd.google-apps.drawing",
 ]);
+
+function isGoogleWorkspaceType(mimeType: string): boolean {
+  return mimeType.startsWith("application/vnd.google-apps.");
+}
 
 // ─── Ingest a single folder ───────────────────────────────────────────────────
 
@@ -113,7 +119,8 @@ export async function ingestFolder(
         continue;
       }
 
-      const isSupportedType = SUPPORTED_MIME_TYPES.has(file.mimeType);
+      // Treat any Google Workspace type as supported (all exported as PDF)
+      const isSupportedType = SUPPORTED_MIME_TYPES.has(file.mimeType) || isGoogleWorkspaceType(file.mimeType);
 
       try {
         let extractedText = "";

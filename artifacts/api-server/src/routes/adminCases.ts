@@ -603,8 +603,14 @@ router.post(
         });
       }
 
+      const lastSyncAt = new Date().toISOString();
       res.json({
         success: true,
+        // Spec-aligned fields
+        newItems: totalIngested,
+        totalDriveItems: totalIngested + totalSkipped,
+        lastSyncAt,
+        // Detailed breakdown
         foldersScanned: results.length,
         totalIngested,
         totalSkipped,

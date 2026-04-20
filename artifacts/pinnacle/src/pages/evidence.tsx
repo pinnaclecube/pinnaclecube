@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { AIOutputBanner } from "@/components/disclaimers/AIOutputBanner";
 import { useListEvidence } from "@workspace/api-client-react";
+import type { Evidence } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,12 @@ import { cn } from "@/lib/utils";
 
 const TOKEN_KEY = "pinnacle_token";
 function getToken() { return localStorage.getItem(TOKEN_KEY); }
+
+interface EvidenceItem extends Evidence {
+  primaryCriteriaId?: string | null;
+  fileName?: string | null;
+  source?: string | null;
+}
 
 interface CriterionOption {
   criteria_id: string;
@@ -302,7 +309,7 @@ export default function EvidenceVault() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {evidenceList.map((evidence) => (
+          {(evidenceList as EvidenceItem[]).map((evidence) => (
             <Link key={evidence.id} href={`/evidence/${evidence.id}`}>
               <Card className="hover:border-[#1E2D6B]/50 transition-colors cursor-pointer">
                 <CardContent className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -316,10 +323,10 @@ export default function EvidenceVault() {
                         <Badge variant="secondary" className={getStatusColor(evidence.status)}>
                           {evidence.status.charAt(0).toUpperCase() + evidence.status.slice(1)}
                         </Badge>
-                        {(evidence as any).primaryCriteriaId && (
-                          <Badge variant="outline" className="text-xs font-mono">{(evidence as any).primaryCriteriaId}</Badge>
+                        {evidence.primaryCriteriaId && (
+                          <Badge variant="outline" className="text-xs font-mono">{evidence.primaryCriteriaId}</Badge>
                         )}
-                        {(evidence as any).source === "drive_ingest" && (
+                        {evidence.source === "drive_ingest" && (
                           <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 border border-blue-100">
                             <CloudDownload className="w-2.5 h-2.5" /> From Drive
                           </span>
@@ -329,7 +336,7 @@ export default function EvidenceVault() {
                         <p className="text-sm text-muted-foreground line-clamp-1">{evidence.description}</p>
                       )}
                       <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                        {(evidence as any).fileName && <span className="truncate max-w-[200px]">{(evidence as any).fileName}</span>}
+                        {evidence.fileName && <span className="truncate max-w-[200px]">{evidence.fileName}</span>}
                         {evidence.dateAchieved && <span>• {new Date(evidence.dateAchieved).toLocaleDateString()}</span>}
                       </div>
                     </div>
