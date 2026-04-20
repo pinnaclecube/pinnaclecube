@@ -15,6 +15,7 @@ import {
   evidenceTable,
   visaCriteriaTable,
   profilesTable,
+  driveIngestLogsTable,
 } from "@workspace/db";
 import { getDriveClient, listFolderFiles, downloadDriveFile, type DownloadedFile } from "./googleDrive";
 import { extractText, generateAISummary } from "./evidenceProcessing";
@@ -144,6 +145,8 @@ export async function ingestFolder(
 
         const driveDownloadUrl = `https://drive.google.com/uc?export=download&id=${file.id}`;
 
+        const finalExtractionStatus = isSupportedType ? (extractedText ? "completed" : "failed") : "skipped";
+
         await db.insert(evidenceTable).values({
           profileId: folderRecord.profileId,
           primaryCriteriaId: folderRecord.criteriaId,
@@ -155,10 +158,18 @@ export async function ingestFolder(
           driveFileId: file.id,
           driveFileUrl: file.webViewLink ?? driveDownloadUrl,
           fileName: effectiveFileName,
-          extractionStatus: isSupportedType ? (extractedText ? "completed" : "failed") : "skipped",
+          extractionStatus: finalExtractionStatus,
           extractedText: extractedText || null,
           aiSummary,
           source: "drive_ingest",
+        });
+
+        await db.insert(driveIngestLogsTable).values({
+          profileId: folderRecord.profileId,
+          criteriaId: folderRecord.criteriaId,
+          driveFileId: file.id,
+          fileName: effectiveFileName,
+          extractionStatus: finalExtractionStatus,
         });
 
         result.ingested++;

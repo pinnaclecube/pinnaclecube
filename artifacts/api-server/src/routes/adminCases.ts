@@ -19,6 +19,7 @@ import {
   resumeUploadsTable,
   clientDriveRootsTable,
   clientDriveFoldersTable,
+  driveIngestLogsTable,
   courseProgressTable,
   coursesTable,
   lessonsTable,
@@ -621,6 +622,32 @@ router.post(
       console.error(`[sync-drive] Failed for profile ${id}:`, err);
       res.status(500).json({ error: "Drive sync failed", detail: err?.message ?? "Unknown error" });
     }
+  },
+);
+
+// ─── Drive ingest log ──────────────────────────────────────────────────────────
+
+router.get(
+  "/admin/profiles/:id/drive-ingest-log",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const id = parseId(req.params.id);
+    if (!id) { res.status(400).json({ error: "Invalid profile ID" }); return; }
+
+    const rawLimit = parseInt(req.query.limit as string ?? "100", 10);
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 500) : 100;
+
+    const [profile] = await db.select({ id: profilesTable.id }).from(profilesTable).where(eq(profilesTable.id, id)).limit(1);
+    if (!profile) { res.status(404).json({ error: "Profile not found" }); return; }
+
+    const entries = await db
+      .select()
+      .from(driveIngestLogsTable)
+      .where(eq(driveIngestLogsTable.profileId, id))
+      .orderBy(desc(driveIngestLogsTable.ingestedAt))
+      .limit(limit);
+
+    res.json({ entries, total: entries.length });
   },
 );
 

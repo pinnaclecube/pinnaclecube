@@ -14,7 +14,7 @@ import StaffNav from "@/components/layout/StaffNav";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
 import {
   ArrowLeft, Plus, Check, AlertTriangle, Lock,
-  RefreshCw, ExternalLink, Loader2, CheckCircle, Clock, Zap, Activity, FolderOpen, FolderPlus, CloudDownload,
+  RefreshCw, ExternalLink, Loader2, CheckCircle, Clock, Zap, Activity, FolderOpen, FolderPlus, CloudDownload, ChevronDown, ChevronRight, History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -378,6 +378,16 @@ interface DriveSyncStatus {
   lastSyncAt: string | null;
 }
 
+interface DriveIngestLogEntry {
+  id: number;
+  profileId: number;
+  criteriaId: string;
+  driveFileId: string;
+  fileName: string;
+  extractionStatus: string;
+  ingestedAt: string;
+}
+
 function EvidenceTab({ userId }: { userId: string }) {
   const [groups, setGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -388,12 +398,22 @@ function EvidenceTab({ userId }: { userId: string }) {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [driveSyncStatus, setDriveSyncStatus] = useState<DriveSyncStatus | null>(null);
+  const [ingestLog, setIngestLog] = useState<DriveIngestLogEntry[]>([]);
+  const [showIngestLog, setShowIngestLog] = useState(false);
 
   const reloadSyncStatus = useCallback(async () => {
     const r = await staffFetch(`/admin/profiles/${userId}/drive-sync-status`);
     if (r.ok) {
       const d = await r.json();
       setDriveSyncStatus(d);
+    }
+  }, [userId]);
+
+  const reloadIngestLog = useCallback(async () => {
+    const r = await staffFetch(`/admin/profiles/${userId}/drive-ingest-log`);
+    if (r.ok) {
+      const d = await r.json();
+      setIngestLog(d.entries ?? []);
     }
   }, [userId]);
 
@@ -408,10 +428,12 @@ function EvidenceTab({ userId }: { userId: string }) {
       staffFetch(`/admin/profiles/${userId}/evidence`).then((r) => r.json()),
       staffFetch("/criteria").then((r) => r.json()),
       staffFetch(`/admin/profiles/${userId}/drive-sync-status`).then((r) => r.json()),
-    ]).then(([ev, cr, ds]) => {
+      staffFetch(`/admin/profiles/${userId}/drive-ingest-log`).then((r) => r.json()),
+    ]).then(([ev, cr, ds, lg]) => {
       setGroups(ev.evidence ?? []);
       setCriteriaOptions(cr.criteria ?? []);
       setDriveSyncStatus(ds);
+      setIngestLog(lg.entries ?? []);
       setLoading(false);
     });
   }, [userId]);
@@ -429,6 +451,7 @@ function EvidenceTab({ userId }: { userId: string }) {
         setSyncResult({ type: "success", text: msg });
         if (d.totalIngested > 0) await reload();
         await reloadSyncStatus();
+        await reloadIngestLog();
       } else {
         setSyncResult({ type: "error", text: d.detail ?? d.error ?? "Sync failed." });
       }
@@ -512,6 +535,57 @@ function EvidenceTab({ userId }: { userId: string }) {
       {groups.length === 0 && (
         <Card><CardContent className="py-12 text-center"><p className="text-muted-foreground">No evidence items yet. Upload files via the client portal or drop them in Google Drive and sync.</p></CardContent></Card>
       )}
+
+      {/* Drive Sync History */}
+      <div className="rounded-lg border bg-white">
+        <button
+          type="button"
+          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+          onClick={() => setShowIngestLog((v) => !v)}
+        >
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <History className="w-4 h-4 text-blue-600" />
+            <span>Drive Sync History</span>
+            <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-normal">
+              {ingestLog.length} entry{ingestLog.length !== 1 ? "ies" : "y"}
+            </span>
+          </div>
+          {showIngestLog ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+        </button>
+        {showIngestLog && (
+          <div className="border-t">
+            {ingestLog.length === 0 ? (
+              <p className="px-4 py-3 text-sm text-muted-foreground italic">No files have been auto-ingested yet.</p>
+            ) : (
+              <div className="divide-y max-h-80 overflow-y-auto">
+                {ingestLog.map((entry) => (
+                  <div key={entry.id} className="flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-gray-50">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{entry.fileName}</p>
+                      <p className="text-muted-foreground truncate">{entry.criteriaId}</p>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-2">
+                      <span className={cn(
+                        "px-1.5 py-0.5 rounded font-medium",
+                        entry.extractionStatus === "completed" ? "bg-green-50 text-green-700" :
+                        entry.extractionStatus === "failed" ? "bg-red-50 text-red-700" :
+                        "bg-gray-50 text-gray-500"
+                      )}>
+                        {entry.extractionStatus === "completed" ? "Extracted" :
+                         entry.extractionStatus === "failed" ? "Extract failed" :
+                         entry.extractionStatus}
+                      </span>
+                      <span className="text-muted-foreground whitespace-nowrap">
+                        {new Date(entry.ingestedAt).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {groups.map((group: any) => (
         <div key={group.criteriaId}>

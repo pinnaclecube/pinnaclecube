@@ -30,9 +30,22 @@ export const clientDriveFoldersTable = pgTable("client_drive_folders", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const driveIngestLogsTable = pgTable("drive_ingest_logs", {
+  id: serial("id").primaryKey(),
+  profileId: integer("profile_id").notNull(),
+  criteriaId: text("criteria_id").notNull(),
+  driveFileId: text("drive_file_id").notNull(),
+  fileName: text("file_name").notNull(),
+  extractionStatus: text("extraction_status").notNull(),
+  ingestedAt: timestamp("ingested_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const insertClientDriveRootSchema = createInsertSchema(clientDriveRootsTable).omit({ id: true });
 export const insertClientDriveFolderSchema = createInsertSchema(clientDriveFoldersTable).omit({ id: true, createdAt: true });
+export const insertDriveIngestLogSchema = createInsertSchema(driveIngestLogsTable).omit({ id: true, ingestedAt: true });
 export type InsertClientDriveRoot = z.infer<typeof insertClientDriveRootSchema>;
 export type ClientDriveRoot = typeof clientDriveRootsTable.$inferSelect;
 export type InsertClientDriveFolder = z.infer<typeof insertClientDriveFolderSchema>;
 export type ClientDriveFolder = typeof clientDriveFoldersTable.$inferSelect;
+export type DriveIngestLog = typeof driveIngestLogsTable.$inferSelect;
+export type InsertDriveIngestLog = z.infer<typeof insertDriveIngestLogSchema>;
