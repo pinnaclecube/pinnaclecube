@@ -37,6 +37,7 @@ export const driveIngestLogsTable = pgTable("drive_ingest_logs", {
   driveFileId: text("drive_file_id").notNull(),
   fileName: text("file_name").notNull(),
   extractionStatus: text("extraction_status").notNull(),
+  errorMessage: text("error_message"),
   ingestedAt: timestamp("ingested_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

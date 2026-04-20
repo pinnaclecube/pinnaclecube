@@ -178,6 +178,18 @@ export async function ingestFolder(
           { err, fileId: file.id, fileName: file.name, profileId: folderRecord.profileId },
           "[driveIngest] Failed to process file",
         );
+        const errorMessage =
+          err instanceof Error ? err.message : String(err);
+        await db.insert(driveIngestLogsTable).values({
+          profileId: folderRecord.profileId,
+          criteriaId: folderRecord.criteriaId,
+          driveFileId: file.id,
+          fileName: file.name,
+          extractionStatus: "error",
+          errorMessage,
+        }).catch((logErr) => {
+          logger.error({ logErr }, "[driveIngest] Failed to write error log row");
+        });
         result.errors++;
       }
     }

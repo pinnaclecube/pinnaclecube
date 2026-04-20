@@ -385,6 +385,7 @@ interface DriveIngestLogEntry {
   driveFileId: string;
   fileName: string;
   extractionStatus: string;
+  errorMessage: string | null;
   ingestedAt: string;
 }
 
@@ -559,26 +560,40 @@ function EvidenceTab({ userId }: { userId: string }) {
             ) : (
               <div className="divide-y max-h-80 overflow-y-auto">
                 {ingestLog.map((entry) => (
-                  <div key={entry.id} className="flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-gray-50">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{entry.fileName}</p>
-                      <p className="text-muted-foreground truncate">{entry.criteriaId}</p>
+                  <div key={entry.id} className="px-4 py-2.5 text-xs hover:bg-gray-50">
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{entry.fileName}</p>
+                        <p className="text-muted-foreground truncate">{entry.criteriaId}</p>
+                      </div>
+                      <div className="shrink-0 flex items-center gap-2">
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded font-medium",
+                          entry.extractionStatus === "completed" ? "bg-green-50 text-green-700" :
+                          entry.extractionStatus === "error" ? "bg-red-100 text-red-700" :
+                          entry.extractionStatus === "failed" ? "bg-red-50 text-red-700" :
+                          "bg-gray-50 text-gray-500"
+                        )}>
+                          {entry.extractionStatus === "completed" ? "Extracted" :
+                           entry.extractionStatus === "error" ? "Ingest error" :
+                           entry.extractionStatus === "failed" ? "Extract failed" :
+                           entry.extractionStatus}
+                        </span>
+                        <span className="text-muted-foreground whitespace-nowrap">
+                          {new Date(entry.ingestedAt).toLocaleString()}
+                        </span>
+                      </div>
                     </div>
-                    <div className="shrink-0 flex items-center gap-2">
-                      <span className={cn(
-                        "px-1.5 py-0.5 rounded font-medium",
-                        entry.extractionStatus === "completed" ? "bg-green-50 text-green-700" :
-                        entry.extractionStatus === "failed" ? "bg-red-50 text-red-700" :
-                        "bg-gray-50 text-gray-500"
-                      )}>
-                        {entry.extractionStatus === "completed" ? "Extracted" :
-                         entry.extractionStatus === "failed" ? "Extract failed" :
-                         entry.extractionStatus}
-                      </span>
-                      <span className="text-muted-foreground whitespace-nowrap">
-                        {new Date(entry.ingestedAt).toLocaleString()}
-                      </span>
-                    </div>
+                    {entry.extractionStatus === "error" && entry.errorMessage && (
+                      <details className="mt-1.5">
+                        <summary className="cursor-pointer text-red-600 font-medium hover:text-red-800 select-none">
+                          Error details
+                        </summary>
+                        <p className="mt-1 font-mono bg-red-50 border border-red-200 rounded px-2 py-1.5 text-red-800 whitespace-pre-wrap break-all">
+                          {entry.errorMessage}
+                        </p>
+                      </details>
+                    )}
                   </div>
                 ))}
               </div>
