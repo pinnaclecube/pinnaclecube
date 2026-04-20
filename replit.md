@@ -53,7 +53,7 @@ Files dropped into a client's Google Drive criterion folders are automatically d
 - `artifacts/api-server/src/services/googleDrive.ts` — Added `listFolderFiles()` and `downloadDriveFile()` (handles Google Docs export)
 - **Poller cadence:** every 5 min (configurable via `DRIVE_INGEST_INTERVAL_MS` env var); starts immediately on server boot
 - **Dedup key:** `evidence.driveFileId` — never re-ingests an already-seen file
-- **Source flag:** `evidence.source = 'drive_ingest'` vs `'upload'` — shown as blue "Drive" badge in admin Evidence tab and client vault
+- **Source flag:** `evidence.source = 'drive_ingest'` vs `'web_upload'` (default) — shown as blue "Drive" badge in admin Evidence tab and client vault
 - **Extraction status:** `completed` | `failed` | `skipped` (binary/image files not extractable get `skipped`)
 - **Admin sync:** `POST /api/admin/profiles/:id/sync-drive` — triggers immediate scan for one client; shown as "Sync Drive Now" button in InternalCaseDetail Evidence tab
 - **DB columns added:** `evidence.source` (text, default `upload`), `client_drive_folders.last_drive_sync_at` (timestamp)

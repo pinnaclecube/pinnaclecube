@@ -235,6 +235,11 @@ async function runFullSweep(): Promise<void> {
 let pollerTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startDriveIngestPoller(): void {
+  if (pollerTimer !== null) {
+    logger.warn("[driveIngest] Poller already running — ignoring duplicate start");
+    return;
+  }
+
   if (!process.env.GOOGLE_SERVICE_ACCOUNT_JSON || !process.env.ROOT_FOLDER_ID) {
     logger.warn("[driveIngest] GOOGLE_SERVICE_ACCOUNT_JSON or ROOT_FOLDER_ID not set — poller disabled");
     return;
