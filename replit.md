@@ -56,7 +56,7 @@ Files dropped into a client's Google Drive criterion folders are automatically d
 - **Source flag:** `evidence.source = 'drive_ingest'` vs `'web_upload'` (default) — shown as blue "Drive" badge in admin Evidence tab and client vault
 - **Extraction status:** `completed` | `failed` | `skipped` (binary/image files not extractable get `skipped`)
 - **Admin sync:** `POST /api/admin/profiles/:id/sync-drive` — triggers immediate scan for one client; shown as "Sync Drive Now" button in InternalCaseDetail Evidence tab
-- **DB columns added:** `evidence.source` (text, default `upload`), `client_drive_folders.last_drive_sync_at` (timestamp)
+- **DB columns added:** `evidence.source` (text, default `web_upload`; drive-ingested items use `drive_ingest`), `client_drive_folders.last_drive_sync_at` (timestamp)
 
 ## Stripe Integration
 
