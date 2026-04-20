@@ -14,7 +14,7 @@ import StaffNav from "@/components/layout/StaffNav";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
 import {
   ArrowLeft, Plus, Check, AlertTriangle, Lock,
-  RefreshCw, ExternalLink, Loader2, CheckCircle, Clock, Zap, Activity, FolderOpen, FolderPlus,
+  RefreshCw, ExternalLink, Loader2, CheckCircle, Clock, Zap, Activity, FolderOpen, FolderPlus, CloudDownload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -379,6 +379,8 @@ function EvidenceTab({ userId }: { userId: string }) {
   const [noteInput, setNoteInput] = useState<Record<number, string>>({});
   const [reclassifyTarget, setReclassifyTarget] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const reload = useCallback(async () => {
     const r = await staffFetch(`/admin/profiles/${userId}/evidence`);
@@ -396,6 +398,28 @@ function EvidenceTab({ userId }: { userId: string }) {
       setLoading(false);
     });
   }, [userId]);
+
+  const syncDrive = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const r = await staffFetch(`/admin/profiles/${userId}/sync-drive`, { method: "POST" });
+      const d = await r.json();
+      if (r.ok) {
+        const msg = d.totalIngested > 0
+          ? `Synced — ${d.totalIngested} new file(s) ingested across ${d.foldersScanned} folder(s).`
+          : `Sync complete — no new files found (${d.foldersScanned} folders scanned).`;
+        setSyncResult({ type: "success", text: msg });
+        if (d.totalIngested > 0) await reload();
+      } else {
+        setSyncResult({ type: "error", text: d.detail ?? d.error ?? "Sync failed." });
+      }
+    } catch {
+      setSyncResult({ type: "error", text: "Network error — check API server logs." });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const saveNote = async (eid: number) => {
     const note = noteInput[eid];
@@ -426,10 +450,32 @@ function EvidenceTab({ userId }: { userId: string }) {
   };
 
   if (loading) return <div className="space-y-3">{[1, 2].map((i) => <div key={i} className="h-32 bg-gray-200 rounded animate-pulse" />)}</div>;
-  if (groups.length === 0) return <Card><CardContent className="py-12 text-center"><p className="text-muted-foreground">No evidence items yet.</p></CardContent></Card>;
 
   return (
     <div className="space-y-6">
+      {/* Drive sync controls */}
+      <div className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-gray-50">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <CloudDownload className="w-4 h-4 shrink-0" />
+          <span>Scan client Google Drive folders for new files and auto-ingest them as evidence.</span>
+        </div>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          {syncResult && (
+            <p className={cn("text-xs font-medium", syncResult.type === "success" ? "text-green-700" : "text-red-600")}>
+              {syncResult.text}
+            </p>
+          )}
+          <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={syncDrive} disabled={syncing}>
+            {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <CloudDownload className="w-3 h-3" />}
+            {syncing ? "Syncing…" : "Sync Drive Now"}
+          </Button>
+        </div>
+      </div>
+
+      {groups.length === 0 && (
+        <Card><CardContent className="py-12 text-center"><p className="text-muted-foreground">No evidence items yet. Upload files via the client portal or drop them in Google Drive and sync.</p></CardContent></Card>
+      )}
+
       {groups.map((group: any) => (
         <div key={group.criteriaId}>
           <div className="flex items-center gap-2 mb-3">
@@ -446,13 +492,20 @@ function EvidenceTab({ userId }: { userId: string }) {
                         <p className="font-medium text-sm">{item.title}</p>
                         <StatusBadge status={item.status} />
                         <Badge variant="outline" className="text-xs">{item.evidenceType}</Badge>
+                        {item.source === "drive_ingest" && (
+                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded font-medium bg-blue-50 text-blue-700">
+                            <CloudDownload className="w-2.5 h-2.5" /> Drive
+                          </span>
+                        )}
                         {item.extractionStatus && (
                           <span className={cn("text-xs px-1.5 py-0.5 rounded font-medium",
                             item.extractionStatus === "completed" ? "bg-green-50 text-green-700" :
                             item.extractionStatus === "failed" ? "bg-red-50 text-red-700" :
+                            item.extractionStatus === "skipped" ? "bg-gray-50 text-gray-400" :
                             "bg-gray-50 text-gray-500")}>
                             {item.extractionStatus === "completed" ? "Extracted" :
-                             item.extractionStatus === "failed" ? "Extract failed" : "Pending extract"}
+                             item.extractionStatus === "failed" ? "Extract failed" :
+                             item.extractionStatus === "skipped" ? "Binary file" : "Pending extract"}
                           </span>
                         )}
                       </div>

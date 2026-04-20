@@ -27,6 +27,7 @@ import {
 } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { createClientRootFolders, createCriteriaEvidenceFolders } from "../services/googleDrive";
+import { ingestClientFolders } from "../services/driveIngestService";
 import { z } from "zod/v4";
 import bcrypt from "bcrypt";
 
@@ -518,6 +519,58 @@ router.patch(
 
     if (!updated) { res.status(404).json({ error: "Document not found" }); return; }
     res.json({ success: true, document: updated });
+  },
+);
+
+// ─── Drive Sync ────────────────────────────────────────────────────────────────
+
+router.post(
+  "/admin/profiles/:id/sync-drive",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const id = parseId(req.params.id);
+    if (!id) { res.status(400).json({ error: "Invalid profile ID" }); return; }
+
+    const [profile] = await db
+      .select({ id: profilesTable.id })
+      .from(profilesTable)
+      .where(eq(profilesTable.id, id))
+      .limit(1);
+    if (!profile) { res.status(404).json({ error: "Profile not found" }); return; }
+
+    try {
+      const results = await ingestClientFolders(id);
+
+      const totalIngested = results.reduce((s, r) => s + r.ingested, 0);
+      const totalSkipped = results.reduce((s, r) => s + r.skipped, 0);
+      const totalErrors = results.reduce((s, r) => s + r.errors, 0);
+
+      if (totalIngested > 0) {
+        await db.insert(clientActivityLogTable).values({
+          profileId: id,
+          eventType: "drive_sync",
+          eventData: {
+            message: `Staff triggered Drive sync — ${totalIngested} new file(s) ingested.`,
+            foldersScanned: results.length,
+            totalIngested,
+            totalSkipped,
+            totalErrors,
+          },
+        });
+      }
+
+      res.json({
+        success: true,
+        foldersScanned: results.length,
+        totalIngested,
+        totalSkipped,
+        totalErrors,
+        results,
+      });
+    } catch (err: any) {
+      console.error(`[sync-drive] Failed for profile ${id}:`, err);
+      res.status(500).json({ error: "Drive sync failed", detail: err?.message ?? "Unknown error" });
+    }
   },
 );
 

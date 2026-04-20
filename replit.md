@@ -43,6 +43,21 @@ Product pages are locked behind purchase. `ProductProtectedRoute` (`artifacts/pi
 
 Free pages (no purchase needed): `/dashboard`, `/where-you-stand`, `/criteria`, `/criteria/:id`
 
+## Google Drive Auto-Ingest (Drive → Evidence Vault Pipeline)
+
+Files dropped into a client's Google Drive criterion folders are automatically detected, downloaded, text-extracted, and inserted as evidence records.
+
+**Architecture:**
+- `artifacts/api-server/src/services/driveIngestService.ts` — Core poller + `ingestFolder()` / `ingestClientFolders()` functions
+- `artifacts/api-server/src/services/evidenceProcessing.ts` — Shared `extractText()` + `generateAISummary()` (used by upload route and poller)
+- `artifacts/api-server/src/services/googleDrive.ts` — Added `listFolderFiles()` and `downloadDriveFile()` (handles Google Docs export)
+- **Poller cadence:** every 5 min (configurable via `DRIVE_INGEST_INTERVAL_MS` env var); starts immediately on server boot
+- **Dedup key:** `evidence.driveFileId` — never re-ingests an already-seen file
+- **Source flag:** `evidence.source = 'drive_ingest'` vs `'upload'` — shown as blue "Drive" badge in admin Evidence tab and client vault
+- **Extraction status:** `completed` | `failed` | `skipped` (binary/image files not extractable get `skipped`)
+- **Admin sync:** `POST /api/admin/profiles/:id/sync-drive` — triggers immediate scan for one client; shown as "Sync Drive Now" button in InternalCaseDetail Evidence tab
+- **DB columns added:** `evidence.source` (text, default `upload`), `client_drive_folders.last_drive_sync_at` (timestamp)
+
 ## Stripe Integration
 
 - **Route:** `POST /api/stripe/checkout` creates Stripe Checkout sessions for `excellence_lab` ($297) and `evidence_vault` ($497)

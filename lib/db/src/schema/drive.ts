@@ -26,6 +26,7 @@ export const clientDriveFoldersTable = pgTable("client_drive_folders", {
   folderName: text("folder_name").notNull(),
   driveFolderId: text("drive_folder_id").notNull(),
   driveFolderUrl: text("drive_folder_url"),
+  lastDriveSyncAt: timestamp("last_drive_sync_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

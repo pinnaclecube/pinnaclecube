@@ -28,6 +28,8 @@ export const evidenceTable = pgTable("evidence", {
   aiSummaryIgnored: boolean("ai_summary_ignored").default(false),
   // Additional criteria cross-referencing (array of text criteria IDs)
   additionalCriteriaIds: jsonb("additional_criteria_ids").default([]),
+  // Ingestion source: 'upload' | 'drive_ingest'
+  source: text("source").notNull().default("upload"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

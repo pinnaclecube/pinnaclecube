@@ -532,6 +532,81 @@ export async function getClientFolderSummary(userId: number) {
   };
 }
 
+// ─── 11. listFolderFiles ──────────────────────────────────────────────────────
+
+export interface DriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: string | null;
+  modifiedTime: string | null;
+  webViewLink: string | null;
+}
+
+export async function listFolderFiles(
+  drive: drive_v3.Drive,
+  folderId: string,
+): Promise<DriveFile[]> {
+  const results: DriveFile[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const res = await drive.files.list({
+      q: `'${folderId}' in parents AND trashed = false AND mimeType != 'application/vnd.google-apps.folder'`,
+      fields: "nextPageToken, files(id, name, mimeType, size, modifiedTime, webViewLink)",
+      spaces: "drive",
+      pageSize: 100,
+      ...(pageToken ? { pageToken } : {}),
+    });
+
+    for (const f of res.data.files ?? []) {
+      results.push({
+        id: f.id!,
+        name: f.name ?? "untitled",
+        mimeType: f.mimeType ?? "application/octet-stream",
+        size: f.size ?? null,
+        modifiedTime: f.modifiedTime ?? null,
+        webViewLink: f.webViewLink ?? null,
+      });
+    }
+
+    pageToken = res.data.nextPageToken ?? undefined;
+  } while (pageToken);
+
+  return results;
+}
+
+// ─── 12. downloadDriveFile ────────────────────────────────────────────────────
+
+export async function downloadDriveFile(
+  drive: drive_v3.Drive,
+  fileId: string,
+  mimeType: string,
+): Promise<Buffer> {
+  const isGoogleDoc = mimeType.startsWith("application/vnd.google-apps.");
+
+  if (isGoogleDoc) {
+    const exportMime =
+      mimeType === "application/vnd.google-apps.document"
+        ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : mimeType === "application/vnd.google-apps.spreadsheet"
+          ? "text/csv"
+          : "text/plain";
+
+    const res = await drive.files.export(
+      { fileId, mimeType: exportMime },
+      { responseType: "arraybuffer" },
+    );
+    return Buffer.from(res.data as ArrayBuffer);
+  }
+
+  const res = await drive.files.get(
+    { fileId, alt: "media" },
+    { responseType: "arraybuffer" },
+  );
+  return Buffer.from(res.data as ArrayBuffer);
+}
+
 // ─── File name builders (re-exported for route use) ───────────────────────────
 
 export function buildCriteriaExhibitName(

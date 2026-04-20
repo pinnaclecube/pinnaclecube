@@ -4,7 +4,7 @@ import { useListEvidence } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Upload, X, FileText, AlertCircle } from "lucide-react";
+import { Plus, Search, Upload, X, FileText, AlertCircle, CloudDownload } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
@@ -318,6 +318,11 @@ export default function EvidenceVault() {
                         </Badge>
                         {(evidence as any).primaryCriteriaId && (
                           <Badge variant="outline" className="text-xs font-mono">{(evidence as any).primaryCriteriaId}</Badge>
+                        )}
+                        {(evidence as any).source === "drive_ingest" && (
+                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                            <CloudDownload className="w-2.5 h-2.5" /> From Drive
+                          </span>
                         )}
                       </div>
                       {evidence.description && (
