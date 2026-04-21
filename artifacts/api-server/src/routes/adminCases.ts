@@ -30,6 +30,7 @@ import {
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { createClientRootFolders, createCriteriaEvidenceFolders } from "../services/googleDrive";
 import { ingestClientFolders } from "../services/driveIngestService";
+import { sendEmail, actionItemEmail, passwordResetEmail } from "../services/emailService";
 import { z } from "zod/v4";
 import bcrypt from "bcrypt";
 
@@ -172,8 +173,12 @@ router.post(
     if (!parsed.success) { res.status(400).json({ error: "newPassword must be at least 8 chars" }); return; }
 
     const hash = await bcrypt.hash(parsed.data.newPassword, 10);
-    const [updated] = await db.update(profilesTable).set({ passwordHash: hash }).where(eq(profilesTable.id, id)).returning({ id: profilesTable.id });
+    const [updated] = await db.update(profilesTable).set({ passwordHash: hash }).where(eq(profilesTable.id, id)).returning({ id: profilesTable.id, email: profilesTable.email, firstName: profilesTable.firstName, name: profilesTable.name });
     if (!updated) { res.status(404).json({ error: "Profile not found" }); return; }
+
+    // Send password reset notification email
+    const firstName = updated.firstName ?? updated.name?.split(" ")[0] ?? "there";
+    sendEmail(updated.email, passwordResetEmail(firstName)).catch(() => {});
 
     await db.insert(clientActivityLogTable).values({
       profileId: id,
@@ -384,6 +389,20 @@ router.patch(
       .returning();
 
     if (!updated) { res.status(404).json({ error: "Action item not found" }); return; }
+
+    // Email the client when the action item is marked as sent
+    if (parsed.data.status === "sent") {
+      const [profile] = await db
+        .select({ email: profilesTable.email, firstName: profilesTable.firstName, name: profilesTable.name })
+        .from(profilesTable)
+        .where(eq(profilesTable.id, id))
+        .limit(1);
+      if (profile) {
+        const firstName = profile.firstName ?? profile.name?.split(" ")[0] ?? "there";
+        sendEmail(profile.email, actionItemEmail(firstName, updated.title, updated.description ?? null, updated.priority ?? "medium")).catch(() => {});
+      }
+    }
+
     res.json({ actionItem: updated });
   },
 );

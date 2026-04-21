@@ -10,6 +10,7 @@ import {
 } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { z } from "zod/v4";
+import { sendEmail, blueprintApprovedEmail, blueprintDeclinedEmail } from "../services/emailService";
 
 const router: IRouter = Router();
 
@@ -174,6 +175,16 @@ router.patch(
         applicationId: id,
         status,
       });
+    }
+
+    // Send decision email to applicant
+    if (updated.email) {
+      const firstName = (updated.fullName ?? updated.email).split(" ")[0];
+      if (status === "approved") {
+        sendEmail(updated.email, blueprintApprovedEmail(firstName)).catch(() => {});
+      } else if (status === "declined") {
+        sendEmail(updated.email, blueprintDeclinedEmail(firstName)).catch(() => {});
+      }
     }
 
     console.info(`[staff] Application #${id} status → ${status}`);

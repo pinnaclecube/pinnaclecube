@@ -9,6 +9,7 @@ import {
 } from "@workspace/db";
 import { requireClientAuth } from "../middlewares/clientAuth";
 import { verifyToken } from "../services/auth";
+import { sendEmail, blueprintApplicationReceivedEmail } from "../services/emailService";
 import { z } from "zod/v4";
 
 const router: IRouter = Router();
@@ -123,7 +124,7 @@ router.post("/blueprint/apply", async (req: Request, res: Response): Promise<voi
     })
     .returning();
 
-  // Fire-and-forget: Claude pre-analysis + staff notification
+  // Fire-and-forget: Claude pre-analysis + notifications
   setImmediate(() => {
     runAiAnalysis(application.id, parsed.data).catch(() => {});
 
@@ -135,6 +136,10 @@ router.post("/blueprint/apply", async (req: Request, res: Response): Promise<voi
         metadata: { applicationId: application.id },
       }).catch(() => {});
     }
+
+    // Confirmation email to applicant
+    const firstName = parsed.data.fullName.split(" ")[0] ?? parsed.data.fullName;
+    sendEmail(parsed.data.email, blueprintApplicationReceivedEmail(firstName)).catch(() => {});
 
     console.info(
       `[staff-notify] New Blueprint application #${application.id} from ${parsed.data.email}`

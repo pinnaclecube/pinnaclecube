@@ -10,6 +10,7 @@ import {
   stripPassword,
 } from "../services/auth";
 import { requireClientAuth } from "../middlewares/clientAuth";
+import { sendEmail, welcomeEmail } from "../services/emailService";
 
 const router = Router();
 
@@ -73,6 +74,9 @@ router.post("/auth/register", async (req, res) => {
 
   const token = generateToken(profile);
   res.status(201).json({ token, user: stripPassword(profile) });
+
+  // Fire-and-forget welcome email
+  sendEmail(profile.email, welcomeEmail(first_name)).catch(() => {});
 });
 
 // ─── POST /api/auth/login ─────────────────────────────────────────────────────

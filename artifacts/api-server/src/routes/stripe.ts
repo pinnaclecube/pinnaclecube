@@ -2,6 +2,7 @@ import { Router } from "express";
 import Stripe from "stripe";
 import { db, purchasesTable, clientUserProductsTable, profilesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { sendEmail, purchaseConfirmationEmail } from "../services/emailService";
 
 const router = Router();
 
@@ -150,10 +151,21 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
             .onConflictDoNothing();
 
           // Upgrade accessLevel on profile
+          const [fullProfile] = await db
+            .select({ firstName: profilesTable.firstName, name: profilesTable.name })
+            .from(profilesTable)
+            .where(eq(profilesTable.id, profile.id))
+            .limit(1);
+
           await db
             .update(profilesTable)
             .set({ accessLevel: config.accessLevel })
             .where(eq(profilesTable.id, profile.id));
+
+          // Send purchase confirmation email
+          const firstName = fullProfile?.firstName ?? fullProfile?.name?.split(" ")[0] ?? "there";
+          const amountDisplay = String((session.amount_total ?? 0) / 100);
+          sendEmail(customerEmail, purchaseConfirmationEmail(firstName, config.label, amountDisplay)).catch(() => {});
         }
       } catch (err) {
         console.error("[stripe/webhook] Fulfillment error:", err);
