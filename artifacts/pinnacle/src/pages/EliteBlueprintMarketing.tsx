@@ -57,24 +57,24 @@ export default function EliteBlueprintMarketing() {
         <div className="absolute right-[32%] -bottom-16 text-[400px] font-black text-white/[0.025] leading-none pointer-events-none select-none hidden lg:block">³</div>
 
         {/* 70 / 30 split */}
-        <div className="flex-1 flex flex-col lg:flex-row max-w-[1280px] mx-auto w-full px-6 pt-24 pb-6 gap-6 relative z-10 min-h-0">
+        <div className="flex-1 flex flex-col lg:flex-row lg:items-center max-w-[1280px] mx-auto w-full px-6 pt-24 pb-8 gap-8 relative z-10 min-h-0">
 
           {/* Left — product content (70%) */}
-          <div className="flex flex-col justify-center lg:w-[70%] lg:pr-10 py-4 min-h-0">
-            <div className="inline-flex items-center gap-2 bg-[#F59E0B]/20 text-[#F59E0B] text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-full mb-8 w-fit">
+          <div className="flex flex-col lg:w-[70%] lg:pr-10">
+            <div className="inline-flex items-center gap-2 bg-[#F59E0B]/20 text-[#F59E0B] text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-full mb-5 w-fit">
               <Star className="w-3.5 h-3.5 fill-current" />
               Elite Blueprint — Premium Advisory
             </div>
-            <h1 className="text-[clamp(2rem,4.5vw,52px)] font-extrabold text-white leading-[1.05] tracking-tight mb-3">
+            <h1 className="text-[clamp(2rem,4.5vw,52px)] font-extrabold text-white leading-[1.05] tracking-tight mb-2">
               You shouldn't have to figure this out alone.
             </h1>
-            <h2 className="text-[clamp(2rem,4.5vw,52px)] font-extrabold text-[#F59E0B] leading-[1.05] tracking-tight mb-6">
+            <h2 className="text-[clamp(2rem,4.5vw,52px)] font-extrabold text-[#F59E0B] leading-[1.05] tracking-tight mb-5">
               Now you don't have to.
             </h2>
-            <p className="text-[clamp(0.9rem,1.4vw,17px)] text-white/70 font-medium mb-8 max-w-xl leading-relaxed">
+            <p className="text-[clamp(0.9rem,1.4vw,17px)] text-white/70 font-medium mb-7 max-w-xl leading-relaxed">
               The Elite Blueprint is Pinnacle³'s highest-touch engagement. A dedicated advisor who knows your case deeply, a bespoke strategy built around your career, and support from assessment all the way through filing.
             </p>
-            <div className="flex flex-col sm:flex-row gap-3 mb-6">
+            <div className="flex flex-col sm:flex-row gap-3 mb-5">
               <Link href="/elite-blueprint/apply">
                 <button className="bg-white text-[#1E2D6B] px-6 py-3 rounded font-extrabold text-sm hover:bg-gray-100 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-xl shadow-black/10 w-full sm:w-auto">
                   Apply for Elite Blueprint
@@ -90,8 +90,8 @@ export default function EliteBlueprintMarketing() {
           </div>
 
           {/* Right — contact form (30%) */}
-          <div className="lg:w-[30%] shrink-0 flex flex-col lg:border-l lg:border-white/10 lg:pl-6 min-h-0">
-            <div className="bg-white/5 rounded-xl p-5 border border-white/10 h-full flex flex-col">
+          <div className="lg:w-[30%] shrink-0 lg:border-l lg:border-white/10 lg:pl-8">
+            <div className="bg-white/5 rounded-xl p-5 border border-white/10 flex flex-col min-h-[400px]">
               <ContactHeroForm />
             </div>
           </div>
