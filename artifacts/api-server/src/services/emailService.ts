@@ -27,9 +27,10 @@ function layout(body: string): string {
         <!-- Footer -->
         <tr>
           <td style="background:#f8f9fb;padding:20px 40px;border-top:1px solid #e9ecef;">
-            <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.6;">
+            <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.8;">
               This email was sent by Pinnacle³ advisory platform · <a href="${APP_URL}" style="color:#1E2D6B;text-decoration:none;">pinnaclecube.com</a><br>
-              For questions, reply to this email or contact <a href="mailto:support@pinnaclecube.com" style="color:#1E2D6B;text-decoration:none;">support@pinnaclecube.com</a>
+              For questions, reply to this email or contact <a href="mailto:support@pinnaclecube.com" style="color:#1E2D6B;text-decoration:none;">support@pinnaclecube.com</a><br>
+              470 Olde Worthington Rd, Westerville, OH 43082
             </p>
           </td>
         </tr>

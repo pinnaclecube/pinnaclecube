@@ -101,9 +101,15 @@ export default function TermsOfService() {
             </p>
           </section>
 
-          <section className="border-t border-border pt-8">
+          <section className="border-t border-border pt-8 space-y-2">
             <p className="text-muted-foreground text-sm">
-              Questions about these Terms? Contact us through the platform or at the contact information provided in your onboarding materials.
+              Questions about these Terms? Contact us at any time:
+            </p>
+            <p className="text-muted-foreground text-sm">
+              <strong className="text-foreground">Pinnacle³</strong><br />
+              470 Olde Worthington Rd<br />
+              Westerville, OH 43082<br />
+              <a href="mailto:support@pinnaclecube.com" className="text-[#1E2D6B] hover:underline">support@pinnaclecube.com</a>
             </p>
           </section>
 

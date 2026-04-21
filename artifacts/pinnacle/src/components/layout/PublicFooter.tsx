@@ -29,6 +29,18 @@ export function PublicFooter() {
                 </svg>
               </a>
             </div>
+            <div className="pt-2 space-y-1">
+              <p className="text-white/40 text-xs leading-relaxed">
+                470 Olde Worthington Rd<br />
+                Westerville, OH 43082
+              </p>
+              <a
+                href="mailto:support@pinnaclecube.com"
+                className="text-white/40 hover:text-white/70 text-xs transition-colors"
+              >
+                support@pinnaclecube.com
+              </a>
+            </div>
           </div>
 
           <div className="space-y-4">
