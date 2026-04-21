@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { TestimonialsCarousel } from "@/components/ui/TestimonialsCarousel";
+import { ContactHeroForm } from "@/components/ContactHeroForm";
 import { useState, useEffect, useCallback } from "react";
 
 const SLIDES = [
@@ -68,7 +69,7 @@ function HeroCarousel() {
   const slide = SLIDES[active];
 
   return (
-    <section className="relative min-h-[calc(100svh-0px)] pt-40 pb-20 md:pt-48 md:pb-28 bg-[#1E2D6B] overflow-hidden flex items-center">
+    <section className="relative h-svh bg-[#1E2D6B] overflow-hidden flex flex-col">
       {/* Background image */}
       <div className="absolute inset-0 opacity-[0.18] pointer-events-none mix-blend-overlay">
         <img
@@ -79,72 +80,83 @@ function HeroCarousel() {
       </div>
 
       {/* Decorative ³ */}
-      <div className="absolute -right-16 -bottom-20 text-[500px] font-black text-white/[0.025] leading-none pointer-events-none select-none">
+      <div className="absolute right-[32%] -bottom-16 text-[400px] font-black text-white/[0.025] leading-none pointer-events-none select-none hidden lg:block">
         ³
       </div>
 
       {/* Progress bar */}
-      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/10">
+      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/10 z-10">
         <div
           key={active}
           className="h-full bg-[#F59E0B] transition-none"
-          style={{
-            animation: "progress-fill 6s linear forwards",
-          }}
+          style={{ animation: "progress-fill 6s linear forwards" }}
         />
       </div>
 
-      <div className="max-w-[1100px] mx-auto px-6 relative z-10 w-full">
-        <div
-          className="max-w-4xl transition-all duration-300"
-          style={{ opacity: animating ? 0 : 1, transform: animating ? "translateY(8px)" : "translateY(0)" }}
-        >
-          {/* Slide indicator */}
-          <div className="text-white/40 text-xs font-bold uppercase tracking-[0.2em] mb-10">
-            {String(active + 1).padStart(2, "0")} / {String(SLIDES.length).padStart(2, "0")}
-          </div>
+      {/* Main content — 70 / 30 split */}
+      <div className="flex-1 flex flex-col lg:flex-row max-w-[1280px] mx-auto w-full px-6 pt-24 pb-6 gap-6 relative z-10 min-h-0">
 
-          <h1 className="text-5xl md:text-[68px] lg:text-[78px] font-extrabold text-white leading-[1.05] tracking-tight mb-4">
-            {slide.headline}
-          </h1>
-          <h2 className="text-5xl md:text-[68px] lg:text-[78px] font-extrabold text-[#F59E0B] leading-[1.05] tracking-tight mb-10">
-            {slide.accent}
-          </h2>
+        {/* ── Left: carousel (70%) ──────────────────────────────────────── */}
+        <div className="flex flex-col justify-center lg:w-[70%] lg:pr-10 py-4 min-h-0">
+          <div
+            className="transition-all duration-300"
+            style={{ opacity: animating ? 0 : 1, transform: animating ? "translateY(8px)" : "translateY(0)" }}
+          >
+            {/* Slide indicator */}
+            <div className="text-white/40 text-[11px] font-bold uppercase tracking-[0.2em] mb-6">
+              {String(active + 1).padStart(2, "0")} / {String(SLIDES.length).padStart(2, "0")}
+            </div>
 
-          <p className="text-xl md:text-2xl text-white/75 font-medium mb-12 max-w-2xl leading-relaxed">
-            {slide.sub}
-          </p>
+            <h1 className="text-[clamp(2rem,4.5vw,52px)] font-extrabold text-white leading-[1.05] tracking-tight mb-3">
+              {slide.headline}
+            </h1>
+            <h2 className="text-[clamp(2rem,4.5vw,52px)] font-extrabold text-[#F59E0B] leading-[1.05] tracking-tight mb-6">
+              {slide.accent}
+            </h2>
 
-          <div className="flex flex-col sm:flex-row gap-4 mb-16">
-            <Link href={slide.secondaryHref}>
-              <button className="bg-white text-[#1E2D6B] px-8 py-4 rounded font-extrabold text-lg hover:bg-gray-100 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-xl shadow-black/10 w-full sm:w-auto">
-                {slide.secondary}
-              </button>
-            </Link>
-            <Link href={slide.ctaHref}>
-              <button className="bg-transparent text-white border-2 border-white/30 px-8 py-4 rounded font-bold text-lg hover:border-white hover:bg-white/5 transition-all w-full sm:w-auto">
-                {slide.cta}
-              </button>
-            </Link>
-          </div>
+            <p className="text-[clamp(0.9rem,1.4vw,17px)] text-white/70 font-medium mb-8 max-w-xl leading-relaxed">
+              {slide.sub}
+            </p>
 
-          {/* Dot navigation */}
-          <div className="flex items-center gap-3">
-            {SLIDES.map((_, i) => (
-              <button
-                key={i}
-                onClick={() => goTo(i)}
-                aria-label={`Go to slide ${i + 1}`}
-                className={[
-                  "rounded-full transition-all duration-300",
-                  i === active
-                    ? "w-8 h-2 bg-[#F59E0B]"
-                    : "w-2 h-2 bg-white/30 hover:bg-white/60",
-                ].join(" ")}
-              />
-            ))}
+            <div className="flex flex-col sm:flex-row gap-3 mb-8">
+              <Link href={slide.secondaryHref}>
+                <button className="bg-white text-[#1E2D6B] px-6 py-3 rounded font-extrabold text-sm hover:bg-gray-100 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-xl shadow-black/10 w-full sm:w-auto">
+                  {slide.secondary}
+                </button>
+              </Link>
+              <Link href={slide.ctaHref}>
+                <button className="bg-transparent text-white border-2 border-white/30 px-6 py-3 rounded font-bold text-sm hover:border-white hover:bg-white/5 transition-all w-full sm:w-auto">
+                  {slide.cta}
+                </button>
+              </Link>
+            </div>
+
+            {/* Dot navigation */}
+            <div className="flex items-center gap-3">
+              {SLIDES.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => goTo(i)}
+                  aria-label={`Go to slide ${i + 1}`}
+                  className={[
+                    "rounded-full transition-all duration-300",
+                    i === active
+                      ? "w-8 h-2 bg-[#F59E0B]"
+                      : "w-2 h-2 bg-white/30 hover:bg-white/60",
+                  ].join(" ")}
+                />
+              ))}
+            </div>
           </div>
         </div>
+
+        {/* ── Right: contact form (30%) ─────────────────────────────────── */}
+        <div className="lg:w-[30%] flex flex-col justify-center min-h-0">
+          <div className="bg-white/[0.07] backdrop-blur-sm border border-white/10 rounded-2xl p-5 flex flex-col gap-0 h-full max-h-[580px] overflow-y-auto">
+            <ContactHeroForm />
+          </div>
+        </div>
+
       </div>
 
       <style>{`

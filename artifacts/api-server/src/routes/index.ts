@@ -19,6 +19,7 @@ import intakeRouter from "./intake";
 import stripeRouter from "./stripe";
 import adminSeedRouter from "./adminSeed";
 import emailRouter from "./email";
+import contactRouter from "./contact";
 
 const router: IRouter = Router();
 
@@ -42,5 +43,6 @@ router.use(intakeRouter);
 router.use(stripeRouter);
 router.use(adminSeedRouter);
 router.use("/email", emailRouter);
+router.use(contactRouter);
 
 export default router;

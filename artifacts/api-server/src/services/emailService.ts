@@ -244,6 +244,72 @@ export function passwordResetEmail(
   };
 }
 
+// ─── Template 7: Contact form — client confirmation ───────────────────────────
+
+export function contactFormConfirmationEmail(
+  firstName: string,
+): { subject: string; html: string; text: string } {
+  return {
+    subject: "We received your inquiry — Pinnacle³",
+    html: layout(`
+      ${h1(`Thank you, ${firstName}!`)}
+      ${p("We've received your inquiry and a member of our advisory team will be in touch at the earliest opportunity.")}
+      <table cellpadding="0" cellspacing="0" style="background:#f0f4ff;border-left:4px solid #1E2D6B;border-radius:0 8px 8px 0;padding:16px 20px;margin:0 0 24px;width:100%;">
+        <tr><td>
+          <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#1E2D6B;">WHAT HAPPENS NEXT</p>
+          <p style="margin:0;font-size:14px;color:#374151;line-height:1.7;">
+            Our team reviews every inquiry personally — you can typically expect a response within <strong>1–2 business days</strong>.
+          </p>
+        </td></tr>
+      </table>
+      ${p("In the meantime, explore our <a href=\"" + APP_URL + "/resources\" style=\"color:#1E2D6B;\">Resource Hub</a> or take our free <a href=\"" + APP_URL + "/instant-profile-insight/start\" style=\"color:#1E2D6B;\">Profile Insight Assessment</a>.")}
+      ${btn("Explore Pinnacle³", APP_URL)}
+    `),
+    text: `Thank you, ${firstName}!\n\nWe've received your inquiry. A member of our advisory team will be in touch — typically within 1–2 business days.\n\nVisit us at ${APP_URL}`,
+  };
+}
+
+// ─── Template 8: Contact form — staff alert ────────────────────────────────────
+
+export function contactFormStaffAlertEmail(
+  firstName: string,
+  lastName: string,
+  email: string,
+  phone: string,
+  reason: string,
+): { subject: string; html: string; text: string } {
+  return {
+    subject: `New contact inquiry — ${firstName} ${lastName}`,
+    html: layout(`
+      ${h1("New Contact Form Inquiry")}
+      ${p("A new inquiry has been submitted through the Pinnacle³ website and added to the prospects queue.")}
+      <table cellpadding="0" cellspacing="0" style="border:1px solid #e9ecef;border-radius:8px;width:100%;margin:0 0 24px;overflow:hidden;">
+        <tr style="background:#f8f9fb;">
+          <td colspan="2" style="padding:10px 16px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;">Contact Details</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;width:110px;">Name</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;">${firstName} ${lastName}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Email</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;"><a href="mailto:${email}" style="color:#1E2D6B;">${email}</a></td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Phone</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;">${phone || "—"}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Reason</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;">${reason}</td>
+        </tr>
+      </table>
+      ${btn("View Prospects Queue", `${APP_URL}/internal/prospects`)}
+    `),
+    text: `New contact form inquiry:\n\nName: ${firstName} ${lastName}\nEmail: ${email}\nPhone: ${phone || "—"}\nReason: ${reason}\n\nView prospects queue at ${APP_URL}/internal/prospects`,
+  };
+}
+
 // ─── Sender helper ─────────────────────────────────────────────────────────────
 
 export async function sendEmail(
