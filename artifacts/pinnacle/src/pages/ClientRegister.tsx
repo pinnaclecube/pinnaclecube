@@ -48,7 +48,7 @@ export default function ClientRegister() {
         disclaimer_accepted: true,
         disclaimer_version: DISCLAIMER_VERSION,
       });
-      navigate("/dashboard/readiness-intake");
+      navigate("/dashboard");
     } catch (err: any) {
       setError(err.message ?? "Registration failed. Please try again.");
     } finally {
@@ -88,7 +88,7 @@ export default function ClientRegister() {
 
             <div className="mb-8">
               <h1 className="text-3xl font-extrabold text-[#0A1128]">Create your account</h1>
-              <p className="text-slate-500 mt-2">Your free readiness assessment is waiting on the other side.</p>
+              <p className="text-slate-500 mt-2">Explore your dashboard and get started with one of our advisory products.</p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
