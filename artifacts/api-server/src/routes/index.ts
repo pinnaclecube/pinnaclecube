@@ -18,6 +18,7 @@ import notificationsRouter from "./notifications";
 import intakeRouter from "./intake";
 import stripeRouter from "./stripe";
 import adminSeedRouter from "./adminSeed";
+import emailRouter from "./email";
 
 const router: IRouter = Router();
 
@@ -40,5 +41,6 @@ router.use(notificationsRouter);
 router.use(intakeRouter);
 router.use(stripeRouter);
 router.use(adminSeedRouter);
+router.use("/email", emailRouter);
 
 export default router;
