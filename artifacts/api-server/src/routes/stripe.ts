@@ -13,6 +13,7 @@ const router = Router();
 interface ProductConfig {
   label: string;
   displayPrice: string;
+  numericAmount: string; // Plain numeric string for DB NUMERIC columns
   accessLevel: string;
   mode: "payment" | "subscription";
 }
@@ -21,12 +22,14 @@ const PRODUCT_CONFIGS: Record<string, ProductConfig> = {
   excellence_lab: {
     label: "Excellence Lab",
     displayPrice: "$249",
+    numericAmount: "249",
     accessLevel: "excellence_lab",
     mode: "payment",
   },
   evidence_vault: {
     label: "Evidence Engine",
     displayPrice: "$49/mo",
+    numericAmount: "49",
     accessLevel: "evidence_vault",
     mode: "subscription",
   },
@@ -103,7 +106,7 @@ router.post("/stripe/checkout", async (req, res): Promise<void> => {
         .values({
           userEmail: customer_email,
           product,
-          amount: config.displayPrice,
+          amount: config.numericAmount,
           currency: "usd",
           status: "pending",
           stripeSessionId: session.id,
@@ -114,6 +117,7 @@ router.post("/stripe/checkout", async (req, res): Promise<void> => {
     res.json({ url: session.url });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Stripe error";
+    console.error("[stripe/checkout] Error:", msg, err);
     res.status(500).json({ error: msg });
   }
 });
@@ -179,7 +183,7 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
               clientEmail: customerEmail,
               product,
               stripeSessionId: session.id,
-              amountPaid: config.displayPrice,
+              amountPaid: config.numericAmount,
               status: "active",
             })
             .onConflictDoNothing();

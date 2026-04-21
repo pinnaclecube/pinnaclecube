@@ -19,9 +19,11 @@ const INCLUDES = [
 export default function ExcellenceLabCheckout() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleCheckout = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch("/api/stripe/checkout", {
         method: "POST",
@@ -36,8 +38,12 @@ export default function ExcellenceLabCheckout() {
       const data = await res.json();
       if (data.url) {
         window.location.href = data.url;
+      } else {
+        setError(data.error ?? "Something went wrong. Please try again or contact support.");
+        setLoading(false);
       }
     } catch {
+      setError("Unable to connect to the payment system. Please try again.");
       setLoading(false);
     }
   };
@@ -100,8 +106,12 @@ export default function ExcellenceLabCheckout() {
                   className="w-full bg-[#1E2D6B] hover:bg-[#3D4FA8] h-12 text-base"
                 >
                   <Lock className="w-4 h-4 mr-2" />
-                  {loading ? "Redirecting..." : "Pay $249 Securely"}
+                  {loading ? "Redirecting to Stripe..." : "Pay $249 Securely"}
                 </Button>
+              )}
+
+              {error && (
+                <p className="text-center text-sm text-red-600 mt-3 font-medium">{error}</p>
               )}
 
               <p className="text-center text-xs text-muted-foreground mt-4">
