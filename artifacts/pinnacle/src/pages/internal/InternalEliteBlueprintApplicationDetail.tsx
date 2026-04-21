@@ -369,7 +369,7 @@ export default function InternalEliteBlueprintApplicationDetail() {
             <p className="text-sm text-muted-foreground">Products being granted to <strong>{application.fullName}</strong>:</p>
             <ul className="text-sm ml-4 list-disc space-y-1">
               <li>Elite Blueprint</li>
-              <li>Evidence Vault</li>
+              <li>Evidence Engine</li>
               {includeExcellenceLab && <li>Excellence Lab</li>}
             </ul>
             <p className="text-xs text-muted-foreground mt-2">Client will be notified and access updated immediately.</p>

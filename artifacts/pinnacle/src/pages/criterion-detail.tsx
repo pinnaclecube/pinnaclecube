@@ -85,7 +85,7 @@ export default function CriterionDetail() {
           <CardContent className="p-8 text-center">
             <p className="text-muted-foreground mb-4">No evidence has been mapped to this criterion yet.</p>
             <Link href="/evidence">
-              <Button variant="outline">Go to Evidence Vault</Button>
+              <Button variant="outline">Go to Evidence Engine</Button>
             </Link>
           </CardContent>
         </Card>

@@ -320,7 +320,7 @@ function FullAnalysis({ analysis }: { analysis: Analysis }) {
             <div className="flex gap-3 shrink-0">
               <Link href="/evidence-vault/checkout">
                 <Button className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
-                  Get Evidence Vault <ChevronRight className="w-4 h-4 ml-1" />
+                  Get Evidence Engine <ChevronRight className="w-4 h-4 ml-1" />
                 </Button>
               </Link>
               <Link href="/elite-blueprint">

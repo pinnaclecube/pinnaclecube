@@ -13,7 +13,7 @@ import { Logo } from "../ui/logo";
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/where-you-stand", label: "Where You Stand", icon: Target },
-  { href: "/evidence", label: "Evidence Vault", icon: FolderLock },
+  { href: "/evidence", label: "Evidence Engine", icon: FolderLock },
   { href: "/criteria", label: "Criteria Exhibit", icon: FileCheck2 },
   { href: "/blueprint", label: "Elite Blueprint", icon: Map },
   { href: "/courses", label: "Excellence Lab", icon: GraduationCap },

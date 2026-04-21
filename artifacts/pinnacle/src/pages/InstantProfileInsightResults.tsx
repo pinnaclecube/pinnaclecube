@@ -118,7 +118,7 @@ export default function InstantProfileInsightResults() {
 
             <div className="bg-[#1E2D6B] rounded-xl p-8 text-center mt-10">
               <h2 className="text-2xl font-bold text-white mb-3">Ready to build your case?</h2>
-              <p className="text-white/70 mb-6">Create a free account and start organizing your evidence in the Evidence Vault.</p>
+              <p className="text-white/70 mb-6">Create a free account and start organizing your evidence in the Evidence Engine.</p>
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <Link href="/register">
                   <Button className="bg-white text-[#1E2D6B] hover:bg-gray-100 font-bold">

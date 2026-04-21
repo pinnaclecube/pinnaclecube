@@ -33,7 +33,7 @@ export default function TermsOfService() {
             <p className="text-muted-foreground leading-relaxed mb-3">Pinnacle³ offers the following advisory products:</p>
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
               <li><strong>Excellence Lab</strong> — A structured curriculum of courses and frameworks for building an extraordinary ability profile.</li>
-              <li><strong>Evidence Vault</strong> — A secure repository for organizing, tracking, and strengthening your evidence portfolio.</li>
+              <li><strong>Evidence Engine</strong> — A secure repository for organizing, tracking, and strengthening your evidence portfolio.</li>
               <li><strong>Elite Blueprint</strong> — A premium one-on-one advisory engagement for high-achieving professionals seeking a comprehensive case strategy.</li>
             </ul>
           </section>

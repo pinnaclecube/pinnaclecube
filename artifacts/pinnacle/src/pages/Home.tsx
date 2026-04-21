@@ -221,7 +221,7 @@ export default function Home() {
                 01
               </div>
               <h3 className="text-2xl font-bold text-white mb-2 mt-4">Excellence Lab</h3>
-              <div className="text-3xl font-extrabold text-[#F59E0B] mb-4">$297</div>
+              <div className="text-3xl font-extrabold text-[#F59E0B] mb-4">$249</div>
               <p className="text-white/65 mb-8 leading-relaxed text-sm">
                 You know you've accomplished something significant. The Lab teaches you how to frame it — media coverage, peer review, advisory roles — in the exact language USCIS needs to see.
               </p>
@@ -248,8 +248,9 @@ export default function Home() {
               <div className="absolute top-4 right-4 bg-[#F59E0B]/20 text-[#D97706] text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
                 Most Popular
               </div>
-              <h3 className="text-2xl font-bold text-[#0A1128] mb-2 mt-4">Evidence Vault</h3>
-              <div className="text-3xl font-extrabold text-[#1E2D6B] mb-4">$497</div>
+              <h3 className="text-2xl font-bold text-[#0A1128] mb-2 mt-4">Evidence Engine</h3>
+              <div className="text-3xl font-extrabold text-[#1E2D6B] mb-1">$49<span className="text-lg font-bold">/mo</span></div>
+              <div className="text-xs text-slate-400 mb-3">Cancel anytime</div>
               <p className="text-slate-600 mb-8 leading-relaxed text-sm">
                 Stop drowning in shared folders and disorganized files. The Vault maps every document you own directly to an EB-1A or NIW criterion — so you (and your future attorney) can see exactly where you stand.
               </p>
@@ -320,7 +321,7 @@ export default function Home() {
                 {
                   n: "2",
                   title: "Build the Evidence Strategically",
-                  text: "Using the Excellence Lab and Evidence Vault, you gather and organize evidence with surgical precision. Every document is mapped to a criterion. Every gap has a plan. Nothing is uploaded without purpose.",
+                  text: "Using the Excellence Lab and Evidence Engine, you gather and organize evidence with surgical precision. Every document is mapped to a criterion. Every gap has a plan. Nothing is uploaded without purpose.",
                 },
                 {
                   n: "3",

@@ -24,7 +24,7 @@ export default function PrivacyPolicy() {
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
               <li><strong>Account information</strong> — Name, email address, and password when you register.</li>
               <li><strong>Profile information</strong> — Current role, employer, visa status, and target visa type provided during onboarding.</li>
-              <li><strong>Evidence and documents</strong> — Files you upload to the Evidence Vault, including publications, awards, letters, and supporting materials.</li>
+              <li><strong>Evidence and documents</strong> — Files you upload to the Evidence Engine, including publications, awards, letters, and supporting materials.</li>
               <li><strong>Usage data</strong> — Pages visited, features used, lesson completion, and interactions within the platform.</li>
               <li><strong>Payment information</strong> — Processed entirely by Stripe. We do not store your card details.</li>
               <li><strong>Communications</strong> — Messages and feedback submitted through the platform.</li>

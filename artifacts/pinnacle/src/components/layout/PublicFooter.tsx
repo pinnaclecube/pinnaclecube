@@ -47,7 +47,7 @@ export function PublicFooter() {
             <h3 className="text-xs font-bold uppercase tracking-widest text-white/40">Products</h3>
             <ul className="space-y-3">
               <li><FooterLink href="/excellence-lab">Excellence Lab</FooterLink></li>
-              <li><FooterLink href="/evidence-vault">Evidence Vault</FooterLink></li>
+              <li><FooterLink href="/evidence-vault">Evidence Engine</FooterLink></li>
               <li><FooterLink href="/elite-blueprint">Elite Blueprint</FooterLink></li>
             </ul>
           </div>

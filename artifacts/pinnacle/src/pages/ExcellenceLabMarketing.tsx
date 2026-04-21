@@ -67,7 +67,7 @@ export default function ExcellenceLabMarketing() {
           <div className="flex flex-col sm:flex-row gap-4">
             <Link href="/excellence-lab/checkout">
               <button className="bg-white text-[#1E2D6B] px-8 py-4 rounded font-extrabold text-lg hover:bg-gray-100 transition-all hover:scale-[1.02] shadow-xl w-full sm:w-auto">
-                Get Access — $297
+                Get Access — $249
               </button>
             </Link>
             <Link href="/register">
@@ -143,7 +143,7 @@ export default function ExcellenceLabMarketing() {
           </p>
           <Link href="/excellence-lab/checkout">
             <button className="bg-[#1E2D6B] text-white px-10 py-4 rounded font-extrabold text-lg hover:bg-[#0F1F4A] transition-all hover:-translate-y-1 shadow-xl hover:shadow-[#1E2D6B]/30 inline-block">
-              Get Excellence Lab — $297
+              Get Excellence Lab — $249
             </button>
           </Link>
           <p className="text-slate-400 text-xs mt-4">Advisory coaching service. Not legal advice.</p>

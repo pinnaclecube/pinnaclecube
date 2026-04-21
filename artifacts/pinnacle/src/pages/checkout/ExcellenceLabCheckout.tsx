@@ -64,7 +64,7 @@ export default function ExcellenceLabCheckout() {
                   <p className="text-muted-foreground text-sm mt-0.5">Complete EB-1A & NIW curriculum</p>
                 </div>
                 <div className="text-right">
-                  <div className="text-3xl font-bold text-[#1E2D6B]">$297</div>
+                  <div className="text-3xl font-bold text-[#1E2D6B]">$249</div>
                   <div className="text-xs text-muted-foreground">one-time</div>
                 </div>
               </div>
@@ -100,7 +100,7 @@ export default function ExcellenceLabCheckout() {
                   className="w-full bg-[#1E2D6B] hover:bg-[#3D4FA8] h-12 text-base"
                 >
                   <Lock className="w-4 h-4 mr-2" />
-                  {loading ? "Redirecting..." : "Pay $297 Securely"}
+                  {loading ? "Redirecting..." : "Pay $249 Securely"}
                 </Button>
               )}
 

@@ -31,7 +31,7 @@ const FEATURES = [
   {
     icon: Sparkles,
     title: "The Complete Pinnacle³ Suite",
-    description: "Includes full Excellence Lab and Evidence Vault access. Everything in one place — your courses, your documents, your advisor, and your strategy.",
+    description: "Includes full Excellence Lab and Evidence Engine access. Everything in one place — your courses, your documents, your advisor, and your strategy.",
   },
 ];
 

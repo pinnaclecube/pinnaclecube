@@ -8,9 +8,9 @@ const STEPS = [
       "We evaluate your background, citations, publications, and professional impact against strict USCIS criteria to determine your viability for EB-1A, EB-2 NIW, or O-1A.",
   },
   {
-    title: "Evidence Vault Construction",
+    title: "Evidence Engine Construction",
     description:
-      "You begin uploading your artifacts into our secure Evidence Vault. Our system categorizes them by criterion, identifying gaps and strengths in your profile.",
+      "You begin uploading your artifacts into our secure Evidence Engine. Our system categorizes them by criterion, identifying gaps and strengths in your profile.",
   },
   {
     title: "Elite Blueprint Strategy",
@@ -25,7 +25,7 @@ const STEPS = [
   {
     title: "Final Review & Attorney Handoff",
     description:
-      "Once your profile reaches our 'Ready to File' threshold, your Evidence Vault is finalized. You are now prepared to engage an immigration attorney with a fully substantiated, undeniable case.",
+      "Once your profile reaches our 'Ready to File' threshold, your Evidence Engine is finalized. You are now prepared to engage an immigration attorney with a fully substantiated, undeniable case.",
   },
 ];
 

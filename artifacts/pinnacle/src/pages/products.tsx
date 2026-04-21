@@ -5,7 +5,7 @@ const PRODUCTS = [
   {
     n: "01",
     name: "Excellence Lab",
-    price: "$297",
+    price: "$249",
     href: "/excellence-lab",
     cta: "Join the Lab",
     description:
@@ -20,10 +20,10 @@ const PRODUCTS = [
   },
   {
     n: "02",
-    name: "Evidence Vault",
-    price: "$497",
+    name: "Evidence Engine",
+    price: "$49/mo",
     href: "/evidence-vault",
-    cta: "Access Vault",
+    cta: "Start Engine",
     description:
       "A secure, organized repository for your professional artifacts, mapped directly to visa criteria. Stop using chaotic shared folders. Organize your case with clinical precision.",
     features: [

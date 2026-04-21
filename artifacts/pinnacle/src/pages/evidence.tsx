@@ -270,7 +270,7 @@ export default function EvidenceVault() {
     <AppLayout>
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Evidence Vault</h1>
+          <h1 className="text-3xl font-bold text-foreground">Evidence Engine</h1>
           <p className="text-muted-foreground mt-2">Secure repository for your professional artifacts, mapped to USCIS criteria.</p>
           {driveSync?.lastDriveSyncAt && (
             <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">

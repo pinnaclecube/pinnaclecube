@@ -15,11 +15,11 @@ export default function EvidenceVaultSuccess() {
           </div>
           <h1 className="text-3xl font-bold mb-3">Access Activated!</h1>
           <p className="text-muted-foreground mb-8 leading-relaxed">
-            Your Evidence Vault is ready. Your Google Drive folders are being set up — you'll receive an email when they're available.
+            Your Evidence Engine is ready. Your Google Drive folders are being set up — you'll receive an email when they're available.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link href="/evidence">
-              <Button className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">Open Evidence Vault</Button>
+              <Button className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">Open Evidence Engine</Button>
             </Link>
             <Link href="/dashboard">
               <Button variant="outline">Dashboard</Button>

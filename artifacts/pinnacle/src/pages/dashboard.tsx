@@ -52,7 +52,7 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between">
-              Evidence Vault
+              Evidence Engine
               <FileText className="w-4 h-4 text-[#1E2D6B]" />
             </CardTitle>
           </CardHeader>

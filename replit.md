@@ -30,8 +30,8 @@ Premium immigration advisory coaching platform for high-achieving tech professio
 
 ## Products
 
-- **Excellence Lab** — Learning courses (Stripe checkout, self-serve, $297 one-time)
-- **Evidence Vault** — Document/evidence tracking (Stripe checkout, self-serve, $497 one-time)
+- **Excellence Lab** — Learning courses (Stripe checkout, self-serve, $249 one-time; Price ID: `STRIPE_PRICE_EXCELLENCE_LAB`)
+- **Evidence Engine** — Document/evidence tracking (Stripe subscription, self-serve, $49/mo; Price ID: `STRIPE_PRICE_EVIDENCE_ENGINE`; DB key stays `evidence_vault`)
 - **Elite Blueprint** — Personalized strategy (application-only, offline payment)
 
 ## Product Access Gating
@@ -43,7 +43,7 @@ Product pages are locked behind purchase. `ProductProtectedRoute` (`artifacts/pi
 
 Free pages (no purchase needed): `/dashboard`, `/where-you-stand`, `/criteria`, `/criteria/:id`
 
-## Google Drive Auto-Ingest (Drive → Evidence Vault Pipeline)
+## Google Drive Auto-Ingest (Drive → Evidence Engine Pipeline)
 
 Files dropped into a client's Google Drive criterion folders are automatically detected, downloaded, text-extracted, and inserted as evidence records.
 

@@ -77,7 +77,7 @@ export function welcomeEmail(firstName: string): { subject: string; html: string
       <ul style="margin:0 0 16px;padding-left:20px;color:#374151;font-size:15px;line-height:2;">
         <li>Complete your <strong>readiness intake</strong> to unlock your visa profile</li>
         <li>Browse the <strong>Resource Hub</strong> for 13 in-depth strategy guides</li>
-        <li>Explore our advisory products — Excellence Lab, Evidence Vault, and Elite Blueprint</li>
+        <li>Explore our advisory products — Excellence Lab, Evidence Engine, and Elite Blueprint</li>
       </ul>
       ${btn("Go to your dashboard", `${APP_URL}/dashboard`)}
       ${divider()}
@@ -176,7 +176,7 @@ export function blueprintDeclinedEmail(
       <table cellpadding="0" cellspacing="0" style="background:#f8f9fb;border-radius:8px;padding:20px 24px;margin:0 0 24px;width:100%;">
         <tr><td>
           <p style="margin:0 0 8px;font-size:14px;font-weight:600;color:#111827;">Still want to build your case?</p>
-          <p style="margin:0;font-size:14px;color:#374151;line-height:1.7;">Our Excellence Lab and Evidence Vault products are available to all clients and are an excellent starting point for strengthening your profile.</p>
+          <p style="margin:0;font-size:14px;color:#374151;line-height:1.7;">Our Excellence Lab and Evidence Engine products are available to all clients and are an excellent starting point for strengthening your profile.</p>
         </td></tr>
       </table>
       ${btn("Explore our other products", `${APP_URL}/products`)}

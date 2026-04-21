@@ -47,7 +47,7 @@ export function Navbar() {
                 Excellence Lab
               </Link>
               <Link href="/evidence-vault" className="text-white/80 hover:text-white transition-colors">
-                Evidence Vault
+                Evidence Engine
               </Link>
               <Link href="/elite-blueprint" className="text-white/80 hover:text-white transition-colors">
                 Elite Blueprint
@@ -88,7 +88,7 @@ export function Navbar() {
                 Excellence Lab
               </Link>
               <Link href="/evidence-vault" className="block text-white/80 hover:text-white text-sm font-medium py-3 border-b border-white/5">
-                Evidence Vault
+                Evidence Engine
               </Link>
               <Link href="/elite-blueprint" className="block text-white/80 hover:text-white text-sm font-medium py-3 border-b border-white/5">
                 Elite Blueprint

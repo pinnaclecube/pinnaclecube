@@ -57,19 +57,19 @@ export default function EvidenceVaultMarketing() {
         <div className="max-w-[1100px] mx-auto px-6 relative z-10">
           <div className="inline-flex items-center gap-2 bg-white/10 text-white/80 text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-full mb-8">
             <Shield className="w-3.5 h-3.5" />
-            Evidence Vault
+            Evidence Engine
           </div>
           <h1 className="text-5xl md:text-6xl font-extrabold text-white mb-4 leading-tight max-w-3xl">
             Your years of work deserve<br />
             <span className="text-[#F59E0B]">more than a Google Drive folder.</span>
           </h1>
           <p className="text-xl text-white/70 max-w-2xl leading-relaxed mb-10">
-            Most professionals we talk to are sitting on years of accomplishments scattered across emails, shared drives, and bookmarks. The Evidence Vault organizes everything into a petition-ready case — and tells you exactly what's missing.
+            Most professionals we talk to are sitting on years of accomplishments scattered across emails, shared drives, and bookmarks. The Evidence Engine organizes everything into a petition-ready case — and tells you exactly what's missing.
           </p>
           <div className="flex flex-col sm:flex-row gap-4">
             <Link href="/evidence-vault/checkout">
               <button className="bg-white text-[#1E2D6B] px-8 py-4 rounded font-extrabold text-lg hover:bg-gray-100 transition-all hover:scale-[1.02] shadow-xl w-full sm:w-auto">
-                Get Access — $497
+                Get Access — $49/mo
               </button>
             </Link>
             <Link href="/register">
@@ -143,11 +143,11 @@ export default function EvidenceVaultMarketing() {
             Build your petition-ready case.
           </h2>
           <p className="text-lg text-slate-600 mb-10 font-medium">
-            Includes full Excellence Lab access. One-time payment. Everything you need to walk into an attorney's office prepared.
+            Includes full Excellence Lab access. $49/month — cancel anytime. Everything you need to walk into an attorney's office prepared.
           </p>
           <Link href="/evidence-vault/checkout">
             <button className="bg-[#1E2D6B] text-white px-10 py-4 rounded font-extrabold text-lg hover:bg-[#0F1F4A] transition-all hover:-translate-y-1 shadow-xl hover:shadow-[#1E2D6B]/30 inline-block">
-              Get Evidence Vault — $497
+              Get Evidence Engine — $49/mo
             </button>
           </Link>
           <p className="text-slate-400 text-xs mt-4">AI outputs require attorney review. Advisory coaching service.</p>
