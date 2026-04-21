@@ -2,6 +2,7 @@ import { Router } from "express";
 import { eq, and, desc } from "drizzle-orm";
 import { db, notificationsTable } from "@workspace/db";
 import { requireClientAuth } from "../middlewares/clientAuth";
+import { z } from "zod";
 
 const router = Router();
 
@@ -44,6 +45,28 @@ router.patch("/notifications/:id/read", requireClientAuth, async (req: any, res)
   }
 
   res.json({ notification });
+});
+
+router.post("/notifications/read-by-type", requireClientAuth, async (req: any, res): Promise<void> => {
+  const parsed = z.object({ type: z.string().min(1) }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Missing required field: type" });
+    return;
+  }
+
+  await db
+    .update(notificationsTable)
+    .set({ status: "read" })
+    .where(
+      and(
+        eq(notificationsTable.profileId, req.clientUser.id),
+        eq(notificationsTable.status, "unread"),
+        eq(notificationsTable.userType, "client"),
+        eq(notificationsTable.notificationType, parsed.data.type),
+      )
+    );
+
+  res.json({ success: true });
 });
 
 router.post("/notifications/read-all", requireClientAuth, async (req: any, res): Promise<void> => {

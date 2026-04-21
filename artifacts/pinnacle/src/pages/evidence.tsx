@@ -78,7 +78,11 @@ function useDriveSync() {
       .catch(() => {});
   }, []);
 
-  return syncInfo;
+  const clearBadge = useCallback(() => {
+    setSyncInfo((prev) => prev ? { ...prev, unreadDriveNotifications: 0 } : prev);
+  }, []);
+
+  return { syncInfo, clearBadge };
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -95,7 +99,7 @@ function formatRelativeTime(dateStr: string): string {
 export default function EvidenceVault() {
   const { data: evidenceList, isLoading, refetch } = useListEvidence();
   const { criteria, requiresIntake, loading: criteriaLoading, refetchCriteria } = useEvidenceCriteria();
-  const driveSync = useDriveSync();
+  const { syncInfo: driveSync, clearBadge } = useDriveSync();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const driveToastShown = useRef(false);
@@ -109,8 +113,17 @@ export default function EvidenceVault() {
         title: "New evidence ingested",
         description: `${count} new document${count > 1 ? "s" : ""} were automatically synced from your Drive.`,
       });
+      fetch("/api/notifications/read-by-type", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({ type: "drive_ingest" }),
+      }).catch(() => {});
+      clearBadge();
     }
-  }, [driveSync, toast]);
+  }, [driveSync, toast, clearBadge]);
 
   // Form state
   const [criteriaId, setCriteriaId] = useState("");
@@ -497,6 +510,7 @@ export default function EvidenceVault() {
             </div>
           </DialogContent>
         </Dialog>
+      </div>
       </div>
 
       <AIOutputBanner variant="analysis" />
