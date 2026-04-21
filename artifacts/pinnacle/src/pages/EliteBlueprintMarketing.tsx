@@ -1,5 +1,6 @@
 import { Link } from "wouter";
 import { PublicLayout } from "@/components/layout/PublicLayout";
+import { ContactHeroForm } from "@/components/ContactHeroForm";
 import { UserCheck, Map, CalendarDays, MessageSquare, FileText, Sparkles, Star } from "lucide-react";
 
 const FEATURES = [
@@ -46,27 +47,54 @@ const PROCESS = [
 export default function EliteBlueprintMarketing() {
   return (
     <PublicLayout>
-      {/* Hero */}
-      <section className="relative pt-40 pb-20 md:pt-52 md:pb-24 bg-[#1E2D6B] overflow-hidden">
-        <div className="absolute -right-20 -bottom-16 text-[300px] font-black text-white/[0.04] leading-none pointer-events-none select-none">³</div>
-        <div className="max-w-[1100px] mx-auto px-6 relative z-10">
-          <div className="inline-flex items-center gap-2 bg-[#F59E0B]/20 text-[#F59E0B] text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-full mb-8">
-            <Star className="w-3.5 h-3.5 fill-current" />
-            Elite Blueprint — Premium Advisory
+      {/* Hero — h-svh 70/30 split matching Home page */}
+      <section className="relative h-svh bg-[#1E2D6B] overflow-hidden flex flex-col">
+        {/* Background image */}
+        <div className="absolute inset-0 opacity-[0.18] pointer-events-none mix-blend-overlay">
+          <img src="/bold-ascent-hero.png" alt="" className="w-full h-full object-cover object-center" />
+        </div>
+        {/* Decorative ³ */}
+        <div className="absolute right-[32%] -bottom-16 text-[400px] font-black text-white/[0.025] leading-none pointer-events-none select-none hidden lg:block">³</div>
+
+        {/* 70 / 30 split */}
+        <div className="flex-1 flex flex-col lg:flex-row max-w-[1280px] mx-auto w-full px-6 pt-24 pb-6 gap-6 relative z-10 min-h-0">
+
+          {/* Left — product content (70%) */}
+          <div className="flex flex-col justify-center lg:w-[70%] lg:pr-10 py-4 min-h-0">
+            <div className="inline-flex items-center gap-2 bg-[#F59E0B]/20 text-[#F59E0B] text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-full mb-8 w-fit">
+              <Star className="w-3.5 h-3.5 fill-current" />
+              Elite Blueprint — Premium Advisory
+            </div>
+            <h1 className="text-[clamp(2rem,4.5vw,52px)] font-extrabold text-white leading-[1.05] tracking-tight mb-3">
+              You shouldn't have to figure this out alone.
+            </h1>
+            <h2 className="text-[clamp(2rem,4.5vw,52px)] font-extrabold text-[#F59E0B] leading-[1.05] tracking-tight mb-6">
+              Now you don't have to.
+            </h2>
+            <p className="text-[clamp(0.9rem,1.4vw,17px)] text-white/70 font-medium mb-8 max-w-xl leading-relaxed">
+              The Elite Blueprint is Pinnacle³'s highest-touch engagement. A dedicated advisor who knows your case deeply, a bespoke strategy built around your career, and support from assessment all the way through filing.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 mb-6">
+              <Link href="/elite-blueprint/apply">
+                <button className="bg-white text-[#1E2D6B] px-6 py-3 rounded font-extrabold text-sm hover:bg-gray-100 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-xl shadow-black/10 w-full sm:w-auto">
+                  Apply for Elite Blueprint
+                </button>
+              </Link>
+              <Link href="/how-it-works">
+                <button className="bg-transparent text-white border-2 border-white/30 px-6 py-3 rounded font-bold text-sm hover:border-white hover:bg-white/5 transition-all w-full sm:w-auto">
+                  See How It Works
+                </button>
+              </Link>
+            </div>
+            <p className="text-white/40 text-xs">By application only · Limited capacity · Pricing discussed during review</p>
           </div>
-          <h1 className="text-5xl md:text-6xl font-extrabold text-white mb-4 leading-tight max-w-3xl">
-            You shouldn't have to figure this out alone.
-            <span className="text-[#F59E0B] block mt-1">Now you don't have to.</span>
-          </h1>
-          <p className="text-xl text-white/70 max-w-2xl leading-relaxed mb-10">
-            The Elite Blueprint is Pinnacle³'s highest-touch engagement. A dedicated advisor who knows your case deeply, a bespoke strategy built around your career, and support from assessment all the way through filing.
-          </p>
-          <Link href="/elite-blueprint/apply">
-            <button className="bg-white text-[#1E2D6B] px-8 py-4 rounded font-extrabold text-lg hover:bg-gray-100 transition-all hover:scale-[1.02] shadow-xl inline-block">
-              Apply for Elite Blueprint
-            </button>
-          </Link>
-          <p className="text-white/40 text-sm mt-5">By application only · Limited capacity · Pricing discussed during review</p>
+
+          {/* Right — contact form (30%) */}
+          <div className="lg:w-[30%] shrink-0 flex flex-col lg:border-l lg:border-white/10 lg:pl-6 min-h-0">
+            <div className="bg-white/5 rounded-xl p-5 border border-white/10 h-full flex flex-col">
+              <ContactHeroForm />
+            </div>
+          </div>
         </div>
       </section>
 
