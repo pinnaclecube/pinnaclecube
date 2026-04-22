@@ -9,6 +9,7 @@ import { ReconsentModal } from "@/components/disclaimers/ReconsentModal";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { StaffProtectedRoute } from "@/components/auth/StaffProtectedRoute";
 import { ProductProtectedRoute } from "@/components/auth/ProductProtectedRoute";
+import { PaywallRoute } from "@/components/auth/PaywallRoute";
 import NotFound from "@/pages/not-found";
 
 import Home from "@/pages/Home";
@@ -31,6 +32,7 @@ import InstantProfileInsightStart from "@/pages/InstantProfileInsightStart";
 import InstantProfileInsightResults from "@/pages/InstantProfileInsightResults";
 
 import Dashboard from "@/pages/dashboard";
+import ChoosePlan from "@/pages/ChoosePlan";
 import WhereYouStand from "@/pages/where-you-stand";
 import EvidenceVault from "@/pages/evidence";
 import EvidenceDetail from "@/pages/evidence-detail";
@@ -89,15 +91,26 @@ function Router() {
       <Route path="/evidence-vault/success" component={EvidenceVaultSuccess} />
       <Route path="/evidence-vault/cancel" component={EvidenceVaultCancel} />
 
-      {/* Protected client routes */}
+      {/* Protected client routes — free users land here to choose a plan */}
+      <Route path="/choose-plan">
+        <ProtectedRoute><ChoosePlan /></ProtectedRoute>
+      </Route>
+
+      {/* Protected client routes — require at least one paid product */}
       <Route path="/dashboard">
-        <ProtectedRoute><Dashboard /></ProtectedRoute>
+        <ProtectedRoute>
+          <PaywallRoute><Dashboard /></PaywallRoute>
+        </ProtectedRoute>
       </Route>
       <Route path="/dashboard/readiness-intake">
-        <ProtectedRoute><ReadinessIntake /></ProtectedRoute>
+        <ProtectedRoute>
+          <PaywallRoute><ReadinessIntake /></PaywallRoute>
+        </ProtectedRoute>
       </Route>
       <Route path="/where-you-stand">
-        <ProtectedRoute><WhereYouStand /></ProtectedRoute>
+        <ProtectedRoute>
+          <PaywallRoute><WhereYouStand /></PaywallRoute>
+        </ProtectedRoute>
       </Route>
       <Route path="/evidence">
         <ProtectedRoute>
@@ -116,10 +129,16 @@ function Router() {
         )}
       </Route>
       <Route path="/criteria">
-        <ProtectedRoute><CriteriaExhibit /></ProtectedRoute>
+        <ProtectedRoute>
+          <PaywallRoute><CriteriaExhibit /></PaywallRoute>
+        </ProtectedRoute>
       </Route>
       <Route path="/criteria/:id">
-        {() => <ProtectedRoute><CriterionDetail /></ProtectedRoute>}
+        {() => (
+          <ProtectedRoute>
+            <PaywallRoute><CriterionDetail /></PaywallRoute>
+          </ProtectedRoute>
+        )}
       </Route>
       <Route path="/blueprint">
         <ProtectedRoute>

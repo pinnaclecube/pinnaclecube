@@ -48,7 +48,7 @@ export default function ClientRegister() {
         disclaimer_accepted: true,
         disclaimer_version: DISCLAIMER_VERSION,
       });
-      navigate("/dashboard");
+      navigate("/choose-plan");
     } catch (err: any) {
       setError(err.message ?? "Registration failed. Please try again.");
     } finally {
