@@ -1,6 +1,8 @@
-import { Link } from "wouter";
+import { useEffect } from "react";
+import { Link, useLocation } from "wouter";
 import { Logo } from "@/components/ui/logo";
 import { useAuth } from "@/contexts/AuthContext";
+import { useProductAccess } from "@/hooks/useProductAccess";
 import { BookOpen, Shield, Star, ArrowRight, CheckCircle2 } from "lucide-react";
 
 const products = [
@@ -62,7 +64,15 @@ const products = [
 
 export default function ChoosePlan() {
   const { user } = useAuth();
+  const { hasExcellenceLab, isLoading } = useProductAccess();
+  const [, navigate] = useLocation();
   const firstName = user?.name?.split(" ")[0] ?? "there";
+
+  useEffect(() => {
+    if (!isLoading && hasExcellenceLab) {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [isLoading, hasExcellenceLab, navigate]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">

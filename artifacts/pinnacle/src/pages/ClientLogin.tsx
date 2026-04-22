@@ -23,8 +23,10 @@ export default function ClientLogin() {
     setLoading(true);
     try {
       const result = await login(form.email, form.password);
-      if ((result as any)?.requiresReconsent) {
+      if (result.requiresReconsent) {
         setRequiresReconsent(true);
+      } else if (result.accessLevel === "free") {
+        navigate("/choose-plan");
       } else {
         navigate("/dashboard");
       }

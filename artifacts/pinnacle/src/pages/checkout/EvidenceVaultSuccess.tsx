@@ -1,10 +1,18 @@
+import { useEffect } from "react";
 import { Link } from "wouter";
 import { Navbar } from "@/components/layout/Navbar";
 import { PublicFooter } from "@/components/layout/PublicFooter";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, ClipboardList, Shield } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function EvidenceVaultSuccess() {
+  const { refreshUser } = useAuth();
+
+  useEffect(() => {
+    refreshUser();
+  }, [refreshUser]);
+
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
