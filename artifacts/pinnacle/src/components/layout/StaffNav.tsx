@@ -5,6 +5,7 @@ const NAV_LINKS = [
   { href: "/internal/cases", label: "Cases" },
   { href: "/internal/prospects", label: "Prospects" },
   { href: "/internal/elite-blueprint-applications", label: "Blueprint Apps" },
+  { href: "/internal/booth-events", label: "Booth Events" },
 ];
 
 export default function StaffNav() {

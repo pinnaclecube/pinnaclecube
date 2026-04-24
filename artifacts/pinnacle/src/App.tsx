@@ -60,6 +60,7 @@ import InternalProspects from "@/pages/internal/InternalProspects";
 import InternalProspectDetail from "@/pages/internal/InternalProspectDetail";
 import InternalEliteBlueprintApplications from "@/pages/internal/InternalEliteBlueprintApplications";
 import InternalEliteBlueprintApplicationDetail from "@/pages/internal/InternalEliteBlueprintApplicationDetail";
+import InternalBoothEvents from "@/pages/internal/InternalBoothEvents";
 
 function Router() {
   return (
@@ -193,6 +194,9 @@ function Router() {
       </Route>
       <Route path="/internal/elite-blueprint-applications/:id">
         {(params) => <StaffProtectedRoute><InternalEliteBlueprintApplicationDetail /></StaffProtectedRoute>}
+      </Route>
+      <Route path="/internal/booth-events">
+        <StaffProtectedRoute><InternalBoothEvents /></StaffProtectedRoute>
       </Route>
 
       <Route component={NotFound} />
