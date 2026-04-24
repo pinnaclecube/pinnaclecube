@@ -28,9 +28,27 @@ const STATUS_COLORS: Record<string, string> = {
   converted: "bg-purple-100 text-purple-700",
 };
 
+const SOURCE_FILTERS = [
+  { key: "all", label: "All" },
+  { key: "booth", label: "Booth" },
+  { key: "contact_form", label: "Contact Form" },
+  { key: "quiz", label: "Quiz" },
+  { key: "manual", label: "Manual" },
+] as const;
+
+type SourceFilter = typeof SOURCE_FILTERS[number]["key"];
+
+const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
+  booth: { label: "Booth", cls: "bg-indigo-100 text-indigo-700" },
+  contact_form: { label: "Contact Form", cls: "bg-sky-100 text-sky-700" },
+  quiz: { label: "Quiz", cls: "bg-amber-100 text-amber-700" },
+  manual: { label: "Manual", cls: "bg-gray-100 text-gray-500" },
+};
+
 export default function InternalProspects() {
   const [prospects, setProspects] = useState<any[]>([]);
   const [search, setSearch] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [form, setForm] = useState({ fullName: "", email: "", currentRole: "", fieldOfWork: "", sourceType: "manual" });
@@ -65,11 +83,23 @@ export default function InternalProspects() {
     } finally { setSaving(false); }
   };
 
-  const filtered = prospects.filter((p: any) =>
-    (p.fullName ?? "").toLowerCase().includes(search.toLowerCase()) ||
-    (p.email ?? "").toLowerCase().includes(search.toLowerCase()) ||
-    (p.currentRole ?? "").toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = prospects.filter((p: any) => {
+    const matchesSearch =
+      (p.fullName ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      (p.email ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      (p.currentRole ?? "").toLowerCase().includes(search.toLowerCase());
+
+    const matchesSource =
+      sourceFilter === "all" ||
+      (p.sourceType ?? "manual") === sourceFilter;
+
+    return matchesSearch && matchesSource;
+  });
+
+  const countFor = (key: SourceFilter) =>
+    key === "all"
+      ? prospects.length
+      : prospects.filter((p) => (p.sourceType ?? "manual") === key).length;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -83,6 +113,30 @@ export default function InternalProspects() {
           <Button size="sm" onClick={() => setShowAddModal(true)} className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
             <Plus className="w-4 h-4 mr-1.5" /> Add Prospect
           </Button>
+        </div>
+
+        {/* Source filter tabs */}
+        <div className="flex gap-1 mb-4 flex-wrap">
+          {SOURCE_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setSourceFilter(f.key)}
+              className={cn(
+                "px-3 py-1.5 rounded-full text-sm font-medium transition-colors",
+                sourceFilter === f.key
+                  ? "bg-[#1E2D6B] text-white"
+                  : "bg-white border border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50",
+              )}
+            >
+              {f.label}
+              <span className={cn(
+                "ml-1.5 text-xs",
+                sourceFilter === f.key ? "text-white/70" : "text-muted-foreground",
+              )}>
+                {countFor(f.key)}
+              </span>
+            </button>
+          ))}
         </div>
 
         <div className="relative mb-4">
@@ -102,35 +156,41 @@ export default function InternalProspects() {
           </Card>
         ) : (
           <div className="space-y-2">
-            {filtered.map((p: any) => (
-              <Link key={p.id} href={`/internal/prospect/${p.id}`}>
-                <Card className="cursor-pointer hover:shadow-md transition-shadow">
-                  <CardContent className="py-3 px-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className="w-9 h-9 rounded-full bg-[#1E2D6B]/10 flex items-center justify-center text-[#1E2D6B] font-bold shrink-0">
-                          {(p.fullName ?? p.email ?? "?")[0].toUpperCase()}
+            {filtered.map((p: any) => {
+              const src = SOURCE_BADGE[p.sourceType ?? "manual"] ?? SOURCE_BADGE.manual;
+              return (
+                <Link key={p.id} href={`/internal/prospect/${p.id}`}>
+                  <Card className="cursor-pointer hover:shadow-md transition-shadow">
+                    <CardContent className="py-3 px-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <div className="w-9 h-9 rounded-full bg-[#1E2D6B]/10 flex items-center justify-center text-[#1E2D6B] font-bold shrink-0">
+                            {(p.fullName ?? p.email ?? "?")[0].toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold truncate">{p.fullName}</p>
+                            <p className="text-xs text-muted-foreground truncate">{p.email}{p.currentRole ? ` · ${p.currentRole}` : ""}</p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="font-semibold truncate">{p.fullName}</p>
-                          <p className="text-xs text-muted-foreground truncate">{p.email}{p.currentRole ? ` · ${p.currentRole}` : ""}</p>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {p.publicationsSignal && <BookOpen className="w-3.5 h-3.5 text-blue-500" title="Publications" />}
+                          {p.awardsSignal && <Trophy className="w-3.5 h-3.5 text-yellow-500" title="Awards" />}
+                          {p.leadershipSignal && <Briefcase className="w-3.5 h-3.5 text-green-500" title="Leadership" />}
+                          <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium", src.cls)}>
+                            {src.label}
+                          </span>
+                          <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium capitalize", STATUS_COLORS[p.status ?? "new"] ?? "bg-gray-100 text-gray-600")}>
+                            {(p.status ?? "new").replace(/_/g, " ")}
+                          </span>
+                          <Badge variant="outline" className="text-xs capitalize">{p.registrationStatus?.replace(/_/g, " ") ?? "not invited"}</Badge>
+                          <ChevronRight className="w-4 h-4 text-muted-foreground" />
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {p.publicationsSignal && <BookOpen className="w-3.5 h-3.5 text-blue-500" title="Publications" />}
-                        {p.awardsSignal && <Trophy className="w-3.5 h-3.5 text-yellow-500" title="Awards" />}
-                        {p.leadershipSignal && <Briefcase className="w-3.5 h-3.5 text-green-500" title="Leadership" />}
-                        <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium capitalize", STATUS_COLORS[p.status ?? "new"] ?? "bg-gray-100 text-gray-600")}>
-                          {(p.status ?? "new").replace(/_/g, " ")}
-                        </span>
-                        <Badge variant="outline" className="text-xs capitalize">{p.registrationStatus?.replace(/_/g, " ") ?? "not invited"}</Badge>
-                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
           </div>
         )}
       </main>

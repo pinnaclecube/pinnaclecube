@@ -20,6 +20,7 @@ import stripeRouter from "./stripe";
 import adminSeedRouter from "./adminSeed";
 import emailRouter from "./email";
 import contactRouter from "./contact";
+import boothRouter from "./booth";
 
 const router: IRouter = Router();
 
@@ -44,5 +45,6 @@ router.use(stripeRouter);
 router.use(adminSeedRouter);
 router.use("/email", emailRouter);
 router.use(contactRouter);
+router.use(boothRouter);
 
 export default router;

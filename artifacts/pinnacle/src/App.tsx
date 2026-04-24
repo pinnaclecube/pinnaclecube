@@ -30,6 +30,7 @@ import Resources from "@/pages/Resources";
 import ArticleDetail from "@/pages/ArticleDetail";
 import InstantProfileInsightStart from "@/pages/InstantProfileInsightStart";
 import InstantProfileInsightResults from "@/pages/InstantProfileInsightResults";
+import BoothCapture from "@/pages/BoothCapture";
 
 import Dashboard from "@/pages/dashboard";
 import ChoosePlan from "@/pages/ChoosePlan";
@@ -77,6 +78,7 @@ function Router() {
       <Route path="/resources/:id" component={ArticleDetail} />
       <Route path="/instant-profile-insight/start" component={InstantProfileInsightStart} />
       <Route path="/instant-profile-insight/results" component={InstantProfileInsightResults} />
+      <Route path="/booth" component={BoothCapture} />
       <Route path="/login" component={ClientLogin} />
       <Route path="/register" component={ClientRegister} />
       <Route path="/terms" component={TermsOfService} />

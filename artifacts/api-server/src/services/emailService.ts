@@ -310,6 +310,108 @@ export function contactFormStaffAlertEmail(
   };
 }
 
+// ─── Template 9: Booth lead — lead confirmation ───────────────────────────────
+
+export function boothLeadConfirmationEmail(
+  firstName: string,
+  eventName?: string,
+): { subject: string; html: string; text: string } {
+  const eventLine = eventName ? ` at <strong>${eventName}</strong>` : "";
+  return {
+    subject: "Great meeting you — here's what Pinnacle³ can do for you",
+    html: layout(`
+      ${h1(`Great meeting you, ${firstName}!`)}
+      ${p(`Thank you for stopping by our booth${eventLine}. We'd love to help you build an extraordinary EB-1A, EB-2 NIW, or O-1A case.`)}
+      <table cellpadding="0" cellspacing="0" style="border:1px solid #e9ecef;border-radius:8px;width:100%;margin:0 0 24px;overflow:hidden;">
+        <tr style="background:#f8f9fb;">
+          <td colspan="2" style="padding:10px 16px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;">Our Advisory Products</td>
+        </tr>
+        <tr>
+          <td style="padding:12px 16px;border-top:1px solid #e9ecef;vertical-align:top;width:30%;">
+            <span style="font-size:13px;font-weight:700;color:#1E2D6B;">Excellence Lab</span><br>
+            <span style="font-size:12px;color:#6b7280;">$249 one-time</span>
+          </td>
+          <td style="padding:12px 16px;border-top:1px solid #e9ecef;font-size:13px;color:#374151;">Self-paced EB-1A/NIW strategy course with 8 criteria frameworks, evidence templates, and expert guidance.</td>
+        </tr>
+        <tr>
+          <td style="padding:12px 16px;border-top:1px solid #e9ecef;vertical-align:top;">
+            <span style="font-size:13px;font-weight:700;color:#1E2D6B;">Evidence Engine</span><br>
+            <span style="font-size:12px;color:#6b7280;">$49/month</span>
+          </td>
+          <td style="padding:12px 16px;border-top:1px solid #e9ecef;font-size:13px;color:#374151;">Structured Google Drive workspace, evidence tracking, and expert review of your documents.</td>
+        </tr>
+        <tr>
+          <td style="padding:12px 16px;border-top:1px solid #e9ecef;vertical-align:top;">
+            <span style="font-size:13px;font-weight:700;color:#1E2D6B;">Elite Blueprint</span><br>
+            <span style="font-size:12px;color:#6b7280;">Application-only</span>
+          </td>
+          <td style="padding:12px 16px;border-top:1px solid #e9ecef;font-size:13px;color:#374151;">Full-service advisory: dedicated strategist, end-to-end case planning, and hands-on support.</td>
+        </tr>
+      </table>
+      ${p("Not sure where to start? Our free <strong>Instant Profile Insight</strong> assessment takes 2 minutes and tells you which visa path fits your background best.")}
+      ${btn("Take the free assessment", `${APP_URL}/instant-profile-insight/start`)}
+      <table cellpadding="0" cellspacing="0" style="margin:12px 0 0;">
+        <tr><td>
+          <a href="${APP_URL}/excellence-lab" style="color:#1E2D6B;font-size:14px;font-weight:600;text-decoration:none;">Explore Excellence Lab →</a>
+        </td></tr>
+      </table>
+      ${divider()}
+      ${p("Questions? Just reply to this email — we'd love to continue the conversation.")}
+    `),
+    text: `Great meeting you${eventName ? ` at ${eventName}` : ""}, ${firstName}!\n\nThank you for visiting our booth. Here's a quick look at what Pinnacle³ offers:\n\n- Excellence Lab ($249): Self-paced EB-1A/NIW strategy course\n- Evidence Engine ($49/mo): Structured evidence workspace\n- Elite Blueprint (application-only): Full-service advisory\n\nNot sure where to start? Take our free 2-minute Instant Profile Insight: ${APP_URL}/instant-profile-insight/start\n\nQuestions? Reply to this email.`,
+  };
+}
+
+// ─── Template 10: Booth lead — staff alert ────────────────────────────────────
+
+export function boothLeadStaffAlertEmail(
+  fullName: string,
+  email: string,
+  phone: string | undefined,
+  fieldOfWork: string | undefined,
+  visaTarget: string | undefined,
+  eventName: string | undefined,
+): { subject: string; html: string; text: string } {
+  return {
+    subject: `New booth lead — ${fullName}${eventName ? ` (${eventName})` : ""}`,
+    html: layout(`
+      ${h1("New Booth Lead")}
+      ${p(`A new lead was captured at the booth${eventName ? ` — <strong>${eventName}</strong>` : ""} and added to the prospects queue.`)}
+      <table cellpadding="0" cellspacing="0" style="border:1px solid #e9ecef;border-radius:8px;width:100%;margin:0 0 24px;overflow:hidden;">
+        <tr style="background:#f8f9fb;">
+          <td colspan="2" style="padding:10px 16px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;">Lead Details</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;width:120px;">Name</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;">${fullName}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Email</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;"><a href="mailto:${email}" style="color:#1E2D6B;">${email}</a></td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Phone</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;">${phone || "—"}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Field</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;">${fieldOfWork || "—"}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Visa Interest</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;">${visaTarget || "—"}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Event</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;">${eventName || "—"}</td>
+        </tr>
+      </table>
+      ${btn("View in Prospects Queue", `${APP_URL}/internal/prospects`)}
+    `),
+    text: `New booth lead captured${eventName ? ` at ${eventName}` : ""}:\n\nName: ${fullName}\nEmail: ${email}\nPhone: ${phone || "—"}\nField: ${fieldOfWork || "—"}\nVisa Interest: ${visaTarget || "—"}\nEvent: ${eventName || "—"}\n\nView prospects queue at ${APP_URL}/internal/prospects`,
+  };
+}
+
 // ─── Sender helper ─────────────────────────────────────────────────────────────
 
 export async function sendEmail(
