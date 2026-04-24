@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, jsonb, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -26,6 +26,20 @@ export const clientActivityLogTable = pgTable("client_activity_log", {
   eventData: jsonb("event_data").default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ─── Booth Events ──────────────────────────────────────────────────────────────
+export const boothEventsTable = pgTable("booth_events", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  createdBy: text("created_by"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const insertBoothEventSchema = createInsertSchema(boothEventsTable).omit({ id: true, createdAt: true });
+export type InsertBoothEvent = z.infer<typeof insertBoothEventSchema>;
+export type BoothEvent = typeof boothEventsTable.$inferSelect;
 
 export const insertInternalCaseNoteSchema = createInsertSchema(internalCaseNotesTable).omit({ id: true, createdAt: true });
 export const insertInternalEvidenceNoteSchema = createInsertSchema(internalEvidenceNotesTable).omit({ id: true, createdAt: true });

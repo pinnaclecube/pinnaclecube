@@ -21,6 +21,7 @@ import adminSeedRouter from "./adminSeed";
 import emailRouter from "./email";
 import contactRouter from "./contact";
 import boothRouter from "./booth";
+import adminBoothEventsRouter from "./adminBoothEvents";
 
 const router: IRouter = Router();
 
@@ -46,5 +47,6 @@ router.use(adminSeedRouter);
 router.use("/email", emailRouter);
 router.use(contactRouter);
 router.use(boothRouter);
+router.use(adminBoothEventsRouter);
 
 export default router;
