@@ -1,30 +1,38 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useSearch } from "wouter";
 import { Logo } from "@/components/ui/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CheckCircle2, UserPlus } from "lucide-react";
+import { CheckCircle2, UserPlus, ChevronDown } from "lucide-react";
+import { COUNTRY_CODES } from "@/lib/countryCodes";
 
 const VISA_OPTIONS = [
-  { value: "EB-1A", label: "EB-1A — Extraordinary Ability" },
-  { value: "EB-2 NIW", label: "EB-2 NIW — National Interest Waiver" },
-  { value: "O-1A", label: "O-1A — Extraordinary Ability (Non-immigrant)" },
-  { value: "Not sure", label: "Not sure yet" },
+  "EB-1A — Extraordinary Ability Assessment",
+  "EB-2 NIW — National Interest Waiver",
+  "O-1A — Extraordinary Ability (Non-Immigrant)",
+  "Evaluating my visa options",
+  "Evidence Strategy & Documentation",
+  "Elite Blueprint Program",
+  "General Inquiry",
 ];
 
 type FormState = {
-  fullName: string;
+  firstName: string;
+  lastName: string;
   email: string;
+  countryCode: string;
   phone: string;
   fieldOfWork: string;
   visaTarget: string;
 };
 
 const EMPTY_FORM: FormState = {
-  fullName: "",
+  firstName: "",
+  lastName: "",
   email: "",
+  countryCode: "+1",
   phone: "",
   fieldOfWork: "",
   visaTarget: "",
@@ -36,26 +44,56 @@ export default function BoothCapture() {
   const eventName = params.get("event") ?? undefined;
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [ccSearch, setCcSearch] = useState("");
+  const [ccOpen, setCcOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [capturedName, setCapturedName] = useState("");
 
+  const filtered = COUNTRY_CODES.filter(
+    (c) =>
+      c.country.toLowerCase().includes(ccSearch.toLowerCase()) ||
+      c.code.includes(ccSearch)
+  );
+
+  useEffect(() => {
+    if (ccOpen && searchRef.current) searchRef.current.focus();
+  }, [ccOpen]);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setCcOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
   const set = (field: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [field]: e.target.value }));
+
+  const selectedCountry = COUNTRY_CODES.find((c) => c.code === form.countryCode);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSubmitting(true);
     try {
+      const phone = form.phone.trim()
+        ? `${form.countryCode} ${form.phone.trim()}`
+        : undefined;
       const res = await fetch("/api/booth/lead", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          fullName: form.fullName.trim(),
+          fullName: `${form.firstName.trim()} ${form.lastName.trim()}`.trim(),
           email: form.email.trim(),
-          phone: form.phone.trim() || undefined,
+          phone,
           fieldOfWork: form.fieldOfWork.trim() || undefined,
           visaTarget: form.visaTarget || undefined,
           eventName: eventName,
@@ -65,7 +103,7 @@ export default function BoothCapture() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Something went wrong. Please try again.");
       }
-      setCapturedName(form.fullName.split(" ")[0] ?? form.fullName);
+      setCapturedName(form.firstName.trim());
       setSuccess(true);
     } catch (err: any) {
       setError(err.message ?? "Failed to submit. Please try again.");
@@ -76,6 +114,8 @@ export default function BoothCapture() {
 
   const handleAnother = () => {
     setForm(EMPTY_FORM);
+    setCcSearch("");
+    setCcOpen(false);
     setSuccess(false);
     setCapturedName("");
     setError("");
@@ -106,7 +146,7 @@ export default function BoothCapture() {
               onClick={handleAnother}
               className="w-full bg-[#1E2D6B] hover:bg-[#3D4FA8] h-12 text-base"
             >
-              <UserPlus className="w-4 h-4 mr-2" /> Capture another lead
+              <UserPlus className="w-4 h-4 mr-2" /> Thank You, Go To Next
             </Button>
           </div>
         ) : (
@@ -123,21 +163,39 @@ export default function BoothCapture() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label htmlFor="fullName" className="text-sm font-medium">
-                  Full Name <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="fullName"
-                  value={form.fullName}
-                  onChange={set("fullName")}
-                  placeholder="Jane Smith"
-                  className="mt-1 h-11 text-base"
-                  required
-                  autoComplete="name"
-                />
+              {/* Name row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="firstName" className="text-sm font-medium">
+                    First Name <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="firstName"
+                    value={form.firstName}
+                    onChange={set("firstName")}
+                    placeholder="Jane"
+                    className="mt-1 h-11 text-base"
+                    required
+                    autoComplete="given-name"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="lastName" className="text-sm font-medium">
+                    Last Name <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="lastName"
+                    value={form.lastName}
+                    onChange={set("lastName")}
+                    placeholder="Smith"
+                    className="mt-1 h-11 text-base"
+                    required
+                    autoComplete="family-name"
+                  />
+                </div>
               </div>
 
+              {/* Email */}
               <div>
                 <Label htmlFor="email" className="text-sm font-medium">
                   Email <span className="text-red-500">*</span>
@@ -154,21 +212,77 @@ export default function BoothCapture() {
                 />
               </div>
 
+              {/* Phone: country code + number */}
               <div>
-                <Label htmlFor="phone" className="text-sm font-medium text-muted-foreground">
+                <Label className="text-sm font-medium text-muted-foreground">
                   Phone <span className="text-xs">(optional)</span>
                 </Label>
-                <Input
-                  id="phone"
-                  type="tel"
-                  value={form.phone}
-                  onChange={set("phone")}
-                  placeholder="+1 614 555 0123"
-                  className="mt-1 h-11 text-base"
-                  autoComplete="tel"
-                />
+                <div className="flex gap-2 mt-1">
+                  {/* Country code dropdown */}
+                  <div className="relative" ref={dropdownRef}>
+                    <button
+                      type="button"
+                      onClick={() => { setCcOpen((v) => !v); setCcSearch(""); }}
+                      className="flex items-center gap-1 h-11 border border-input bg-background rounded-md px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring hover:border-gray-400 transition-colors whitespace-nowrap min-w-[82px]"
+                    >
+                      <span className="text-xs text-muted-foreground font-medium">
+                        {selectedCountry?.iso ?? "US"}
+                      </span>
+                      <span className="text-xs font-mono">{form.countryCode}</span>
+                      <ChevronDown className="w-3 h-3 text-muted-foreground ml-auto" />
+                    </button>
+
+                    {ccOpen && (
+                      <div className="absolute top-full left-0 mt-1 w-68 bg-white border border-gray-200 rounded-lg shadow-2xl z-50 overflow-hidden" style={{ width: 260 }}>
+                        <div className="p-2 border-b border-gray-100">
+                          <input
+                            ref={searchRef}
+                            value={ccSearch}
+                            onChange={(e) => setCcSearch(e.target.value)}
+                            placeholder="Search country…"
+                            className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm placeholder:text-gray-400 focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-300"
+                          />
+                        </div>
+                        <ul className="max-h-48 overflow-y-auto">
+                          {filtered.slice(0, 80).map((c, i) => (
+                            <li key={`${c.iso}-${i}`}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setForm((f) => ({ ...f, countryCode: c.code }));
+                                  setCcOpen(false);
+                                  setCcSearch("");
+                                }}
+                                className="w-full flex items-center justify-between px-3 py-2 text-xs text-gray-700 hover:bg-indigo-50 hover:text-indigo-900 transition-colors text-left"
+                              >
+                                <span className="flex items-center gap-2">
+                                  <span className="text-gray-400 font-mono w-6">{c.iso}</span>
+                                  <span className="truncate max-w-[140px]">{c.country}</span>
+                                </span>
+                                <span className="font-mono text-gray-400 ml-2 shrink-0">{c.code}</span>
+                              </button>
+                            </li>
+                          ))}
+                          {filtered.length === 0 && (
+                            <li className="px-3 py-3 text-xs text-gray-400 text-center">No results</li>
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+
+                  <Input
+                    type="tel"
+                    value={form.phone}
+                    onChange={set("phone")}
+                    placeholder="555 000 0000"
+                    className="flex-1 h-11 text-base"
+                    autoComplete="tel-national"
+                  />
+                </div>
               </div>
 
+              {/* Field of work */}
               <div>
                 <Label htmlFor="fieldOfWork" className="text-sm font-medium text-muted-foreground">
                   Field / Industry <span className="text-xs">(optional)</span>
@@ -182,6 +296,7 @@ export default function BoothCapture() {
                 />
               </div>
 
+              {/* Visa Interest */}
               <div>
                 <Label htmlFor="visaTarget" className="text-sm font-medium text-muted-foreground">
                   Visa Interest <span className="text-xs">(optional)</span>
@@ -195,8 +310,8 @@ export default function BoothCapture() {
                   </SelectTrigger>
                   <SelectContent>
                     {VISA_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
+                      <SelectItem key={opt} value={opt}>
+                        {opt}
                       </SelectItem>
                     ))}
                   </SelectContent>
