@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect } from "react";
-import { useSearch } from "wouter";
+import { useSearch, useLocation } from "wouter";
 import { Logo } from "@/components/ui/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CheckCircle2, UserPlus, ChevronDown } from "lucide-react";
+import { CheckCircle2, UserPlus, ChevronDown, ArrowRight } from "lucide-react";
 import { COUNTRY_CODES } from "@/lib/countryCodes";
+
+const QR_REDIRECT_SECONDS = 5;
 
 const VISA_OPTIONS = [
   "EB-1A — Extraordinary Ability Assessment",
@@ -40,8 +42,10 @@ const EMPTY_FORM: FormState = {
 
 export default function BoothCapture() {
   const search = useSearch();
+  const [, navigate] = useLocation();
   const params = new URLSearchParams(search);
   const eventName = params.get("event") ?? undefined;
+  const isQrMode = params.get("mode") === "qr";
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [ccSearch, setCcSearch] = useState("");
@@ -53,6 +57,23 @@ export default function BoothCapture() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [capturedName, setCapturedName] = useState("");
+  const [countdown, setCountdown] = useState(QR_REDIRECT_SECONDS);
+
+  useEffect(() => {
+    if (!isQrMode || !success) return;
+    setCountdown(QR_REDIRECT_SECONDS);
+    const interval = setInterval(() => {
+      setCountdown((n) => {
+        if (n <= 1) {
+          clearInterval(interval);
+          navigate("/");
+          return 0;
+        }
+        return n - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isQrMode, success]);
 
   const filtered = COUNTRY_CODES.filter(
     (c) =>
@@ -140,14 +161,36 @@ export default function BoothCapture() {
               Thanks for stopping by. We've sent a follow-up to your inbox.
             </p>
             {eventName && (
-              <p className="text-sm text-indigo-600 font-medium mb-6">{eventName}</p>
+              <p className="text-sm text-indigo-600 font-medium mb-4">{eventName}</p>
             )}
-            <Button
-              onClick={handleAnother}
-              className="w-full bg-[#1E2D6B] hover:bg-[#3D4FA8] h-12 text-base"
-            >
-              <UserPlus className="w-4 h-4 mr-2" /> Thank You, Go To Next
-            </Button>
+
+            {isQrMode ? (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Redirecting you to Pinnacle³ in{" "}
+                  <span className="font-bold text-[#1E2D6B] tabular-nums">{countdown}</span>s…
+                </p>
+                <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                  <div
+                    className="bg-[#1E2D6B] h-1.5 rounded-full transition-all duration-1000 ease-linear"
+                    style={{ width: `${(countdown / QR_REDIRECT_SECONDS) * 100}%` }}
+                  />
+                </div>
+                <Button
+                  onClick={() => navigate("/")}
+                  className="w-full bg-[#1E2D6B] hover:bg-[#3D4FA8] h-12 text-base mt-1"
+                >
+                  Explore Pinnacle³ <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
+            ) : (
+              <Button
+                onClick={handleAnother}
+                className="w-full bg-[#1E2D6B] hover:bg-[#3D4FA8] h-12 text-base"
+              >
+                <UserPlus className="w-4 h-4 mr-2" /> Thank You, Go To Next
+              </Button>
+            )}
           </div>
         ) : (
           <div className="bg-white rounded-2xl p-8 shadow-xl">

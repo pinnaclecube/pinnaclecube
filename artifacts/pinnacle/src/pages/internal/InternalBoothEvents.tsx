@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import StaffNav from "@/components/layout/StaffNav";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
-import { Plus, Copy, Check, Trash2, ToggleLeft, ToggleRight, QrCode, ExternalLink } from "lucide-react";
+import { Plus, Copy, Check, Trash2, ToggleLeft, ToggleRight, QrCode, ExternalLink, Tablet } from "lucide-react";
 
 function staffFetch(path: string, opts: RequestInit = {}) {
   return fetch(`/api${path}`, {
@@ -27,9 +27,10 @@ type BoothEvent = {
   createdAt: string;
 };
 
-function boothUrl(event: BoothEvent): string {
+function boothUrl(event: BoothEvent, mode?: "qr"): string {
   const base = window.location.origin;
-  return `${base}/booth?event=${encodeURIComponent(event.name)}`;
+  const url = `${base}/booth?event=${encodeURIComponent(event.name)}`;
+  return mode === "qr" ? `${url}&mode=qr` : url;
 }
 
 export default function InternalBoothEvents() {
@@ -39,7 +40,7 @@ export default function InternalBoothEvents() {
   const [newName, setNewName] = useState("");
   const [saving, setSaving] = useState(false);
   const [createError, setCreateError] = useState("");
-  const [copied, setCopied] = useState<number | null>(null);
+  const [copied, setCopied] = useState<{ id: number; mode: "qr" | "staff" } | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<BoothEvent | null>(null);
 
@@ -82,9 +83,9 @@ export default function InternalBoothEvents() {
     }
   };
 
-  const handleCopy = async (event: BoothEvent) => {
-    await navigator.clipboard.writeText(boothUrl(event));
-    setCopied(event.id);
+  const handleCopy = async (event: BoothEvent, mode: "qr" | "staff") => {
+    await navigator.clipboard.writeText(boothUrl(event, mode === "qr" ? "qr" : undefined));
+    setCopied({ id: event.id, mode });
     setTimeout(() => setCopied(null), 2000);
   };
 
@@ -165,7 +166,7 @@ export default function InternalBoothEvents() {
                       onCopy={handleCopy}
                       onToggle={handleToggle}
                       onDelete={() => setConfirmDelete(event)}
-                      copied={copied === event.id}
+                      copied={copied?.id === event.id ? copied.mode : null}
                     />
                   ))}
                 </div>
@@ -186,7 +187,7 @@ export default function InternalBoothEvents() {
                       onCopy={handleCopy}
                       onToggle={handleToggle}
                       onDelete={() => setConfirmDelete(event)}
-                      copied={copied === event.id}
+                      copied={copied?.id === event.id ? copied.mode : null}
                     />
                   ))}
                 </div>
@@ -276,6 +277,41 @@ export default function InternalBoothEvents() {
   );
 }
 
+function LinkRow({
+  label,
+  icon,
+  url,
+  onCopy,
+  copied,
+  iconColor,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  url: string;
+  onCopy: () => void;
+  copied: boolean;
+  iconColor: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 group">
+      <span className={`flex items-center gap-1.5 text-xs font-medium shrink-0 w-28 ${iconColor}`}>
+        {icon} {label}
+      </span>
+      <span className="text-xs font-mono text-muted-foreground truncate flex-1 min-w-0">{url}</span>
+      <div className="flex items-center gap-0.5 shrink-0">
+        <Button variant="ghost" size="sm" onClick={onCopy} title={`Copy ${label} link`} className="h-7 w-7 p-0">
+          {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5 text-gray-400" />}
+        </Button>
+        <Button variant="ghost" size="sm" asChild title={`Open ${label} page`} className="h-7 w-7 p-0">
+          <a href={url} target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
+          </a>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function EventCard({
   event,
   onCopy,
@@ -284,12 +320,13 @@ function EventCard({
   copied,
 }: {
   event: BoothEvent;
-  onCopy: (e: BoothEvent) => void;
+  onCopy: (e: BoothEvent, mode: "qr" | "staff") => void;
   onToggle: (e: BoothEvent) => void;
   onDelete: () => void;
-  copied: boolean;
+  copied: "qr" | "staff" | null;
 }) {
-  const url = boothUrl(event);
+  const staffUrl = boothUrl(event);
+  const qrUrl = boothUrl(event, "qr");
   const date = new Date(event.createdAt).toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
   });
@@ -297,54 +334,22 @@ function EventCard({
   return (
     <Card className={event.active ? "" : "opacity-60"}>
       <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="font-semibold text-gray-900 truncate">{event.name}</span>
-              <Badge
-                className={
-                  event.active
-                    ? "bg-green-100 text-green-700 border-green-200"
-                    : "bg-gray-100 text-gray-500 border-gray-200"
-                }
-                variant="outline"
-              >
-                {event.active ? "Active" : "Inactive"}
-              </Badge>
-            </div>
-            <p className="text-xs font-mono text-muted-foreground truncate">{url}</p>
-            <p className="text-xs text-muted-foreground mt-1">Created {date}</p>
+        {/* Header row */}
+        <div className="flex items-center justify-between gap-4 mb-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="font-semibold text-gray-900 truncate">{event.name}</span>
+            <Badge
+              className={
+                event.active
+                  ? "bg-green-100 text-green-700 border-green-200 shrink-0"
+                  : "bg-gray-100 text-gray-500 border-gray-200 shrink-0"
+              }
+              variant="outline"
+            >
+              {event.active ? "Active" : "Inactive"}
+            </Badge>
           </div>
-
           <div className="flex items-center gap-1 shrink-0">
-            {/* Copy link */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onCopy(event)}
-              title="Copy booth link"
-              className="h-8 w-8 p-0"
-            >
-              {copied ? (
-                <Check className="w-4 h-4 text-green-600" />
-              ) : (
-                <Copy className="w-4 h-4 text-gray-500" />
-              )}
-            </Button>
-
-            {/* Open in new tab */}
-            <Button
-              variant="ghost"
-              size="sm"
-              asChild
-              title="Open booth page"
-              className="h-8 w-8 p-0"
-            >
-              <a href={url} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="w-4 h-4 text-gray-500" />
-              </a>
-            </Button>
-
             {/* Toggle active */}
             <Button
               variant="ghost"
@@ -359,7 +364,6 @@ function EventCard({
                 <ToggleLeft className="w-4 h-4 text-gray-400" />
               )}
             </Button>
-
             {/* Delete */}
             <Button
               variant="ghost"
@@ -372,6 +376,28 @@ function EventCard({
             </Button>
           </div>
         </div>
+
+        {/* Link rows */}
+        <div className="space-y-1.5 border-t pt-3">
+          <LinkRow
+            label="QR / Unattended"
+            icon={<QrCode className="w-3.5 h-3.5" />}
+            url={qrUrl}
+            onCopy={() => onCopy(event, "qr")}
+            copied={copied === "qr"}
+            iconColor="text-indigo-600"
+          />
+          <LinkRow
+            label="Staff Tablet"
+            icon={<Tablet className="w-3.5 h-3.5" />}
+            url={staffUrl}
+            onCopy={() => onCopy(event, "staff")}
+            copied={copied === "staff"}
+            iconColor="text-gray-500"
+          />
+        </div>
+
+        <p className="text-xs text-muted-foreground mt-2.5">Created {date}</p>
       </CardContent>
     </Card>
   );
