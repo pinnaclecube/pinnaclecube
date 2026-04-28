@@ -412,6 +412,35 @@ export function boothLeadStaffAlertEmail(
   };
 }
 
+// ─── Template 11: Staff invitation ────────────────────────────────────────────
+
+export function prospectInviteEmail(
+  firstName: string,
+  registrationLink: string,
+): { subject: string; html: string; text: string } {
+  return {
+    subject: "You're invited to Pinnacle³ — create your account",
+    html: layout(`
+      ${h1(`Hi ${firstName}, you're invited!`)}
+      ${p("Your Pinnacle³ advisory account is ready to be activated. Click the button below to create your password and access your personalized dashboard.")}
+      ${btn("Activate my account", registrationLink)}
+      ${divider()}
+      <table cellpadding="0" cellspacing="0" style="background:#f0f4ff;border-left:4px solid #1E2D6B;border-radius:0 8px 8px 0;padding:16px 20px;margin:0 0 24px;width:100%;">
+        <tr><td>
+          <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#1E2D6B;">WHAT TO EXPECT</p>
+          <p style="margin:0;font-size:14px;color:#374151;line-height:1.7;">
+            Once you activate your account you'll find your personalized visa readiness intake, strategy resources, and direct access to your Pinnacle³ advisory team.
+          </p>
+        </td></tr>
+      </table>
+      ${p("If the button above doesn't work, copy and paste this link into your browser:")}
+      <p style="font-size:13px;color:#6b7280;word-break:break-all;">${registrationLink}</p>
+      ${p("If you weren't expecting this invitation, you can safely ignore this email.")}
+    `),
+    text: `Hi ${firstName},\n\nYou've been invited to Pinnacle³. Click the link below to create your account:\n\n${registrationLink}\n\nIf you weren't expecting this, you can safely ignore this email.`,
+  };
+}
+
 // ─── Sender helper ─────────────────────────────────────────────────────────────
 
 export async function sendEmail(

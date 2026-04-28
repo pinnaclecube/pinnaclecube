@@ -12,6 +12,7 @@ import {
   prospectsTable,
 } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
+import { sendEmail, prospectInviteEmail } from "../services/emailService";
 import { z } from "zod/v4";
 
 const router: IRouter = Router();
@@ -149,12 +150,16 @@ router.post(
       status: prospect.status === "new" ? "in_contact" : prospect.status,
     }).where(eq(prospectsTable.id, id));
 
-    console.info(`[adminProspects] Invitation sent to ${prospect.email} (prospect #${id})`);
+    const registrationLink = `${process.env.FRONTEND_URL ?? "https://pinnaclecube.com"}/register?invite=${encodeURIComponent(prospect.email)}`;
+    const firstName = prospect.fullName.split(" ")[0] ?? prospect.fullName;
+
+    void sendEmail(prospect.email, prospectInviteEmail(firstName, registrationLink));
+    console.info(`[adminProspects] Invitation email sent to ${prospect.email} (prospect #${id})`);
 
     res.json({
       success: true,
       message: `Registration invite sent to ${prospect.email}`,
-      registrationLink: `${process.env.FRONTEND_URL ?? "https://pinnaclecube.com"}/register?invite=${encodeURIComponent(prospect.email)}`,
+      registrationLink,
     });
   },
 );
