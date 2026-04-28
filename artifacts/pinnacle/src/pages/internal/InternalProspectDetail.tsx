@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Checkbox } from "@/components/ui/checkbox";
 import StaffNav from "@/components/layout/StaffNav";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
-import { ArrowLeft, BookOpen, Trophy, Briefcase, Mail, ExternalLink, Check } from "lucide-react";
+import { ArrowLeft, BookOpen, Trophy, Briefcase, Mail, ExternalLink, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function staffFetch(path: string, opts: RequestInit = {}) {
@@ -147,10 +147,9 @@ export default function InternalProspectDetail() {
                 </Button>
               </>
             )}
-            <Button size="sm" className={cn(alreadyInvited ? "bg-green-600 hover:bg-green-600 cursor-default" : "bg-[#1E2D6B] hover:bg-[#3D4FA8]")}
-              onClick={() => !alreadyInvited && setShowInviteConfirm(true)}
-              disabled={alreadyInvited}>
-              {alreadyInvited ? <><Check className="w-3.5 h-3.5 mr-1.5" />Invited</> : <><Mail className="w-3.5 h-3.5 mr-1.5" />Invite Client</>}
+            <Button size="sm" className={cn(alreadyInvited ? "bg-indigo-100 hover:bg-indigo-200 text-[#1E2D6B] border border-indigo-200" : "bg-[#1E2D6B] hover:bg-[#3D4FA8]")}
+              onClick={() => setShowInviteConfirm(true)}>
+              {alreadyInvited ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5" />Re-invite</> : <><Mail className="w-3.5 h-3.5 mr-1.5" />Invite Client</>}
             </Button>
           </div>
         </div>
@@ -266,14 +265,19 @@ export default function InternalProspectDetail() {
 
       <Dialog open={showInviteConfirm} onOpenChange={setShowInviteConfirm}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Invite {prospect.fullName}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{alreadyInvited ? `Re-invite ${prospect.fullName}` : `Invite ${prospect.fullName}`}</DialogTitle>
+          </DialogHeader>
           <p className="text-sm text-muted-foreground py-2">
-            Send a registration invite to <strong>{prospect.email}</strong>. They'll receive a link to create their Pinnacle³ account.
+            {alreadyInvited
+              ? <>A new registration invite will be sent to <strong>{prospect.email}</strong>. Any previously sent link will still work.</>
+              : <>Send a registration invite to <strong>{prospect.email}</strong>. They'll receive a link to create their Pinnacle³ account.</>
+            }
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowInviteConfirm(false)}>Cancel</Button>
             <Button onClick={sendInvite} disabled={inviting} className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
-              {inviting ? "Sending…" : "Send Invite"}
+              {inviting ? "Sending…" : alreadyInvited ? "Re-send Invite" : "Send Invite"}
             </Button>
           </DialogFooter>
         </DialogContent>
