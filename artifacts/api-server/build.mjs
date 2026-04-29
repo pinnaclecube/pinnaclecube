@@ -68,6 +68,8 @@ async function buildAll() {
       "googleapis",
       "pdfkit",
       "fontkit",
+      "pdf-parse",
+      "mammoth",
       "firebase-admin",
       "@parcel/watcher",
       "@sentry/profiling-node",

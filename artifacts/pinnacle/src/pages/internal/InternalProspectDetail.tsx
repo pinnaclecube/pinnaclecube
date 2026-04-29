@@ -10,8 +10,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Checkbox } from "@/components/ui/checkbox";
 import StaffNav from "@/components/layout/StaffNav";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
-import { ArrowLeft, BookOpen, Trophy, Briefcase, Mail, ExternalLink, Check, RefreshCw } from "lucide-react";
+import { ArrowLeft, BookOpen, Trophy, Briefcase, Mail, ExternalLink, Check, RefreshCw, Upload, FileText, Sparkles, Download, Send, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const VISA_CATEGORIES = ["EB-1A", "EB-2 NIW", "O-1A"];
 
 function staffFetch(path: string, opts: RequestInit = {}) {
   return fetch(`/api${path}`, {
@@ -42,6 +44,15 @@ export default function InternalProspectDetail() {
   const [inviting, setInviting] = useState(false);
   const [inviteResult, setInviteResult] = useState<string | null>(null);
 
+  const [resumeUploading, setResumeUploading] = useState(false);
+  const [resumeMsg, setResumeMsg] = useState<string | null>(null);
+  const [selectedVisa, setSelectedVisa] = useState("EB-1A");
+  const [roadmapGenerating, setRoadmapGenerating] = useState(false);
+  const [roadmapData, setRoadmapData] = useState<any>(null);
+  const [roadmapExpanded, setRoadmapExpanded] = useState(false);
+  const [roadmapSending, setRoadmapSending] = useState(false);
+  const [roadmapSendMsg, setRoadmapSendMsg] = useState<string | null>(null);
+
   const load = async () => {
     try {
       const r = await staffFetch(`/admin/prospects/${id}`);
@@ -49,9 +60,82 @@ export default function InternalProspectDetail() {
         const d = await r.json();
         setProspect(d.prospect);
         setEditForm(d.prospect);
+        if (d.prospect.roadmapContent) {
+          try { setRoadmapData(JSON.parse(d.prospect.roadmapContent)); } catch { /* ignore */ }
+        }
+        if (d.prospect.roadmapVisaCategory) setSelectedVisa(d.prospect.roadmapVisaCategory);
       }
     } catch { /* ignore */ }
     setLoading(false);
+  };
+
+  const uploadResume = async (file: File) => {
+    setResumeUploading(true);
+    setResumeMsg(null);
+    try {
+      const form = new FormData();
+      form.append("resume", file);
+      const r = await fetch(`/api/admin/prospects/${id}/resume`, {
+        method: "POST",
+        headers: { "X-Staff-Token": getStaffToken() ?? "" },
+        body: form,
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setResumeMsg(`Resume uploaded: ${d.fileName}`);
+        setRoadmapData(null);
+        await load();
+      } else {
+        setResumeMsg(d.error ?? "Upload failed");
+      }
+    } catch { setResumeMsg("Upload failed"); }
+    setResumeUploading(false);
+  };
+
+  const generateRoadmap = async () => {
+    setRoadmapGenerating(true);
+    setRoadmapSendMsg(null);
+    try {
+      const r = await staffFetch(`/admin/prospects/${id}/roadmap/generate`, {
+        method: "POST",
+        body: JSON.stringify({ visaCategory: selectedVisa }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setRoadmapData(d.roadmap);
+        setRoadmapExpanded(false);
+        await load();
+      } else {
+        alert(d.error ?? "Generation failed");
+      }
+    } catch { alert("Generation failed"); }
+    setRoadmapGenerating(false);
+  };
+
+  const sendRoadmap = async () => {
+    setRoadmapSending(true);
+    setRoadmapSendMsg(null);
+    try {
+      const r = await staffFetch(`/admin/prospects/${id}/roadmap/send`, { method: "POST" });
+      const d = await r.json();
+      setRoadmapSendMsg(r.ok ? (d.message ?? "Roadmap sent!") : (d.error ?? "Send failed"));
+    } catch { setRoadmapSendMsg("Send failed"); }
+    setRoadmapSending(false);
+  };
+
+  const downloadRoadmap = async (format: "pdf" | "docx") => {
+    try {
+      const r = await staffFetch(`/admin/prospects/${id}/roadmap/download/${format}`);
+      if (!r.ok) { alert("Download failed"); return; }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const ext = format === "pdf" ? "pdf" : "docx";
+      a.download = `${(prospect?.fullName ?? "Roadmap").replace(/\s+/g, "_")}_Roadmap.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { alert("Download failed"); }
   };
 
   useEffect(() => { load(); }, [id]);
@@ -258,6 +342,172 @@ export default function InternalProspectDetail() {
                   </div>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* ── Resume & Roadmap Card ── */}
+          <Card className="border-indigo-100">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#1E2D6B]" />
+                  Resume & AI Roadmap
+                </CardTitle>
+                {prospect.roadmapGeneratedAt && (
+                  <span className="text-xs text-muted-foreground">
+                    Generated {new Date(prospect.roadmapGeneratedAt).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Resume upload */}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-2">Resume File</label>
+                <div className="flex items-center gap-3">
+                  <label className={cn(
+                    "inline-flex items-center gap-2 px-3 py-1.5 rounded-md border text-sm cursor-pointer transition-colors",
+                    resumeUploading ? "opacity-50 pointer-events-none" : "hover:bg-gray-50 border-gray-200"
+                  )}>
+                    {resumeUploading
+                      ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Uploading…</>
+                      : <><Upload className="w-3.5 h-3.5" />{prospect.resumeFileName ? "Replace Resume" : "Upload Resume"}</>
+                    }
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".pdf,.docx,.txt"
+                      onChange={(e) => e.target.files?.[0] && uploadResume(e.target.files[0])}
+                      disabled={resumeUploading}
+                    />
+                  </label>
+                  {prospect.resumeFileName && (
+                    <span className="inline-flex items-center gap-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2 py-1">
+                      <FileText className="w-3 h-3" /> {prospect.resumeFileName}
+                    </span>
+                  )}
+                </div>
+                {resumeMsg && (
+                  <p className={cn("text-xs mt-1.5", resumeMsg.includes("failed") || resumeMsg.includes("Failed") ? "text-red-600" : "text-green-700")}>
+                    {resumeMsg}
+                  </p>
+                )}
+              </div>
+
+              {/* Generate section */}
+              {prospect.resumeFileName && (
+                <div className="border-t pt-4 space-y-3">
+                  <label className="text-xs font-medium text-muted-foreground block">Target Visa Category</label>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex gap-2">
+                      {VISA_CATEGORIES.map((v) => (
+                        <button
+                          key={v}
+                          onClick={() => setSelectedVisa(v)}
+                          className={cn(
+                            "px-3 py-1.5 rounded-md text-xs font-medium border transition-colors",
+                            selectedVisa === v
+                              ? "bg-[#1E2D6B] text-white border-[#1E2D6B]"
+                              : "text-gray-600 border-gray-200 hover:border-[#1E2D6B] hover:text-[#1E2D6B]"
+                          )}
+                        >
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={generateRoadmap}
+                      disabled={roadmapGenerating}
+                      className="bg-[#1E2D6B] hover:bg-[#3D4FA8]"
+                    >
+                      {roadmapGenerating
+                        ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Generating…</>
+                        : <><Sparkles className="w-3.5 h-3.5 mr-1.5" />{roadmapData ? "Regenerate Roadmap" : "Generate Roadmap"}</>
+                      }
+                    </Button>
+                  </div>
+                  {roadmapGenerating && (
+                    <p className="text-xs text-indigo-600">Claude is analyzing the resume and building the roadmap — this takes 30–60 seconds…</p>
+                  )}
+                </div>
+              )}
+
+              {/* Roadmap actions */}
+              {roadmapData && (
+                <div className="border-t pt-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {roadmapData.visaCategory} Roadmap — {roadmapData.executiveSummary?.strongCriteria ?? "?"} strong criteria · {roadmapData.confidenceAnalysis?.postConfidenceLow}–{roadmapData.confidenceAnalysis?.postConfidenceHigh}% projected approval
+                    </p>
+                    <button
+                      onClick={() => setRoadmapExpanded((v) => !v)}
+                      className="text-xs text-[#1E2D6B] flex items-center gap-1 hover:underline"
+                    >
+                      {roadmapExpanded ? <><ChevronUp className="w-3 h-3" />Collapse</> : <><ChevronDown className="w-3 h-3" />Preview</>}
+                    </button>
+                  </div>
+
+                  {/* Roadmap preview */}
+                  {roadmapExpanded && (
+                    <div className="bg-gray-50 border rounded-md p-4 text-xs space-y-3 max-h-80 overflow-y-auto">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-red-50 border border-red-100 rounded p-2 text-center">
+                          <p className="text-red-700 font-bold text-lg">{roadmapData.confidenceAnalysis?.currentConfidenceLow}–{roadmapData.confidenceAnalysis?.currentConfidenceHigh}%</p>
+                          <p className="text-red-600 text-xs">Current approval confidence</p>
+                        </div>
+                        <div className="bg-green-50 border border-green-100 rounded p-2 text-center">
+                          <p className="text-green-700 font-bold text-lg">{roadmapData.confidenceAnalysis?.postConfidenceLow}–{roadmapData.confidenceAnalysis?.postConfidenceHigh}%</p>
+                          <p className="text-green-600 text-xs">After Pinnacle³ guidance</p>
+                        </div>
+                      </div>
+                      {roadmapData.roadmapPhases?.map((phase: any) => (
+                        <div key={phase.phaseNumber} className="border-l-2 border-indigo-200 pl-3">
+                          <p className="font-semibold text-[#1E2D6B]">{phase.title} — {phase.timeline}</p>
+                          <ul className="mt-1 space-y-0.5 text-gray-600">
+                            {phase.steps?.slice(0, 3).map((step: string, i: number) => (
+                              <li key={i}>✓ {step}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Download & Send */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={() => downloadRoadmap("pdf")}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" /> Download PDF
+                    </button>
+                    <button
+                      onClick={() => downloadRoadmap("docx")}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" /> Download Word
+                    </button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={sendRoadmap}
+                      disabled={roadmapSending}
+                      className="text-xs h-7 border-indigo-200 text-[#1E2D6B] hover:bg-indigo-50"
+                    >
+                      {roadmapSending
+                        ? <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />Sending…</>
+                        : <><Send className="w-3.5 h-3.5 mr-1" />Email to {prospect.email}</>
+                      }
+                    </Button>
+                  </div>
+                  {roadmapSendMsg && (
+                    <p className={cn("text-xs", roadmapSendMsg.includes("failed") || roadmapSendMsg.includes("Failed") ? "text-red-600" : "text-green-700")}>
+                      {roadmapSendMsg}
+                    </p>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

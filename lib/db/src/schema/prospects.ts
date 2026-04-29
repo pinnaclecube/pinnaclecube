@@ -22,6 +22,11 @@ export const prospectsTable = pgTable("prospects", {
   status: text("status").default("new"),
   registrationStatus: text("registration_status").default("not_invited"),
   linkedProfileId: integer("linked_profile_id"),
+  resumeText: text("resume_text"),
+  resumeFileName: text("resume_file_name"),
+  roadmapContent: text("roadmap_content"),
+  roadmapVisaCategory: text("roadmap_visa_category"),
+  roadmapGeneratedAt: timestamp("roadmap_generated_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
