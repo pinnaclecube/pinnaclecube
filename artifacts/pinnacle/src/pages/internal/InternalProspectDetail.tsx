@@ -57,9 +57,23 @@ export default function InternalProspectDetail() {
   const [invoiceSending, setInvoiceSending] = useState(false);
   const [invoiceMsg, setInvoiceMsg] = useState<string | null>(null);
   const [invoiceUrl, setInvoiceUrl] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [sessionStatus, setSessionStatus] = useState<"open" | "expired" | "none" | "unconfigured" | null>(null);
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<Date | null>(null);
 
   const [converting, setConverting] = useState(false);
   const [convertMsg, setConvertMsg] = useState<string | null>(null);
+
+  const fetchSessionStatus = async (prospectId: string) => {
+    try {
+      const r = await staffFetch(`/admin/prospects/${prospectId}/invoice/status`);
+      if (r.ok) {
+        const d = await r.json();
+        setSessionStatus(d.status ?? null);
+        setSessionExpiresAt(d.expiresAt ? new Date(d.expiresAt) : null);
+      }
+    } catch { /* ignore */ }
+  };
 
   const load = async () => {
     try {
@@ -72,7 +86,14 @@ export default function InternalProspectDetail() {
           try { setRoadmapData(JSON.parse(d.prospect.roadmapContent)); } catch { /* ignore */ }
         }
         if (d.prospect.roadmapVisaCategory) setSelectedVisa(d.prospect.roadmapVisaCategory);
-        if (d.prospect.invoiceCheckoutUrl) setInvoiceUrl(d.prospect.invoiceCheckoutUrl);
+        if (d.prospect.invoiceCheckoutUrl) {
+          setInvoiceUrl(d.prospect.invoiceCheckoutUrl);
+          fetchSessionStatus(id);
+        } else {
+          setInvoiceUrl(null);
+          setSessionStatus(null);
+          setSessionExpiresAt(null);
+        }
         if (d.prospect.invoiceProduct) setInvoiceProduct(d.prospect.invoiceProduct);
       }
     } catch { /* ignore */ }
@@ -190,13 +211,25 @@ export default function InternalProspectDetail() {
       const d = await r.json();
       if (r.ok) {
         setInvoiceUrl(d.checkoutUrl);
-        setInvoiceMsg(`Proposal sent to ${prospect?.email}!`);
+        const reused = d.reusingExistingSession;
+        setInvoiceMsg(reused
+          ? `Proposal resent to ${prospect?.email} using the existing payment link!`
+          : `Proposal sent to ${prospect?.email}!`
+        );
         await load();
       } else {
         setInvoiceMsg(d.error ?? "Failed to send proposal");
       }
     } catch { setInvoiceMsg("Failed to send proposal"); }
     setInvoiceSending(false);
+  };
+
+  const copyLink = () => {
+    if (!invoiceUrl) return;
+    navigator.clipboard.writeText(invoiceUrl).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    });
   };
 
   const convertCase = async () => {
@@ -605,6 +638,27 @@ export default function InternalProspectDetail() {
                       Proposal sent {new Date(prospect.invoiceSentAt).toLocaleDateString()} — {prospect.invoiceProduct === "excellence_lab" ? "Excellence Lab ($249)" : "Evidence Engine ($49/mo)"}
                     </p>
                   </div>
+
+                  {/* Session status badge */}
+                  {sessionStatus && sessionStatus !== "none" && sessionStatus !== "unconfigured" && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {sessionStatus === "open" ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">
+                          <CheckCircle className="w-3 h-3" /> Link active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200">
+                          Link expired
+                        </span>
+                      )}
+                      {sessionStatus === "open" && sessionExpiresAt && (
+                        <span className="text-xs text-muted-foreground">
+                          Expires {sessionExpiresAt.toLocaleDateString()} at {sessionExpiresAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   {invoiceUrl && (
                     <div className="flex items-center gap-2">
                       <a
@@ -616,11 +670,14 @@ export default function InternalProspectDetail() {
                         <ExternalLink className="w-3 h-3" /> Open payment link
                       </a>
                       <button
-                        onClick={() => { navigator.clipboard.writeText(invoiceUrl); }}
-                        className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700"
-                        title="Copy link"
+                        onClick={copyLink}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 text-xs transition-colors",
+                          linkCopied ? "text-green-600" : "text-gray-500 hover:text-gray-700"
+                        )}
+                        title="Copy link to clipboard"
                       >
-                        <Copy className="w-3 h-3" /> Copy
+                        {linkCopied ? <><Check className="w-3 h-3" /> Copied!</> : <><Copy className="w-3 h-3" /> Copy link</>}
                       </button>
                     </div>
                   )}
@@ -665,13 +722,20 @@ export default function InternalProspectDetail() {
                   >
                     {invoiceSending
                       ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Sending…</>
-                      : <><Send className="w-3.5 h-3.5 mr-1.5" />{prospect.invoiceSentAt ? "Resend Proposal" : "Send Proposal"}</>
+                      : <><Send className="w-3.5 h-3.5 mr-1.5" />{prospect.invoiceSentAt ? "Resend Proposal" : "Send Proposal & Payment Link"}</>
                     }
                   </Button>
-                  {prospect.roadmapContent
-                    ? <span className="text-xs text-green-700">Roadmap PDF will be attached</span>
-                    : <span className="text-xs text-muted-foreground">Generate a roadmap to include PDF</span>
-                  }
+                  {prospect.invoiceSentAt && sessionStatus === "open" && invoiceProduct === prospect.invoiceProduct && (
+                    <span className="text-xs text-green-700">Will reuse existing active link</span>
+                  )}
+                  {prospect.invoiceSentAt && (sessionStatus === "expired" || invoiceProduct !== prospect.invoiceProduct) && (
+                    <span className="text-xs text-amber-700">Will generate a new payment link</span>
+                  )}
+                  {!prospect.invoiceSentAt && (
+                    prospect.roadmapContent
+                      ? <span className="text-xs text-green-700">Roadmap PDF will be attached</span>
+                      : <span className="text-xs text-muted-foreground">Generate a roadmap to include PDF</span>
+                  )}
                 </div>
 
                 {invoiceMsg && (

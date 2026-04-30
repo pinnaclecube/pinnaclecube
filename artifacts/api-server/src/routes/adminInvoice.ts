@@ -6,7 +6,7 @@
  */
 
 import { Router, type IRouter, type Request, type Response } from "express";
-import { eq } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { db, prospectsTable, purchasesTable } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { sendEmail, invoiceEmail, prospectInviteEmail } from "../services/emailService";
@@ -193,9 +193,81 @@ async function generateProposalPDF(roadmap: RoadmapData, prospectName: string): 
   });
 }
 
+// ─── Helper: check if existing Stripe session is still open ──────────────────
+
+async function getOpenSession(
+  stripe: Stripe,
+  email: string,
+  product: string,
+  storedCheckoutUrl?: string | null,
+): Promise<{ session: Stripe.Checkout.Session; sessionId: string } | null> {
+  const [purchase] = await db
+    .select()
+    .from(purchasesTable)
+    .where(and(eq(purchasesTable.userEmail, email), eq(purchasesTable.product, product), eq(purchasesTable.status, "pending")))
+    .orderBy(desc(purchasesTable.createdAt))
+    .limit(1);
+
+  if (!purchase?.stripeSessionId) return null;
+
+  try {
+    const session = await stripe.checkout.sessions.retrieve(purchase.stripeSessionId);
+    if (session.status !== "open") return null;
+
+    // If the prospect record has a stored checkout URL, verify this session matches it.
+    // This prevents accidentally reusing a stale purchase row that belongs to a
+    // different checkout session than the one currently shown on the prospect record.
+    if (storedCheckoutUrl && session.url && session.url !== storedCheckoutUrl) return null;
+
+    return { session, sessionId: purchase.stripeSessionId };
+  } catch {
+    // session not found or Stripe error — treat as no valid session
+  }
+  return null;
+}
+
+// ─── GET /api/admin/prospects/:id/invoice/status ──────────────────────────────
+// Returns the Stripe session status and expiry for the prospect's most recent
+// pending payment link. Used by the frontend to show/hide the "reusing existing
+// link" indicator and the session expiry time.
+
+router.get(
+  "/admin/prospects/:id/invoice/status",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+    const stripe = getStripe();
+    if (!stripe) { res.json({ status: "unconfigured" }); return; }
+
+    const [prospect] = await db.select().from(prospectsTable).where(eq(prospectsTable.id, id)).limit(1);
+    if (!prospect) { res.status(404).json({ error: "Prospect not found" }); return; }
+    if (!prospect.email || !prospect.invoiceCheckoutUrl || !prospect.invoiceProduct) {
+      res.json({ status: "none" });
+      return;
+    }
+
+    const open = await getOpenSession(stripe, prospect.email, prospect.invoiceProduct, prospect.invoiceCheckoutUrl);
+    if (!open) {
+      res.json({ status: "expired" });
+      return;
+    }
+
+    res.json({
+      status: "open",
+      expiresAt: open.session.expires_at ? new Date(open.session.expires_at * 1000).toISOString() : null,
+      checkoutUrl: open.session.url,
+    });
+  },
+);
+
 // ─── POST /api/admin/prospects/:id/invoice ────────────────────────────────────
-// Creates a Stripe Checkout Session, updates the prospect record with invoice
-// metadata, and sends the proposal email with roadmap PDF attached.
+// If the prospect already has an open (unexpired) Stripe Checkout Session for
+// the same product, this route reuses it and simply resends the proposal email —
+// no new session is created, no new pending_access_grants row is accumulated.
+// A new session is only created when the existing one is expired, completed, or
+// the product has changed.
 // Pending access grants are created by the Stripe webhook AFTER confirmed payment.
 
 router.post(
@@ -228,47 +300,66 @@ router.post(
     if (!prospect.email) { res.status(400).json({ error: "Prospect has no email address" }); return; }
 
     const config = PRODUCT_CONFIGS[product];
-    const origin = process.env.FRONTEND_URL ?? "https://pinnaclecube.com";
+    const firstName = prospect.fullName.split(" ")[0] ?? prospect.fullName;
 
-    // Create Stripe Checkout Session
-    let session: Stripe.Checkout.Session;
-    try {
-      session = await stripe.checkout.sessions.create({
-        line_items: [{ price: priceId, quantity: 1 }],
-        mode: config.mode,
-        success_url: `${origin}/dashboard`,
-        cancel_url: `${origin}/products`,
-        customer_email: prospect.email,
-        expires_at: Math.floor(Date.now() / 1000) + 86400, // 24-hour expiry
-        metadata: { product, prospectId: String(id) },
-      });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Stripe error";
-      res.status(500).json({ error: msg });
-      return;
+    // Check if there's an existing open session for the same product to reuse.
+    const sameProduct = prospect.invoiceProduct === product;
+    const existingOpen = sameProduct ? await getOpenSession(stripe, prospect.email, product, prospect.invoiceCheckoutUrl) : null;
+
+    let checkoutUrl: string;
+    let stripeSessionId: string;
+    let reusingExistingSession = false;
+
+    if (existingOpen) {
+      // Reuse the existing session — just resend the email.
+      checkoutUrl = existingOpen.session.url!;
+      stripeSessionId = existingOpen.sessionId;
+      reusingExistingSession = true;
+
+      // Update invoiceSentAt so staff can track when email was last sent.
+      await db.update(prospectsTable).set({ invoiceSentAt: new Date() }).where(eq(prospectsTable.id, id));
+    } else {
+      // Create a new Stripe Checkout Session.
+      const origin = process.env.FRONTEND_URL ?? "https://pinnaclecube.com";
+      let session: Stripe.Checkout.Session;
+      try {
+        session = await stripe.checkout.sessions.create({
+          line_items: [{ price: priceId, quantity: 1 }],
+          mode: config.mode,
+          success_url: `${origin}/dashboard`,
+          cancel_url: `${origin}/products`,
+          customer_email: prospect.email,
+          expires_at: Math.floor(Date.now() / 1000) + 86400, // 24-hour expiry
+          metadata: { product, prospectId: String(id) },
+        });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Stripe error";
+        res.status(500).json({ error: msg });
+        return;
+      }
+
+      checkoutUrl = session.url!;
+      stripeSessionId = session.id;
+
+      // Track in purchases table.
+      await db.insert(purchasesTable).values({
+        userEmail: prospect.email,
+        product,
+        amount: config.numericAmount,
+        currency: "usd",
+        status: "pending",
+        stripeSessionId,
+      }).onConflictDoNothing();
+
+      // Update prospect record.
+      await db.update(prospectsTable).set({
+        invoiceSentAt: new Date(),
+        invoiceProduct: product,
+        invoiceCheckoutUrl: checkoutUrl,
+      }).where(eq(prospectsTable.id, id));
     }
 
-    // Track in purchases table
-    await db.insert(purchasesTable).values({
-      userEmail: prospect.email,
-      product,
-      amount: config.numericAmount,
-      currency: "usd",
-      status: "pending",
-      stripeSessionId: session.id,
-    }).onConflictDoNothing();
-
-    // Update prospect record
-    await db.update(prospectsTable).set({
-      invoiceSentAt: new Date(),
-      invoiceProduct: product,
-      invoiceCheckoutUrl: session.url,
-    }).where(eq(prospectsTable.id, id));
-
-    // Build & send proposal email (with roadmap PDF if available)
-    const firstName = prospect.fullName.split(" ")[0] ?? prospect.fullName;
-    const checkoutUrl = session.url!;
-
+    // Build & send proposal email (with roadmap PDF if available).
     let attachments: Array<{ filename: string; content: Buffer }> | undefined;
 
     if (prospect.roadmapContent) {
@@ -279,7 +370,7 @@ router.post(
         const safeVisa = (prospect.roadmapVisaCategory ?? "Roadmap").replace(/\s+/g, "_");
         attachments = [{ filename: `${safeName}_${safeVisa}_Roadmap.pdf`, content: pdfBuffer }];
       } catch {
-        // PDF generation failure should not block invoice sending
+        // PDF generation failure should not block invoice sending.
       }
     }
 
@@ -290,7 +381,7 @@ router.post(
     );
 
     const [updated] = await db.select().from(prospectsTable).where(eq(prospectsTable.id, id)).limit(1);
-    res.json({ success: true, checkoutUrl, stripeSessionId: session.id, prospect: updated });
+    res.json({ success: true, checkoutUrl, stripeSessionId, reusingExistingSession, prospect: updated });
   },
 );
 
