@@ -886,6 +886,7 @@ async function sendRoadmapEmail(
     const { error } = await client.emails.send({
       from: FROM,
       to: [to],
+      cc: ["support@pinnaclecube.com"],
       subject: `Your ${visaCategory} Strategic Roadmap — Pinnacle³`,
       html,
       text: `Hi ${firstName},\n\nYour personalized ${visaCategory} Strategic Roadmap is attached.\n\nQuestions? Reply to this email.\n\nPinnacle³ · pinnaclecube.com`,
