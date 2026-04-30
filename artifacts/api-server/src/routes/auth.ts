@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, profilesTable, pendingAccessGrantsTable, clientUserProductsTable } from "@workspace/db";
 import {
@@ -83,7 +83,8 @@ router.post("/auth/register", async (req, res) => {
     const grants = await db
       .select()
       .from(pendingAccessGrantsTable)
-      .where(eq(pendingAccessGrantsTable.email, email.toLowerCase()));
+      .where(eq(pendingAccessGrantsTable.email, email.toLowerCase()))
+      .orderBy(desc(pendingAccessGrantsTable.createdAt));
 
     if (grants.length > 0) {
       const topGrant = grants[0];
