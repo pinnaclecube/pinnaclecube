@@ -54,6 +54,7 @@ export default function InternalProspectDetail() {
   const [roadmapSendMsg, setRoadmapSendMsg] = useState<string | null>(null);
 
   const [invoiceProduct, setInvoiceProduct] = useState("excellence_lab");
+  const [eliteAmount, setEliteAmount] = useState<string>("");
   const [invoiceSending, setInvoiceSending] = useState(false);
   const [invoiceMsg, setInvoiceMsg] = useState<string | null>(null);
   const [invoiceUrl, setInvoiceUrl] = useState<string | null>(null);
@@ -201,12 +202,21 @@ export default function InternalProspectDetail() {
   };
 
   const sendInvoice = async () => {
+    if (invoiceProduct === "elite_blueprint") {
+      const amt = parseInt(eliteAmount, 10);
+      if (!eliteAmount || isNaN(amt) || amt < 1) {
+        setInvoiceMsg("Please enter a valid dollar amount for Elite Blueprint.");
+        return;
+      }
+    }
     setInvoiceSending(true);
     setInvoiceMsg(null);
     try {
+      const body: Record<string, unknown> = { product: invoiceProduct };
+      if (invoiceProduct === "elite_blueprint") body.customAmount = parseInt(eliteAmount, 10);
       const r = await staffFetch(`/admin/prospects/${id}/invoice`, {
         method: "POST",
-        body: JSON.stringify({ product: invoiceProduct }),
+        body: JSON.stringify(body),
       });
       const d = await r.json();
       if (r.ok) {
@@ -635,7 +645,14 @@ export default function InternalProspectDetail() {
                   <div className="flex items-center gap-2">
                     <Check className={cn("w-4 h-4", prospect.paymentReceivedAt ? "text-gray-500" : "text-purple-700")} />
                     <p className={cn("text-sm font-medium", prospect.paymentReceivedAt ? "text-gray-700" : "text-purple-900")}>
-                      Proposal sent {new Date(prospect.invoiceSentAt).toLocaleDateString()} — {prospect.invoiceProduct === "excellence_lab" ? "Excellence Lab ($249)" : "Evidence Engine ($49/mo)"}
+                      Proposal sent {new Date(prospect.invoiceSentAt).toLocaleDateString()} —{" "}
+                      {prospect.invoiceProduct === "excellence_lab"
+                        ? "Excellence Lab ($249)"
+                        : prospect.invoiceProduct === "evidence_vault"
+                        ? "Evidence Engine ($49/mo)"
+                        : prospect.invoiceProduct === "elite_blueprint"
+                        ? "Elite Blueprint (custom)"
+                        : prospect.invoiceProduct ?? "Unknown product"}
                     </p>
                   </div>
 
@@ -690,10 +707,11 @@ export default function InternalProspectDetail() {
                   {[
                     { key: "excellence_lab", label: "Excellence Lab", price: "$249" },
                     { key: "evidence_vault", label: "Evidence Engine", price: "$49/mo" },
+                    { key: "elite_blueprint", label: "Elite Blueprint", price: "Custom" },
                   ].map(({ key, label, price }) => (
                     <button
                       key={key}
-                      onClick={() => setInvoiceProduct(key)}
+                      onClick={() => { setInvoiceProduct(key); setInvoiceMsg(null); }}
                       className={cn(
                         "px-3 py-2 rounded-md text-sm font-medium border transition-colors text-left",
                         invoiceProduct === key
@@ -706,6 +724,25 @@ export default function InternalProspectDetail() {
                     </button>
                   ))}
                 </div>
+
+                {invoiceProduct === "elite_blueprint" && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground block">Invoice Amount</label>
+                    <div className="relative w-40">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        placeholder="e.g. 4999"
+                        value={eliteAmount}
+                        onChange={(e) => setEliteAmount(e.target.value)}
+                        className="w-full pl-7 pr-3 py-2 rounded-md border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">Whole dollar amount — no decimals needed</p>
+                  </div>
+                )}
 
                 {!prospect.email && (
                   <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">

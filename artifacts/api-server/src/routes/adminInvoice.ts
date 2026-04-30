@@ -40,7 +40,19 @@ const PRODUCT_CONFIGS: Record<string, ProductConfig> = {
     accessLevel: "evidence_vault",
     mode: "subscription",
   },
+  // elite_blueprint uses custom (staff-entered) pricing — no fixed price ID.
+  // numericAmount and displayPrice are populated at invoice time from the request body.
+  elite_blueprint: {
+    label: "Elite Blueprint",
+    displayPrice: "custom",
+    numericAmount: "0",
+    accessLevel: "elite_blueprint",
+    mode: "payment",
+  },
 };
+
+// Products that require a staff-entered custom price (no fixed Stripe Price ID).
+const CUSTOM_PRICE_PRODUCTS = new Set(["elite_blueprint"]);
 
 function getPriceId(product: string): string | null {
   if (product === "excellence_lab") return process.env.STRIPE_PRICE_EXCELLENCE_LAB ?? null;
@@ -277,10 +289,20 @@ router.post(
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
 
-    const { product } = req.body as { product?: string };
+    const { product, customAmount } = req.body as { product?: string; customAmount?: number };
     if (!product || !PRODUCT_CONFIGS[product]) {
-      res.status(400).json({ error: "product must be one of: excellence_lab, evidence_vault" });
+      res.status(400).json({ error: "product must be one of: excellence_lab, evidence_vault, elite_blueprint" });
       return;
+    }
+
+    // Elite Blueprint requires a staff-entered dollar amount (positive integer).
+    const isCustomPrice = CUSTOM_PRICE_PRODUCTS.has(product);
+    const customAmountDollars = isCustomPrice ? (customAmount ?? 0) : 0;
+    if (isCustomPrice) {
+      if (!Number.isInteger(customAmountDollars) || customAmountDollars < 1 || customAmountDollars > 999999) {
+        res.status(400).json({ error: "customAmount must be a whole-dollar amount between $1 and $999,999" });
+        return;
+      }
     }
 
     const stripe = getStripe();
@@ -289,8 +311,8 @@ router.post(
       return;
     }
 
-    const priceId = getPriceId(product);
-    if (!priceId) {
+    const priceId = isCustomPrice ? null : getPriceId(product);
+    if (!isCustomPrice && !priceId) {
       res.status(503).json({ error: "Product pricing not configured. Contact support." });
       return;
     }
@@ -299,11 +321,18 @@ router.post(
     if (!prospect) { res.status(404).json({ error: "Prospect not found" }); return; }
     if (!prospect.email) { res.status(400).json({ error: "Prospect has no email address" }); return; }
 
-    const config = PRODUCT_CONFIGS[product];
     const firstName = prospect.fullName.split(" ")[0] ?? prospect.fullName;
 
+    // Build resolved config (Elite Blueprint overrides display/amount from custom input).
+    const config = { ...PRODUCT_CONFIGS[product] };
+    if (isCustomPrice) {
+      config.displayPrice = `$${customAmountDollars.toLocaleString()}`;
+      config.numericAmount = String(customAmountDollars);
+    }
+
     // Check if there's an existing open session for the same product to reuse.
-    const sameProduct = prospect.invoiceProduct === product;
+    // For custom-price products we skip reuse (amount may have changed).
+    const sameProduct = !isCustomPrice && prospect.invoiceProduct === product;
     const existingOpen = sameProduct ? await getOpenSession(stripe, prospect.email, product, prospect.invoiceCheckoutUrl) : null;
 
     let checkoutUrl: string;
@@ -323,14 +352,29 @@ router.post(
       const origin = process.env.FRONTEND_URL ?? "https://pinnaclecube.com";
       let session: Stripe.Checkout.Session;
       try {
+        const lineItem: Stripe.Checkout.SessionCreateParams.LineItem = isCustomPrice
+          ? {
+              price_data: {
+                currency: "usd",
+                product_data: { name: config.label },
+                unit_amount: customAmountDollars * 100, // cents
+              },
+              quantity: 1,
+            }
+          : { price: priceId!, quantity: 1 };
+
         session = await stripe.checkout.sessions.create({
-          line_items: [{ price: priceId, quantity: 1 }],
+          line_items: [lineItem],
           mode: config.mode,
           success_url: `${origin}/dashboard`,
           cancel_url: `${origin}/products`,
           customer_email: prospect.email,
           expires_at: Math.floor(Date.now() / 1000) + 86400, // 24-hour expiry
-          metadata: { product, prospectId: String(id) },
+          metadata: {
+            product,
+            prospectId: String(id),
+            ...(isCustomPrice ? { customAmount: String(customAmountDollars) } : {}),
+          },
         });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Stripe error";
@@ -381,7 +425,14 @@ router.post(
     );
 
     const [updated] = await db.select().from(prospectsTable).where(eq(prospectsTable.id, id)).limit(1);
-    res.json({ success: true, checkoutUrl, stripeSessionId, reusingExistingSession, prospect: updated });
+    res.json({
+      success: true,
+      checkoutUrl,
+      stripeSessionId,
+      reusingExistingSession,
+      prospect: updated,
+      ...(isCustomPrice ? { customAmountDollars } : {}),
+    });
   },
 );
 

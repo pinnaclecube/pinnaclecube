@@ -33,6 +33,15 @@ const PRODUCT_CONFIGS: Record<string, ProductConfig> = {
     accessLevel: "evidence_vault",
     mode: "subscription",
   },
+  // Elite Blueprint uses inline price_data — numericAmount is resolved from
+  // session.amount_total at webhook time instead of a fixed config value.
+  elite_blueprint: {
+    label: "Elite Blueprint",
+    displayPrice: "custom",
+    numericAmount: "0", // overridden from session.amount_total in webhook handler
+    accessLevel: "elite_blueprint",
+    mode: "payment",
+  },
 };
 
 function getPriceId(product: string): string | null {
@@ -199,6 +208,13 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
           return;
         }
 
+        // For custom-priced products (Elite Blueprint), resolve the actual paid
+        // amount from the session rather than the static config placeholder.
+        const resolvedAmount =
+          config.numericAmount === "0" && session.amount_total
+            ? String(Math.round(session.amount_total / 100))
+            : config.numericAmount;
+
         const [profile] = await db
           .select({ id: profilesTable.id })
           .from(profilesTable)
@@ -213,7 +229,7 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
               clientEmail: customerEmail,
               product,
               stripeSessionId: session.id,
-              amountPaid: config.numericAmount,
+              amountPaid: resolvedAmount,
               status: "active",
             })
             .onConflictDoNothing();
