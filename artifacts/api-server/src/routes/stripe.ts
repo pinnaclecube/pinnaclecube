@@ -257,6 +257,18 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
     }
   }
 
+  // ── checkout.session.expired — remove stale pending grant for this session
+  if (event.type === "checkout.session.expired") {
+    const session = event.data.object as Stripe.Checkout.Session;
+    try {
+      await db
+        .delete(pendingAccessGrantsTable)
+        .where(eq(pendingAccessGrantsTable.stripeSessionId, session.id));
+    } catch (err) {
+      console.error("[stripe/webhook] checkout.session.expired cleanup error:", err);
+    }
+  }
+
   // ── customer.subscription.deleted — revoke Evidence Engine access on cancel
   if (event.type === "customer.subscription.deleted") {
     const subscription = event.data.object as Stripe.Subscription;
