@@ -32,7 +32,7 @@ router.get(
 
 const CreateProspectBody = z.object({
   fullName: z.string().min(1),
-  email: z.string().email(),
+  email: z.string().optional().default(""),
   phone: z.string().optional(),
   currentRole: z.string().optional(),
   linkedinUrl: z.string().optional(),

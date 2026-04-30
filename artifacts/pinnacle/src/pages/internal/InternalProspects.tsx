@@ -51,7 +51,7 @@ export default function InternalProspects() {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [form, setForm] = useState({ fullName: "", email: "", currentRole: "", fieldOfWork: "", sourceType: "manual" });
+  const [form, setForm] = useState({ fullName: "", email: "", phone: "", currentRole: "", fieldOfWork: "", sourceType: "manual" });
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
@@ -68,7 +68,7 @@ export default function InternalProspects() {
   useEffect(() => { load(); }, []);
 
   const createProspect = async () => {
-    if (!form.fullName.trim() || !form.email.trim()) return;
+    if (!form.fullName.trim()) return;
     setSaving(true);
     try {
       const r = await staffFetch("/admin/prospects", {
@@ -77,7 +77,7 @@ export default function InternalProspects() {
       });
       if (r.ok) {
         setShowAddModal(false);
-        setForm({ fullName: "", email: "", currentRole: "", fieldOfWork: "", sourceType: "manual" });
+        setForm({ fullName: "", email: "", phone: "", currentRole: "", fieldOfWork: "", sourceType: "manual" });
         await load();
       }
     } finally { setSaving(false); }
@@ -199,19 +199,30 @@ export default function InternalProspects() {
         <DialogContent>
           <DialogHeader><DialogTitle>Add Prospect</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
-            {(["fullName", "email", "currentRole", "fieldOfWork"] as const).map((field) => (
-              <div key={field}>
-                <label className="text-xs font-medium text-muted-foreground capitalize block mb-1">
-                  {field.replace(/([A-Z])/g, " $1")}
-                  {(field === "fullName" || field === "email") && " *"}
-                </label>
-                <Input value={form[field]} onChange={(e) => setForm((p) => ({ ...p, [field]: e.target.value }))} />
-              </div>
-            ))}
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Full Name <span className="text-red-500">*</span></label>
+              <Input value={form.fullName} onChange={(e) => setForm((p) => ({ ...p, fullName: e.target.value }))} placeholder="Jane Smith" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Email <span className="text-gray-400 font-normal">(optional)</span></label>
+              <Input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} placeholder="jane@example.com" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Phone <span className="text-gray-400 font-normal">(optional)</span></label>
+              <Input type="tel" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} placeholder="+1 (555) 000-0000" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Current Role</label>
+              <Input value={form.currentRole} onChange={(e) => setForm((p) => ({ ...p, currentRole: e.target.value }))} placeholder="Senior Software Engineer" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Field Of Work</label>
+              <Input value={form.fieldOfWork} onChange={(e) => setForm((p) => ({ ...p, fieldOfWork: e.target.value }))} placeholder="Artificial Intelligence" />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddModal(false)}>Cancel</Button>
-            <Button onClick={createProspect} disabled={saving || !form.fullName.trim() || !form.email.trim()} className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
+            <Button onClick={createProspect} disabled={saving || !form.fullName.trim()} className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
               {saving ? "Creating…" : "Add Prospect"}
             </Button>
           </DialogFooter>
