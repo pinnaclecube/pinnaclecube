@@ -160,19 +160,30 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
       ? parseInt(session.metadata.prospectId, 10)
       : null;
 
-    // Mark the prospect as paid (and auto-convert) whenever a prospectId is present,
-    // regardless of whether the product config is recognised.
-    if (prospectId && !isNaN(prospectId)) {
-      await db
-        .update(prospectsTable)
-        .set({
-          paymentReceivedAt: new Date(),
-          status: "converted",
-        })
+    // Mark the prospect as paid (and auto-convert) when prospectId is present and
+    // payment is confirmed. Guard on payment_status to exclude async-payment flows
+    // that complete the session before funds are settled. Write paymentReceivedAt
+    // only when not already set to preserve the original first-paid timestamp.
+    const paymentConfirmed = session.payment_status === "paid";
+    if (prospectId && !isNaN(prospectId) && paymentConfirmed) {
+      const [existingProspect] = await db
+        .select({ paymentReceivedAt: prospectsTable.paymentReceivedAt })
+        .from(prospectsTable)
         .where(eq(prospectsTable.id, prospectId))
-        .catch((err: unknown) => {
-          console.error("[stripe/webhook] Failed to mark prospect paid:", err);
-        });
+        .limit(1);
+
+      if (existingProspect && !existingProspect.paymentReceivedAt) {
+        await db
+          .update(prospectsTable)
+          .set({
+            paymentReceivedAt: new Date(),
+            status: "converted",
+          })
+          .where(eq(prospectsTable.id, prospectId))
+          .catch((err: unknown) => {
+            console.error("[stripe/webhook] Failed to mark prospect paid:", err);
+          });
+      }
     }
 
     if (product && customerEmail) {
