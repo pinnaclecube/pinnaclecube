@@ -108,7 +108,7 @@ export default function InternalProspectDetail() {
       } else {
         alert(d.error ?? "Generation failed");
       }
-    } catch { alert("Generation failed"); }
+    } catch { alert("Generation failed — check your connection and try again."); }
     setRoadmapGenerating(false);
   };
 

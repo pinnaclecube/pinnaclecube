@@ -125,11 +125,25 @@ router.post(
 
     const prompt = buildRoadmapPrompt(prospect.fullName, visaCategory, prospect.resumeText);
 
-    const message = await anthropic.messages.create({
-      model: "claude-opus-4-7",
-      max_tokens: 8192,
-      messages: [{ role: "user", content: prompt }],
-    });
+    let message;
+    try {
+      message = await anthropic.messages.create({
+        model: "claude-opus-4-7",
+        max_tokens: 8192,
+        messages: [{ role: "user", content: prompt }],
+      });
+    } catch (err: any) {
+      const msg: string = err?.message ?? String(err);
+      const friendly = msg.includes("credit balance is too low")
+        ? "Anthropic API credits exhausted. Please add credits at console.anthropic.com/billing and try again."
+        : msg.includes("authentication")
+        ? "Anthropic API key is invalid or missing. Check the ANTHROPIC_API_KEY secret."
+        : msg.includes("overloaded") || msg.includes("529")
+        ? "Claude API is temporarily overloaded. Please wait a minute and try again."
+        : `AI service error: ${msg.slice(0, 200)}`;
+      res.status(503).json({ error: friendly });
+      return;
+    }
 
     const raw = message.content[0].type === "text" ? message.content[0].text : "";
     const jsonMatch = raw.match(/```json\s*([\s\S]*?)\s*```/) ?? raw.match(/(\{[\s\S]*\})/);
