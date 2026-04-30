@@ -177,8 +177,8 @@ export default function InternalProspects() {
                           {p.awardsSignal && <Trophy className="w-3.5 h-3.5 text-yellow-500" title="Awards" />}
                           {p.leadershipSignal && <Briefcase className="w-3.5 h-3.5 text-green-500" title="Leadership" />}
                           {p.invoiceSentAt && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700" title={`Proposal sent ${new Date(p.invoiceSentAt).toLocaleDateString()}`}>
-                              <CreditCard className="w-3 h-3" /> Proposal
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700" title={`Invoice sent ${new Date(p.invoiceSentAt).toLocaleDateString()}`}>
+                              <CreditCard className="w-3 h-3" /> Invoice Sent
                             </span>
                           )}
                           <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium", src.cls)}>

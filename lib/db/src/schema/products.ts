@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, numeric, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, numeric, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -28,14 +28,18 @@ export const purchasesTable = pgTable("purchases", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const pendingAccessGrantsTable = pgTable("pending_access_grants", {
-  id: serial("id").primaryKey(),
-  email: text("email").notNull(),
-  product: text("product").notNull(),
-  accessLevel: text("access_level").notNull(),
-  stripeSessionId: text("stripe_session_id"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const pendingAccessGrantsTable = pgTable(
+  "pending_access_grants",
+  {
+    id: serial("id").primaryKey(),
+    email: text("email").notNull(),
+    product: text("product").notNull(),
+    accessLevel: text("access_level").notNull(),
+    stripeSessionId: text("stripe_session_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("pending_grants_session_uniq").on(t.stripeSessionId)],
+);
 
 export const insertClientUserProductSchema = createInsertSchema(clientUserProductsTable).omit({ id: true, createdAt: true });
 export const insertPurchaseSchema = createInsertSchema(purchasesTable).omit({ id: true, createdAt: true });

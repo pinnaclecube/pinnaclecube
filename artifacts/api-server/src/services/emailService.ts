@@ -1,5 +1,6 @@
 // Pinnacle³ email service — all client-facing transactional emails
 // Uses Resend via Replit Connectors integration
+import type { CreateEmailOptions } from "resend";
 import { getUncachableResendClient } from "./resend";
 
 const FROM = "Pinnacle³ <support@pinnaclecube.com>";
@@ -494,23 +495,25 @@ export async function sendEmail(
 ): Promise<void> {
   try {
     const { client } = await getUncachableResendClient();
-    const payload: Record<string, unknown> = {
+
+    const payload: CreateEmailOptions = {
       from: FROM,
       to: [to],
       subject: template.subject,
       html: template.html,
       text: template.text,
+      ...(options?.cc?.length ? { cc: options.cc } : {}),
+      ...(options?.attachments?.length
+        ? {
+            attachments: options.attachments.map((a) => ({
+              filename: a.filename,
+              content: a.content,
+            })),
+          }
+        : {}),
     };
-    if (options?.cc?.length) {
-      payload.cc = options.cc;
-    }
-    if (options?.attachments?.length) {
-      payload.attachments = options.attachments.map((a) => ({
-        filename: a.filename,
-        content: a.content.toString("base64"),
-      }));
-    }
-    const { error } = await (client.emails.send as unknown as (p: Record<string, unknown>) => Promise<{ error: unknown }>)(payload);
+
+    const { error } = await client.emails.send(payload);
     if (error) {
       console.error("[emailService] Resend error:", error);
     }

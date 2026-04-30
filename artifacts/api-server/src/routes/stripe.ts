@@ -218,7 +218,8 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
               product,
               accessLevel: config.accessLevel,
               stripeSessionId: session.id,
-            });
+            })
+            .onConflictDoNothing();
         }
       } catch (err) {
         console.error("[stripe/webhook] Fulfillment error:", err);
