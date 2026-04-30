@@ -1,6 +1,6 @@
 import { Router } from "express";
 import Stripe from "stripe";
-import { db, purchasesTable, clientUserProductsTable, profilesTable, pendingAccessGrantsTable } from "@workspace/db";
+import { db, purchasesTable, clientUserProductsTable, profilesTable, pendingAccessGrantsTable, prospectsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { sendEmail, purchaseConfirmationEmail } from "../services/emailService";
 
@@ -155,6 +155,25 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
     const product = session.metadata?.product;
     const customerEmail =
       session.customer_email ?? session.customer_details?.email ?? null;
+
+    const prospectId = session.metadata?.prospectId
+      ? parseInt(session.metadata.prospectId, 10)
+      : null;
+
+    // Mark the prospect as paid (and auto-convert) whenever a prospectId is present,
+    // regardless of whether the product config is recognised.
+    if (prospectId && !isNaN(prospectId)) {
+      await db
+        .update(prospectsTable)
+        .set({
+          paymentReceivedAt: new Date(),
+          status: "converted",
+        })
+        .where(eq(prospectsTable.id, prospectId))
+        .catch((err: unknown) => {
+          console.error("[stripe/webhook] Failed to mark prospect paid:", err);
+        });
+    }
 
     if (product && customerEmail) {
       try {

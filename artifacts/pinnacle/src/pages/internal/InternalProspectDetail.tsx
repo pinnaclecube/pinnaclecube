@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Checkbox } from "@/components/ui/checkbox";
 import StaffNav from "@/components/layout/StaffNav";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
-import { ArrowLeft, BookOpen, Trophy, Briefcase, Mail, ExternalLink, Check, RefreshCw, Upload, FileText, Sparkles, Download, Send, ChevronDown, ChevronUp, Loader2, CreditCard, UserCheck, Copy } from "lucide-react";
+import { ArrowLeft, BookOpen, Trophy, Briefcase, Mail, ExternalLink, Check, RefreshCw, Upload, FileText, Sparkles, Download, Send, ChevronDown, ChevronUp, Loader2, CreditCard, UserCheck, Copy, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const VISA_CATEGORIES = ["EB-1A", "EB-2 NIW", "O-1A"];
@@ -281,6 +281,11 @@ export default function InternalProspectDetail() {
               onClick={() => setShowInviteConfirm(true)}>
               {alreadyInvited ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5" />Re-invite</> : <><Mail className="w-3.5 h-3.5 mr-1.5" />Invite Client</>}
             </Button>
+            {prospect.paymentReceivedAt && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700 border border-green-200">
+                <CheckCircle className="w-3.5 h-3.5" /> Paid
+              </span>
+            )}
             {prospect.status !== "converted" && (
               <Button
                 size="sm"
@@ -584,11 +589,19 @@ export default function InternalProspectDetail() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {prospect.paymentReceivedAt && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />
+                  <p className="text-sm font-medium text-green-800">
+                    Payment received {new Date(prospect.paymentReceivedAt).toLocaleDateString()}
+                  </p>
+                </div>
+              )}
               {prospect.invoiceSentAt ? (
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 space-y-3">
+                <div className={cn("border rounded-lg p-4 space-y-3", prospect.paymentReceivedAt ? "bg-gray-50 border-gray-200" : "bg-purple-50 border-purple-200")}>
                   <div className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-purple-700" />
-                    <p className="text-sm font-medium text-purple-900">
+                    <Check className={cn("w-4 h-4", prospect.paymentReceivedAt ? "text-gray-500" : "text-purple-700")} />
+                    <p className={cn("text-sm font-medium", prospect.paymentReceivedAt ? "text-gray-700" : "text-purple-900")}>
                       Proposal sent {new Date(prospect.invoiceSentAt).toLocaleDateString()} — {prospect.invoiceProduct === "excellence_lab" ? "Excellence Lab ($249)" : "Evidence Engine ($49/mo)"}
                     </p>
                   </div>

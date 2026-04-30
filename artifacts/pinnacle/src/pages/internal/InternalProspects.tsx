@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import StaffNav from "@/components/layout/StaffNav";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
-import { Search, Users, ChevronRight, Plus, BookOpen, Trophy, Briefcase, CreditCard } from "lucide-react";
+import { Search, Users, ChevronRight, Plus, BookOpen, Trophy, Briefcase, CreditCard, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function staffFetch(path: string, opts: RequestInit = {}) {
@@ -176,7 +176,12 @@ export default function InternalProspects() {
                           {p.publicationsSignal && <BookOpen className="w-3.5 h-3.5 text-blue-500" title="Publications" />}
                           {p.awardsSignal && <Trophy className="w-3.5 h-3.5 text-yellow-500" title="Awards" />}
                           {p.leadershipSignal && <Briefcase className="w-3.5 h-3.5 text-green-500" title="Leadership" />}
-                          {p.invoiceSentAt && (
+                          {p.paymentReceivedAt && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700" title={`Payment received ${new Date(p.paymentReceivedAt).toLocaleDateString()}`}>
+                              <CheckCircle className="w-3 h-3" /> Paid
+                            </span>
+                          )}
+                          {p.invoiceSentAt && !p.paymentReceivedAt && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700" title={`Invoice sent ${new Date(p.invoiceSentAt).toLocaleDateString()}`}>
                               <CreditCard className="w-3 h-3" /> Invoice Sent
                             </span>
