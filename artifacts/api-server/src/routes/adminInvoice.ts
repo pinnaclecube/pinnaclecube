@@ -7,9 +7,9 @@
 
 import { Router, type IRouter, type Request, type Response } from "express";
 import { eq } from "drizzle-orm";
-import { db, prospectsTable, pendingAccessGrantsTable, purchasesTable } from "@workspace/db";
+import { db, prospectsTable, purchasesTable } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
-import { sendEmail, invoiceEmail } from "../services/emailService";
+import { sendEmail, invoiceEmail, prospectInviteEmail } from "../services/emailService";
 import Stripe from "stripe";
 import PDFDocument from "pdfkit";
 
@@ -194,9 +194,9 @@ async function generateProposalPDF(roadmap: RoadmapData, prospectName: string): 
 }
 
 // ─── POST /api/admin/prospects/:id/invoice ────────────────────────────────────
-// Creates a Stripe Checkout Session, stores a pending access grant (in case
-// the prospect pays before registering), updates the prospect record with
-// invoice metadata, and sends the proposal email with roadmap PDF attached.
+// Creates a Stripe Checkout Session, updates the prospect record with invoice
+// metadata, and sends the proposal email with roadmap PDF attached.
+// Pending access grants are created by the Stripe webhook AFTER confirmed payment.
 
 router.post(
   "/admin/prospects/:id/invoice",
@@ -248,14 +248,6 @@ router.post(
       return;
     }
 
-    // Store pending access grant (handles payment before registration)
-    await db.insert(pendingAccessGrantsTable).values({
-      email: prospect.email,
-      product,
-      accessLevel: config.accessLevel,
-      stripeSessionId: session.id,
-    });
-
     // Track in purchases table
     await db.insert(purchasesTable).values({
       userEmail: prospect.email,
@@ -294,7 +286,7 @@ router.post(
     await sendEmail(
       prospect.email,
       invoiceEmail(firstName, config.label, config.displayPrice, checkoutUrl, prospect.roadmapVisaCategory),
-      attachments,
+      { attachments, cc: ["support@pinnaclecube.com"] },
     );
 
     const [updated] = await db.select().from(prospectsTable).where(eq(prospectsTable.id, id)).limit(1);
@@ -303,7 +295,8 @@ router.post(
 );
 
 // ─── POST /api/admin/prospects/:id/convert ────────────────────────────────────
-// Marks a prospect as "converted" and optionally sends them an invite email.
+// Marks a prospect as "converted", sends a registration invite email (mirroring
+// the /invite route), and updates registrationStatus to "invited" if not already.
 
 router.post(
   "/admin/prospects/:id/convert",
@@ -315,11 +308,22 @@ router.post(
     const [prospect] = await db.select().from(prospectsTable).where(eq(prospectsTable.id, id)).limit(1);
     if (!prospect) { res.status(404).json({ error: "Prospect not found" }); return; }
 
+    const alreadyInvited = prospect.registrationStatus !== "not_invited";
+
     const [updated] = await db.update(prospectsTable).set({
       status: "converted",
+      registrationStatus: alreadyInvited ? prospect.registrationStatus : "invited",
     }).where(eq(prospectsTable.id, id)).returning();
 
-    res.json({ success: true, prospect: updated });
+    // Send registration invite email (same flow as /invite endpoint)
+    if (prospect.email) {
+      const origin = process.env.FRONTEND_URL ?? "https://pinnaclecube.com";
+      const registrationLink = `${origin}/register?invite=${encodeURIComponent(prospect.email)}`;
+      const firstName = prospect.fullName.split(" ")[0] ?? prospect.fullName;
+      sendEmail(prospect.email, prospectInviteEmail(firstName, registrationLink)).catch(() => {});
+    }
+
+    res.json({ success: true, prospect: updated, message: "Prospect converted and invite sent" });
   },
 );
 

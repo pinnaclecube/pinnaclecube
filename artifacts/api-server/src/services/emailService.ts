@@ -482,23 +482,30 @@ export interface EmailAttachment {
   content: Buffer;
 }
 
+export interface SendEmailOptions {
+  attachments?: EmailAttachment[];
+  cc?: string[];
+}
+
 export async function sendEmail(
   to: string,
   template: { subject: string; html: string; text: string },
-  attachments?: EmailAttachment[],
+  options?: SendEmailOptions,
 ): Promise<void> {
   try {
     const { client } = await getUncachableResendClient();
     const payload: Record<string, unknown> = {
       from: FROM,
       to: [to],
-      cc: ["support@pinnaclecube.com"],
       subject: template.subject,
       html: template.html,
       text: template.text,
     };
-    if (attachments?.length) {
-      payload.attachments = attachments.map((a) => ({
+    if (options?.cc?.length) {
+      payload.cc = options.cc;
+    }
+    if (options?.attachments?.length) {
+      payload.attachments = options.attachments.map((a) => ({
         filename: a.filename,
         content: a.content.toString("base64"),
       }));

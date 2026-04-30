@@ -209,9 +209,17 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
             customerEmail,
             purchaseConfirmationEmail(firstName, config.label, config.displayPrice),
           ).catch(() => {});
+        } else {
+          // No profile yet — store a pending grant. Applied when the user registers.
+          await db
+            .insert(pendingAccessGrantsTable)
+            .values({
+              email: customerEmail,
+              product,
+              accessLevel: config.accessLevel,
+              stripeSessionId: session.id,
+            });
         }
-        // If no profile yet, the pending_access_grants record stays; it will be
-        // applied when the user registers via /api/auth/register.
       } catch (err) {
         console.error("[stripe/webhook] Fulfillment error:", err);
       }
