@@ -1,6 +1,6 @@
 import { Router } from "express";
 import Stripe from "stripe";
-import { db, purchasesTable, clientUserProductsTable, profilesTable } from "@workspace/db";
+import { db, purchasesTable, clientUserProductsTable, profilesTable, pendingAccessGrantsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { sendEmail, purchaseConfirmationEmail } from "../services/emailService";
 
@@ -199,12 +199,19 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
             .set({ accessLevel: config.accessLevel })
             .where(eq(profilesTable.id, profile.id));
 
+          // Remove any pending access grant for this session (now fulfilled)
+          await db
+            .delete(pendingAccessGrantsTable)
+            .where(eq(pendingAccessGrantsTable.stripeSessionId, session.id));
+
           const firstName = fullProfile?.firstName ?? fullProfile?.name?.split(" ")[0] ?? "there";
           sendEmail(
             customerEmail,
             purchaseConfirmationEmail(firstName, config.label, config.displayPrice),
           ).catch(() => {});
         }
+        // If no profile yet, the pending_access_grants record stays; it will be
+        // applied when the user registers via /api/auth/register.
       } catch (err) {
         console.error("[stripe/webhook] Fulfillment error:", err);
       }

@@ -441,21 +441,69 @@ export function prospectInviteEmail(
   };
 }
 
+// ─── Template 12: Prospect proposal / invoice ──────────────────────────────────
+
+export function invoiceEmail(
+  firstName: string,
+  productLabel: string,
+  displayPrice: string,
+  paymentUrl: string,
+  visaCategory?: string | null,
+): { subject: string; html: string; text: string } {
+  const visaLine = visaCategory
+    ? `<strong>${visaCategory}</strong> `
+    : "";
+  return {
+    subject: `Your Pinnacle³ ${visaCategory ? visaCategory + " " : ""}Proposal — next step inside`,
+    html: layout(`
+      ${h1(`${firstName}, your personalized roadmap is ready`)}
+      ${p(`We've reviewed your profile and prepared a custom ${visaLine}immigration strategy for you. Your proposal includes a personalized roadmap and a recommended first step to start building your case.`)}
+      <table cellpadding="0" cellspacing="0" style="background:#f0f4ff;border-left:4px solid #1E2D6B;border-radius:0 8px 8px 0;padding:20px 24px;margin:0 0 24px;width:100%;">
+        <tr><td>
+          <p style="margin:0 0 6px;font-size:12px;font-weight:600;color:#1E2D6B;text-transform:uppercase;letter-spacing:.5px;">Recommended product</p>
+          <p style="margin:0 0 4px;font-size:18px;font-weight:700;color:#111827;">${productLabel}</p>
+          <p style="margin:0;font-size:15px;font-weight:600;color:#1E2D6B;">${displayPrice}</p>
+        </td></tr>
+      </table>
+      ${p("Your personalized roadmap is attached to this email as a PDF. Review it and when you're ready to move forward, complete your payment using the secure link below.")}
+      ${btn("Complete payment — get started", paymentUrl)}
+      ${divider()}
+      ${p("Questions about the roadmap or the product? Simply reply to this email — we're happy to walk you through everything on a quick call.")}
+      ${p(`<em style="color:#6b7280;font-size:13px;">Your payment link is unique to you and expires in 24 hours. If it expires, contact us and we'll generate a new one.</em>`)}
+    `),
+    text: `Hi ${firstName},\n\nYour personalized${visaCategory ? " " + visaCategory : ""} immigration roadmap is ready.\n\nRecommended: ${productLabel} — ${displayPrice}\n\nYour roadmap is attached as a PDF. When ready to move forward, complete payment here:\n${paymentUrl}\n\nQuestions? Reply to this email.`,
+  };
+}
+
 // ─── Sender helper ─────────────────────────────────────────────────────────────
+
+export interface EmailAttachment {
+  filename: string;
+  content: Buffer;
+}
 
 export async function sendEmail(
   to: string,
   template: { subject: string; html: string; text: string },
+  attachments?: EmailAttachment[],
 ): Promise<void> {
   try {
     const { client } = await getUncachableResendClient();
-    const { error } = await client.emails.send({
+    const payload: Record<string, unknown> = {
       from: FROM,
       to: [to],
+      cc: ["support@pinnaclecube.com"],
       subject: template.subject,
       html: template.html,
       text: template.text,
-    });
+    };
+    if (attachments?.length) {
+      payload.attachments = attachments.map((a) => ({
+        filename: a.filename,
+        content: a.content.toString("base64"),
+      }));
+    }
+    const { error } = await (client.emails.send as unknown as (p: Record<string, unknown>) => Promise<{ error: unknown }>)(payload);
     if (error) {
       console.error("[emailService] Resend error:", error);
     }

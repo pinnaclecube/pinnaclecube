@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Checkbox } from "@/components/ui/checkbox";
 import StaffNav from "@/components/layout/StaffNav";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
-import { ArrowLeft, BookOpen, Trophy, Briefcase, Mail, ExternalLink, Check, RefreshCw, Upload, FileText, Sparkles, Download, Send, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { ArrowLeft, BookOpen, Trophy, Briefcase, Mail, ExternalLink, Check, RefreshCw, Upload, FileText, Sparkles, Download, Send, ChevronDown, ChevronUp, Loader2, CreditCard, UserCheck, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const VISA_CATEGORIES = ["EB-1A", "EB-2 NIW", "O-1A"];
@@ -53,6 +53,14 @@ export default function InternalProspectDetail() {
   const [roadmapSending, setRoadmapSending] = useState(false);
   const [roadmapSendMsg, setRoadmapSendMsg] = useState<string | null>(null);
 
+  const [invoiceProduct, setInvoiceProduct] = useState("excellence_lab");
+  const [invoiceSending, setInvoiceSending] = useState(false);
+  const [invoiceMsg, setInvoiceMsg] = useState<string | null>(null);
+  const [invoiceUrl, setInvoiceUrl] = useState<string | null>(null);
+
+  const [converting, setConverting] = useState(false);
+  const [convertMsg, setConvertMsg] = useState<string | null>(null);
+
   const load = async () => {
     try {
       const r = await staffFetch(`/admin/prospects/${id}`);
@@ -64,6 +72,8 @@ export default function InternalProspectDetail() {
           try { setRoadmapData(JSON.parse(d.prospect.roadmapContent)); } catch { /* ignore */ }
         }
         if (d.prospect.roadmapVisaCategory) setSelectedVisa(d.prospect.roadmapVisaCategory);
+        if (d.prospect.invoiceCheckoutUrl) setInvoiceUrl(d.prospect.invoiceCheckoutUrl);
+        if (d.prospect.invoiceProduct) setInvoiceProduct(d.prospect.invoiceProduct);
       }
     } catch { /* ignore */ }
     setLoading(false);
@@ -169,6 +179,42 @@ export default function InternalProspectDetail() {
     } finally { setInviting(false); setShowInviteConfirm(false); }
   };
 
+  const sendInvoice = async () => {
+    setInvoiceSending(true);
+    setInvoiceMsg(null);
+    try {
+      const r = await staffFetch(`/admin/prospects/${id}/invoice`, {
+        method: "POST",
+        body: JSON.stringify({ product: invoiceProduct }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setInvoiceUrl(d.checkoutUrl);
+        setInvoiceMsg(`Proposal sent to ${prospect?.email}!`);
+        await load();
+      } else {
+        setInvoiceMsg(d.error ?? "Failed to send proposal");
+      }
+    } catch { setInvoiceMsg("Failed to send proposal"); }
+    setInvoiceSending(false);
+  };
+
+  const convertCase = async () => {
+    setConverting(true);
+    setConvertMsg(null);
+    try {
+      const r = await staffFetch(`/admin/prospects/${id}/convert`, { method: "POST" });
+      const d = await r.json();
+      if (r.ok) {
+        setConvertMsg("Prospect converted to case!");
+        await load();
+      } else {
+        setConvertMsg(d.error ?? "Conversion failed");
+      }
+    } catch { setConvertMsg("Conversion failed"); }
+    setConverting(false);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -220,7 +266,7 @@ export default function InternalProspectDetail() {
               {prospect.leadershipSignal && <span className="flex items-center gap-1 text-xs text-green-600"><Briefcase className="w-3 h-3" />Leadership</span>}
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
             {!editing ? (
               <Button size="sm" variant="outline" onClick={() => setEditing(true)}>Edit</Button>
             ) : (
@@ -235,12 +281,30 @@ export default function InternalProspectDetail() {
               onClick={() => setShowInviteConfirm(true)}>
               {alreadyInvited ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5" />Re-invite</> : <><Mail className="w-3.5 h-3.5 mr-1.5" />Invite Client</>}
             </Button>
+            {prospect.status !== "converted" && (
+              <Button
+                size="sm"
+                onClick={convertCase}
+                disabled={converting}
+                className="bg-purple-700 hover:bg-purple-800 text-white"
+              >
+                {converting
+                  ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Converting…</>
+                  : <><UserCheck className="w-3.5 h-3.5 mr-1.5" />Convert to Case</>
+                }
+              </Button>
+            )}
           </div>
         </div>
 
         {inviteResult && (
           <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded text-sm text-green-800">
             {inviteResult}
+          </div>
+        )}
+        {convertMsg && (
+          <div className={cn("mb-4 p-3 rounded text-sm border", convertMsg.includes("failed") || convertMsg.includes("Failed") ? "bg-red-50 border-red-200 text-red-800" : "bg-purple-50 border-purple-200 text-purple-800")}>
+            {convertMsg}
           </div>
         )}
 
@@ -508,6 +572,101 @@ export default function InternalProspectDetail() {
                   )}
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* ── Proposal & Invoice Card ── */}
+          <Card className="border-purple-100">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-purple-700" />
+                Proposal & Invoice
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {prospect.invoiceSentAt ? (
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-purple-700" />
+                    <p className="text-sm font-medium text-purple-900">
+                      Proposal sent {new Date(prospect.invoiceSentAt).toLocaleDateString()} — {prospect.invoiceProduct === "excellence_lab" ? "Excellence Lab ($249)" : "Evidence Engine ($49/mo)"}
+                    </p>
+                  </div>
+                  {invoiceUrl && (
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={invoiceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs text-purple-700 hover:underline"
+                      >
+                        <ExternalLink className="w-3 h-3" /> Open payment link
+                      </a>
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(invoiceUrl); }}
+                        className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700"
+                        title="Copy link"
+                      >
+                        <Copy className="w-3 h-3" /> Copy
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              <div className="space-y-3">
+                <label className="text-xs font-medium text-muted-foreground block">Product to Invoice</label>
+                <div className="flex gap-2 flex-wrap">
+                  {[
+                    { key: "excellence_lab", label: "Excellence Lab", price: "$249" },
+                    { key: "evidence_vault", label: "Evidence Engine", price: "$49/mo" },
+                  ].map(({ key, label, price }) => (
+                    <button
+                      key={key}
+                      onClick={() => setInvoiceProduct(key)}
+                      className={cn(
+                        "px-3 py-2 rounded-md text-sm font-medium border transition-colors text-left",
+                        invoiceProduct === key
+                          ? "bg-purple-700 text-white border-purple-700"
+                          : "text-gray-600 border-gray-200 hover:border-purple-300 hover:text-purple-700"
+                      )}
+                    >
+                      <span className="block">{label}</span>
+                      <span className="block text-xs opacity-75">{price}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {!prospect.email && (
+                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    Prospect has no email address — add one before sending a proposal.
+                  </p>
+                )}
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    size="sm"
+                    onClick={sendInvoice}
+                    disabled={invoiceSending || !prospect.email}
+                    className="bg-purple-700 hover:bg-purple-800 text-white"
+                  >
+                    {invoiceSending
+                      ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Sending…</>
+                      : <><Send className="w-3.5 h-3.5 mr-1.5" />{prospect.invoiceSentAt ? "Resend Proposal" : "Send Proposal"}</>
+                    }
+                  </Button>
+                  {prospect.roadmapContent
+                    ? <span className="text-xs text-green-700">Roadmap PDF will be attached</span>
+                    : <span className="text-xs text-muted-foreground">Generate a roadmap to include PDF</span>
+                  }
+                </div>
+
+                {invoiceMsg && (
+                  <p className={cn("text-xs", invoiceMsg.includes("failed") || invoiceMsg.includes("Failed") ? "text-red-600" : "text-green-700")}>
+                    {invoiceMsg}
+                  </p>
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>

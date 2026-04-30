@@ -28,9 +28,21 @@ export const purchasesTable = pgTable("purchases", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const pendingAccessGrantsTable = pgTable("pending_access_grants", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull(),
+  product: text("product").notNull(),
+  accessLevel: text("access_level").notNull(),
+  stripeSessionId: text("stripe_session_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const insertClientUserProductSchema = createInsertSchema(clientUserProductsTable).omit({ id: true, createdAt: true });
 export const insertPurchaseSchema = createInsertSchema(purchasesTable).omit({ id: true, createdAt: true });
+export const insertPendingAccessGrantSchema = createInsertSchema(pendingAccessGrantsTable).omit({ id: true, createdAt: true });
 export type InsertClientUserProduct = z.infer<typeof insertClientUserProductSchema>;
 export type ClientUserProduct = typeof clientUserProductsTable.$inferSelect;
 export type InsertPurchase = z.infer<typeof insertPurchaseSchema>;
 export type Purchase = typeof purchasesTable.$inferSelect;
+export type InsertPendingAccessGrant = z.infer<typeof insertPendingAccessGrantSchema>;
+export type PendingAccessGrant = typeof pendingAccessGrantsTable.$inferSelect;

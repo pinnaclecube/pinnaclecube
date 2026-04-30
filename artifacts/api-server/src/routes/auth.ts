@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { db, profilesTable } from "@workspace/db";
+import { db, profilesTable, pendingAccessGrantsTable, clientUserProductsTable } from "@workspace/db";
 import {
   hashPassword,
   comparePassword,
@@ -77,6 +77,37 @@ router.post("/auth/register", async (req, res) => {
 
   // Fire-and-forget welcome email
   sendEmail(profile.email, welcomeEmail(first_name)).catch(() => {});
+
+  // Apply any pending access grants from pre-registration Stripe payments
+  try {
+    const grants = await db
+      .select()
+      .from(pendingAccessGrantsTable)
+      .where(eq(pendingAccessGrantsTable.email, email.toLowerCase()));
+
+    if (grants.length > 0) {
+      const topGrant = grants[0];
+      await db.update(profilesTable)
+        .set({ accessLevel: topGrant.accessLevel })
+        .where(eq(profilesTable.id, profile.id));
+
+      for (const grant of grants) {
+        await db.insert(clientUserProductsTable).values({
+          profileId: profile.id,
+          clientEmail: email.toLowerCase(),
+          product: grant.product,
+          stripeSessionId: grant.stripeSessionId ?? undefined,
+          amountPaid: "0",
+          status: "active",
+        }).onConflictDoNothing();
+      }
+
+      await db.delete(pendingAccessGrantsTable)
+        .where(eq(pendingAccessGrantsTable.email, email.toLowerCase()));
+    }
+  } catch {
+    // Non-fatal: do not block registration if grant application fails
+  }
 });
 
 // ─── POST /api/auth/login ─────────────────────────────────────────────────────

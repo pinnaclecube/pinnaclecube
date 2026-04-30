@@ -23,6 +23,7 @@ import contactRouter from "./contact";
 import boothRouter from "./booth";
 import adminBoothEventsRouter from "./adminBoothEvents";
 import adminRoadmapRouter from "./adminRoadmap";
+import adminInvoiceRouter from "./adminInvoice";
 
 const router: IRouter = Router();
 
@@ -50,5 +51,6 @@ router.use(contactRouter);
 router.use(boothRouter);
 router.use(adminBoothEventsRouter);
 router.use(adminRoadmapRouter);
+router.use(adminInvoiceRouter);
 
 export default router;

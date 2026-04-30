@@ -27,6 +27,9 @@ export const prospectsTable = pgTable("prospects", {
   roadmapContent: text("roadmap_content"),
   roadmapVisaCategory: text("roadmap_visa_category"),
   roadmapGeneratedAt: timestamp("roadmap_generated_at", { withTimezone: true }),
+  invoiceSentAt: timestamp("invoice_sent_at", { withTimezone: true }),
+  invoiceProduct: text("invoice_product"),
+  invoiceCheckoutUrl: text("invoice_checkout_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
