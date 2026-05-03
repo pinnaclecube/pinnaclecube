@@ -273,10 +273,15 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
     }
   }
 
-  // ── checkout.session.expired — remove stale pending grant for this session
+  // ── checkout.session.expired — mark purchase expired, remove stale pending grant
   if (event.type === "checkout.session.expired") {
     const session = event.data.object as Stripe.Checkout.Session;
     try {
+      await db
+        .update(purchasesTable)
+        .set({ status: "expired" })
+        .where(eq(purchasesTable.stripeSessionId, session.id));
+
       await db
         .delete(pendingAccessGrantsTable)
         .where(eq(pendingAccessGrantsTable.stripeSessionId, session.id));

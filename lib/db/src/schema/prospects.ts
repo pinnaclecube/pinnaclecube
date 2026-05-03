@@ -30,6 +30,7 @@ export const prospectsTable = pgTable("prospects", {
   invoiceSentAt: timestamp("invoice_sent_at", { withTimezone: true }),
   invoiceProduct: text("invoice_product"),
   invoiceCheckoutUrl: text("invoice_checkout_url"),
+  invoiceStripeSessionId: text("invoice_stripe_session_id"),
   paymentReceivedAt: timestamp("payment_received_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

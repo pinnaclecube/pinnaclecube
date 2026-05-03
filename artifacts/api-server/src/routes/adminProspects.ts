@@ -6,7 +6,7 @@
  */
 
 import { Router, type IRouter, type Request, type Response } from "express";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, inArray } from "drizzle-orm";
 import {
   db,
   prospectsTable,
@@ -21,24 +21,26 @@ const router: IRouter = Router();
 // ─── List prospects ────────────────────────────────────────────────────────────
 
 // linkStatus values:
-//   "paid"    — paymentReceivedAt is set
-//   "active"  — invoice sent, purchase row is "pending" (session likely still open)
-//   "expired" — invoice sent, purchase row is "expired" (session expired)
-//   "sent"    — invoice sent but no matching purchase row found (edge case)
+//   "paid"    — paymentReceivedAt is set (or purchase row is "completed")
+//   "active"  — invoiceStripeSessionId present and purchase row status is "pending"
+//   "expired" — invoiceStripeSessionId present and purchase row status is "expired"
+//   "sent"    — invoiceSentAt set but no session ID stored (legacy/edge case)
 //   null      — no invoice sent
 type LinkStatus = "paid" | "active" | "expired" | "sent" | null;
 
 function computeLinkStatus(
-  p: { paymentReceivedAt: Date | null; invoiceSentAt: Date | null; email: string | null; invoiceProduct: string | null },
+  p: { paymentReceivedAt: Date | null; invoiceSentAt: Date | null; invoiceStripeSessionId: string | null },
   purchaseStatusMap: Map<string, string>,
 ): LinkStatus {
   if (p.paymentReceivedAt) return "paid";
-  if (!p.invoiceSentAt || !p.email || !p.invoiceProduct) return null;
-  const key = `${p.email}::${p.invoiceProduct}`;
-  const status = purchaseStatusMap.get(key);
+  if (!p.invoiceSentAt) return null;
+  // Invoice was sent but session ID wasn't recorded (pre-migration row).
+  if (!p.invoiceStripeSessionId) return "sent";
+  const status = purchaseStatusMap.get(p.invoiceStripeSessionId);
   if (status === "pending") return "active";
   if (status === "expired") return "expired";
   if (status === "completed") return "paid";
+  // Session ID stored but no matching purchase row — shouldn't happen in practice.
   return "sent";
 }
 
@@ -48,26 +50,26 @@ router.get(
   async (_req: Request, res: Response): Promise<void> => {
     const prospects = await db.select().from(prospectsTable).orderBy(desc(prospectsTable.createdAt));
 
-    // Enrich prospects that have invoices with DB-level purchase status.
-    // Fetch only purchase rows whose email appears in the invoiced subset.
-    // Map: "email::product" → status of the most-recent purchase row (desc createdAt).
+    // Enrich prospects that have invoices with the DB-level purchase status for
+    // their specific session. Join by invoiceStripeSessionId → purchasesTable.stripeSessionId
+    // so we get the exact session that was invoiced, not just any session for that email.
     const purchaseStatusMap = new Map<string, string>();
-    const invoicedProspects = prospects.filter((p) => p.invoiceSentAt && p.email && p.invoiceProduct);
+    const sessionIds = prospects
+      .map((p) => p.invoiceStripeSessionId)
+      .filter((id): id is string => Boolean(id));
 
-    if (invoicedProspects.length > 0) {
+    if (sessionIds.length > 0) {
       const purchases = await db
         .select({
-          userEmail: purchasesTable.userEmail,
-          product: purchasesTable.product,
+          stripeSessionId: purchasesTable.stripeSessionId,
           status: purchasesTable.status,
         })
         .from(purchasesTable)
-        .orderBy(desc(purchasesTable.createdAt));
+        .where(inArray(purchasesTable.stripeSessionId, sessionIds));
 
       for (const row of purchases) {
-        const key = `${row.userEmail}::${row.product}`;
-        if (!purchaseStatusMap.has(key)) {
-          purchaseStatusMap.set(key, row.status ?? "pending");
+        if (row.stripeSessionId) {
+          purchaseStatusMap.set(row.stripeSessionId, row.status ?? "pending");
         }
       }
     }

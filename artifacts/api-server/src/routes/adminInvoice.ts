@@ -345,8 +345,11 @@ router.post(
       stripeSessionId = existingOpen.sessionId;
       reusingExistingSession = true;
 
-      // Update invoiceSentAt so staff can track when email was last sent.
-      await db.update(prospectsTable).set({ invoiceSentAt: new Date() }).where(eq(prospectsTable.id, id));
+      // Update invoiceSentAt and ensure session ID is recorded.
+      await db.update(prospectsTable).set({
+        invoiceSentAt: new Date(),
+        invoiceStripeSessionId: stripeSessionId,
+      }).where(eq(prospectsTable.id, id));
     } else {
       // Create a new Stripe Checkout Session.
       const origin = process.env.FRONTEND_URL ?? "https://pinnaclecube.com";
@@ -395,11 +398,12 @@ router.post(
         stripeSessionId,
       }).onConflictDoNothing();
 
-      // Update prospect record.
+      // Update prospect record — store session ID for accurate status lookups.
       await db.update(prospectsTable).set({
         invoiceSentAt: new Date(),
         invoiceProduct: product,
         invoiceCheckoutUrl: checkoutUrl,
+        invoiceStripeSessionId: stripeSessionId,
       }).where(eq(prospectsTable.id, id));
     }
 
