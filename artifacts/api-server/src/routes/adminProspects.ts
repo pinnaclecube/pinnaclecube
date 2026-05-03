@@ -10,6 +10,7 @@ import { eq, desc } from "drizzle-orm";
 import {
   db,
   prospectsTable,
+  purchasesTable,
 } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { sendEmail, prospectInviteEmail } from "../services/emailService";
@@ -19,12 +20,64 @@ const router: IRouter = Router();
 
 // ─── List prospects ────────────────────────────────────────────────────────────
 
+// linkStatus values:
+//   "paid"    — paymentReceivedAt is set
+//   "active"  — invoice sent, purchase row is "pending" (session likely still open)
+//   "expired" — invoice sent, purchase row is "expired" (session expired)
+//   "sent"    — invoice sent but no matching purchase row found (edge case)
+//   null      — no invoice sent
+type LinkStatus = "paid" | "active" | "expired" | "sent" | null;
+
+function computeLinkStatus(
+  p: { paymentReceivedAt: Date | null; invoiceSentAt: Date | null; email: string | null; invoiceProduct: string | null },
+  purchaseStatusMap: Map<string, string>,
+): LinkStatus {
+  if (p.paymentReceivedAt) return "paid";
+  if (!p.invoiceSentAt || !p.email || !p.invoiceProduct) return null;
+  const key = `${p.email}::${p.invoiceProduct}`;
+  const status = purchaseStatusMap.get(key);
+  if (status === "pending") return "active";
+  if (status === "expired") return "expired";
+  if (status === "completed") return "paid";
+  return "sent";
+}
+
 router.get(
   "/admin/prospects",
   requireStaffAuth,
   async (_req: Request, res: Response): Promise<void> => {
     const prospects = await db.select().from(prospectsTable).orderBy(desc(prospectsTable.createdAt));
-    res.json({ prospects, total: prospects.length });
+
+    // Enrich prospects that have invoices with DB-level purchase status.
+    // Fetch only purchase rows whose email appears in the invoiced subset.
+    // Map: "email::product" → status of the most-recent purchase row (desc createdAt).
+    const purchaseStatusMap = new Map<string, string>();
+    const invoicedProspects = prospects.filter((p) => p.invoiceSentAt && p.email && p.invoiceProduct);
+
+    if (invoicedProspects.length > 0) {
+      const purchases = await db
+        .select({
+          userEmail: purchasesTable.userEmail,
+          product: purchasesTable.product,
+          status: purchasesTable.status,
+        })
+        .from(purchasesTable)
+        .orderBy(desc(purchasesTable.createdAt));
+
+      for (const row of purchases) {
+        const key = `${row.userEmail}::${row.product}`;
+        if (!purchaseStatusMap.has(key)) {
+          purchaseStatusMap.set(key, row.status ?? "pending");
+        }
+      }
+    }
+
+    const prospectsWithStatus = prospects.map((p) => ({
+      ...p,
+      linkStatus: computeLinkStatus(p, purchaseStatusMap) as LinkStatus,
+    }));
+
+    res.json({ prospects: prospectsWithStatus, total: prospectsWithStatus.length });
   },
 );
 
