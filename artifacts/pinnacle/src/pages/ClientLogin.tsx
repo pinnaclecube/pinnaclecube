@@ -92,7 +92,12 @@ export default function ClientLogin() {
               </div>
 
               <div>
-                <Label htmlFor="password" className="text-slate-700 font-medium">Password</Label>
+                <div className="flex items-center justify-between mb-0">
+                  <Label htmlFor="password" className="text-slate-700 font-medium">Password</Label>
+                  <Link href="/forgot-password" className="text-xs text-[#1E2D6B] hover:underline font-medium">
+                    Forgot password?
+                  </Link>
+                </div>
                 <Input
                   id="password"
                   type="password"

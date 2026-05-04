@@ -476,7 +476,28 @@ export function invoiceEmail(
   };
 }
 
-// ─── Template 9: Prospect account created with temp password ──────────────────
+// ─── Template 9a: User-initiated password reset link ─────────────────────────
+
+export function passwordResetRequestEmail(
+  firstName: string,
+  resetUrl: string,
+): { subject: string; html: string; text: string } {
+  return {
+    subject: "Reset your Pinnacle³ password",
+    html: layout(`
+      ${h1("Password reset request")}
+      ${p(`Hi ${firstName}, we received a request to reset the password for your Pinnacle³ account.`)}
+      ${p("Click the button below to choose a new password. This link is valid for <strong>1 hour</strong>.")}
+      ${btn("Reset my password →", resetUrl)}
+      ${divider()}
+      ${p("If you didn't request a password reset, you can safely ignore this email — your account is unchanged.")}
+      ${p(`<em style="color:#6b7280;font-size:13px;">For security, this link expires in 1 hour and can only be used once.</em>`)}
+    `),
+    text: `Hi ${firstName},\n\nWe received a request to reset your Pinnacle³ password.\n\nReset your password here (valid for 1 hour):\n${resetUrl}\n\nIf you didn't request this, ignore this email — your account is unchanged.`,
+  };
+}
+
+// ─── Template 9b: Prospect account created with temp password ─────────────────
 
 export function prospectAccountCreatedEmail(
   firstName: string,

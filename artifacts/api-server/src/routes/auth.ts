@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { desc, eq } from "drizzle-orm";
+import crypto from "crypto";
 import { z } from "zod";
 import { db, profilesTable, pendingAccessGrantsTable, clientUserProductsTable, purchasesTable } from "@workspace/db";
 import {
@@ -10,7 +11,7 @@ import {
   stripPassword,
 } from "../services/auth";
 import { requireClientAuth } from "../middlewares/clientAuth";
-import { sendEmail, welcomeEmail } from "../services/emailService";
+import { sendEmail, welcomeEmail, passwordResetRequestEmail } from "../services/emailService";
 
 const router = Router();
 
@@ -313,6 +314,108 @@ router.post("/auth/set-password", async (req, res) => {
 // ─── GET /api/auth/me ────────────────────────────────────────────────────────
 router.get("/auth/me", requireClientAuth, (req: any, res) => {
   res.json({ user: stripPassword(req.clientUser) });
+});
+
+// ─── POST /api/auth/forgot-password ──────────────────────────────────────────
+// Generates a 1-hour reset token and emails a secure link if the account exists.
+// Always returns 200 to prevent email enumeration — except when the user is not
+// found, in which case returns 404 so the frontend can show a helpful message.
+router.post("/auth/forgot-password", async (req, res) => {
+  const { email } = req.body as { email?: string };
+  if (!email || typeof email !== "string") {
+    res.status(400).json({ error: "email is required" });
+    return;
+  }
+
+  const [profile] = await db
+    .select()
+    .from(profilesTable)
+    .where(eq(profilesTable.email, email.toLowerCase()))
+    .limit(1);
+
+  if (!profile) {
+    res.status(404).json({ error: "No account found with that email address." });
+    return;
+  }
+
+  const token = crypto.randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+  await db
+    .update(profilesTable)
+    .set({ passwordResetToken: token, passwordResetExpiresAt: expiresAt })
+    .where(eq(profilesTable.id, profile.id));
+
+  const origin = process.env.FRONTEND_URL ?? "https://pinnaclecube.com";
+  const resetUrl = `${origin}/reset-password?token=${token}`;
+  const firstName = profile.firstName ?? profile.name.split(" ")[0] ?? "there";
+
+  sendEmail(profile.email, passwordResetRequestEmail(firstName, resetUrl)).catch((err: unknown) => {
+    console.error("[auth/forgot-password] Failed to send reset email:", err);
+  });
+
+  res.json({ success: true });
+});
+
+// ─── GET /api/auth/validate-reset-token ──────────────────────────────────────
+// Validates a reset token without consuming it (used by the reset page on mount).
+router.get("/auth/validate-reset-token", async (req, res) => {
+  const token = req.query.token as string | undefined;
+  if (!token) { res.status(400).json({ error: "token is required" }); return; }
+
+  const [profile] = await db
+    .select({ id: profilesTable.id, passwordResetExpiresAt: profilesTable.passwordResetExpiresAt })
+    .from(profilesTable)
+    .where(eq(profilesTable.passwordResetToken, token))
+    .limit(1);
+
+  if (!profile || !profile.passwordResetExpiresAt || profile.passwordResetExpiresAt < new Date()) {
+    res.status(400).json({ error: "Token is invalid or has expired." });
+    return;
+  }
+
+  res.json({ valid: true });
+});
+
+// ─── POST /api/auth/reset-password-by-token ───────────────────────────────────
+// Consumes a reset token, sets the new password, and returns a session JWT.
+router.post("/auth/reset-password-by-token", async (req, res) => {
+  const { token, new_password } = req.body as { token?: string; new_password?: string };
+  if (!token || !new_password) {
+    res.status(400).json({ error: "token and new_password are required" });
+    return;
+  }
+  if (new_password.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters." });
+    return;
+  }
+
+  const [profile] = await db
+    .select()
+    .from(profilesTable)
+    .where(eq(profilesTable.passwordResetToken, token))
+    .limit(1);
+
+  if (!profile || !profile.passwordResetExpiresAt || profile.passwordResetExpiresAt < new Date()) {
+    res.status(400).json({ error: "This reset link has expired or already been used. Please request a new one." });
+    return;
+  }
+
+  const passwordHash = await hashPassword(new_password);
+
+  const [updated] = await db
+    .update(profilesTable)
+    .set({
+      passwordHash,
+      mustChangePassword: false,
+      passwordResetToken: null,
+      passwordResetExpiresAt: null,
+    })
+    .where(eq(profilesTable.id, profile.id))
+    .returning();
+
+  const sessionToken = generateToken(updated);
+  res.json({ success: true, token: sessionToken, user: stripPassword(updated) });
 });
 
 // ─── POST /api/auth/session-auto-login ───────────────────────────────────────

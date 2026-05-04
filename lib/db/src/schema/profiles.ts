@@ -31,6 +31,9 @@ export const profilesTable = pgTable("profiles", {
   nationality: text("nationality"),
   maritalStatus: text("marital_status"),
   linkedinUrl: text("linkedin_url"),
+  // Password reset
+  passwordResetToken: text("password_reset_token"),
+  passwordResetExpiresAt: timestamp("password_reset_expires_at", { withTimezone: true }),
   // Access
   accessLevel: text("access_level").notNull().default("free"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
