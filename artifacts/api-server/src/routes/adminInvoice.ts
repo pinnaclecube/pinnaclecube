@@ -408,9 +408,16 @@ router.post(
     }
 
     // Build & send proposal email (with roadmap PDF if available).
+    // Uploaded roadmap always takes priority over the AI-generated one.
     let attachments: Array<{ filename: string; content: Buffer }> | undefined;
 
-    if (prospect.roadmapContent) {
+    if (prospect.roadmapUploadedData) {
+      const buffer = Buffer.from(prospect.roadmapUploadedData, "base64");
+      const fileName =
+        prospect.roadmapUploadedFileName ??
+        `${prospect.fullName.replace(/\s+/g, "_")}_Roadmap.pdf`;
+      attachments = [{ filename: fileName, content: buffer }];
+    } else if (prospect.roadmapContent) {
       try {
         const roadmap = JSON.parse(prospect.roadmapContent) as RoadmapData;
         const pdfBuffer = await generateProposalPDF(roadmap, prospect.fullName);

@@ -6,7 +6,7 @@
  */
 
 import { Router, type IRouter, type Request, type Response } from "express";
-import { eq, desc, inArray } from "drizzle-orm";
+import { eq, desc, inArray, getTableColumns } from "drizzle-orm";
 import {
   db,
   prospectsTable,
@@ -48,7 +48,10 @@ router.get(
   "/admin/prospects",
   requireStaffAuth,
   async (_req: Request, res: Response): Promise<void> => {
-    const prospects = await db.select().from(prospectsTable).orderBy(desc(prospectsTable.createdAt));
+    // Exclude roadmapUploadedData (large base64) from list responses — it's only
+    // needed server-side for email attachments and on the individual detail page.
+    const { roadmapUploadedData: _omit, ...listCols } = getTableColumns(prospectsTable);
+    const prospects = await db.select(listCols).from(prospectsTable).orderBy(desc(prospectsTable.createdAt));
 
     // Enrich prospects that have invoices with the DB-level purchase status for
     // their specific session. Join by invoiceStripeSessionId → purchasesTable.stripeSessionId

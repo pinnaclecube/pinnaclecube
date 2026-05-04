@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Checkbox } from "@/components/ui/checkbox";
 import StaffNav from "@/components/layout/StaffNav";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
-import { ArrowLeft, BookOpen, Trophy, Briefcase, Mail, ExternalLink, Check, RefreshCw, Upload, FileText, Sparkles, Download, Send, ChevronDown, ChevronUp, Loader2, CreditCard, UserCheck, Copy, CheckCircle, Lock } from "lucide-react";
+import { ArrowLeft, BookOpen, Trophy, Briefcase, Mail, ExternalLink, Check, RefreshCw, Upload, FileText, Sparkles, Download, Send, ChevronDown, ChevronUp, Loader2, CreditCard, UserCheck, Copy, CheckCircle, Lock, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const VISA_CATEGORIES = ["EB-1A", "EB-2 NIW", "O-1A"];
@@ -52,6 +52,9 @@ export default function InternalProspectDetail() {
   const [roadmapExpanded, setRoadmapExpanded] = useState(false);
   const [roadmapSending, setRoadmapSending] = useState(false);
   const [roadmapSendMsg, setRoadmapSendMsg] = useState<string | null>(null);
+  const [roadmapUploading, setRoadmapUploading] = useState(false);
+  const [roadmapUploadMsg, setRoadmapUploadMsg] = useState<string | null>(null);
+  const [removingUploadedRoadmap, setRemovingUploadedRoadmap] = useState(false);
 
   const [invoiceProduct, setInvoiceProduct] = useState("excellence_lab");
   const [eliteAmount, setEliteAmount] = useState<string>("");
@@ -153,6 +156,44 @@ export default function InternalProspectDetail() {
       setRoadmapSendMsg(r.ok ? (d.message ?? "Roadmap sent!") : (d.error ?? "Send failed"));
     } catch { setRoadmapSendMsg("Send failed"); }
     setRoadmapSending(false);
+  };
+
+  const uploadCustomRoadmap = async (file: File) => {
+    setRoadmapUploading(true);
+    setRoadmapUploadMsg(null);
+    try {
+      const form = new FormData();
+      form.append("roadmap", file);
+      const r = await fetch(`/api/admin/prospects/${id}/roadmap/upload`, {
+        method: "POST",
+        headers: { "X-Staff-Token": getStaffToken() ?? "" },
+        body: form,
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setRoadmapUploadMsg(`Uploaded: ${d.fileName}`);
+        await load();
+      } else {
+        setRoadmapUploadMsg(d.error ?? "Upload failed");
+      }
+    } catch { setRoadmapUploadMsg("Upload failed"); }
+    setRoadmapUploading(false);
+  };
+
+  const removeUploadedRoadmap = async () => {
+    setRemovingUploadedRoadmap(true);
+    setRoadmapUploadMsg(null);
+    try {
+      const r = await staffFetch(`/admin/prospects/${id}/roadmap/upload`, { method: "DELETE" });
+      if (r.ok) {
+        setRoadmapUploadMsg(null);
+        await load();
+      } else {
+        const d = await r.json();
+        setRoadmapUploadMsg(d.error ?? "Failed to remove");
+      }
+    } catch { setRoadmapUploadMsg("Failed to remove"); }
+    setRemovingUploadedRoadmap(false);
   };
 
   const downloadRoadmap = async (format: "pdf" | "docx") => {
@@ -284,7 +325,7 @@ export default function InternalProspectDetail() {
   }
 
   const alreadyInvited = prospect.registrationStatus !== "not_invited";
-  const roadmapReady = Boolean(roadmapData || prospect.roadmapGeneratedAt);
+  const roadmapReady = Boolean(roadmapData || prospect.roadmapGeneratedAt || prospect.roadmapUploadedAt);
   const invoiceLocked = !roadmapReady && !prospect.invoiceSentAt && !prospect.paymentReceivedAt;
 
   return (
@@ -622,6 +663,80 @@ export default function InternalProspectDetail() {
                   )}
                 </div>
               )}
+
+              {/* Custom Roadmap Upload */}
+              <div className="border-t pt-4 space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-medium text-muted-foreground">Custom Roadmap Upload</label>
+                  {prospect.roadmapUploadedAt && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wide text-purple-700 bg-purple-50 border border-purple-200 rounded px-1.5 py-0.5">
+                      ● ACTIVE — USED FOR PROPOSALS
+                    </span>
+                  )}
+                </div>
+
+                {prospect.roadmapUploadedAt ? (
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="inline-flex items-center gap-1.5 text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2 py-1">
+                      <FileText className="w-3 h-3" />
+                      {prospect.roadmapUploadedFileName ?? "Uploaded roadmap"}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Uploaded {new Date(prospect.roadmapUploadedAt).toLocaleDateString()}
+                    </span>
+                    <label className={cn(
+                      "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs cursor-pointer transition-colors",
+                      roadmapUploading ? "opacity-50 pointer-events-none" : "border-gray-200 hover:bg-gray-50"
+                    )}>
+                      {roadmapUploading
+                        ? <><Loader2 className="w-3 h-3 animate-spin" />Uploading…</>
+                        : <><Upload className="w-3 h-3" />Replace</>
+                      }
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept=".pdf,.docx"
+                        disabled={roadmapUploading}
+                        onChange={(e) => e.target.files?.[0] && uploadCustomRoadmap(e.target.files[0])}
+                      />
+                    </label>
+                    <button
+                      onClick={removeUploadedRoadmap}
+                      disabled={removingUploadedRoadmap}
+                      className="inline-flex items-center gap-1 text-xs text-red-500 hover:text-red-700 disabled:opacity-50 transition-colors"
+                    >
+                      {removingUploadedRoadmap ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <label className={cn(
+                      "inline-flex items-center gap-2 px-3 py-1.5 rounded-md border text-sm cursor-pointer transition-colors",
+                      roadmapUploading ? "opacity-50 pointer-events-none" : "hover:bg-gray-50 border-gray-200"
+                    )}>
+                      {roadmapUploading
+                        ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Uploading…</>
+                        : <><Upload className="w-3.5 h-3.5" />Upload Roadmap</>
+                      }
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept=".pdf,.docx"
+                        disabled={roadmapUploading}
+                        onChange={(e) => e.target.files?.[0] && uploadCustomRoadmap(e.target.files[0])}
+                      />
+                    </label>
+                    <span className="text-xs text-muted-foreground">PDF or DOCX · overrides AI-generated roadmap in proposals</span>
+                  </div>
+                )}
+
+                {roadmapUploadMsg && (
+                  <p className={cn("text-xs", roadmapUploadMsg.startsWith("Upload") && !roadmapUploadMsg.includes("failed") ? "text-green-700" : roadmapUploadMsg.includes("failed") || roadmapUploadMsg.includes("Failed") ? "text-red-600" : "text-gray-600")}>
+                    {roadmapUploadMsg}
+                  </p>
+                )}
+              </div>
             </CardContent>
           </Card>
 

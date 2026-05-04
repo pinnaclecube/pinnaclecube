@@ -214,6 +214,83 @@ router.get(
   },
 );
 
+// ─── Route: Upload custom roadmap ────────────────────────────────────────────
+// Accepts a PDF or DOCX file and stores it as base64 in the DB.
+// The uploaded file takes priority over the AI-generated roadmap when a
+// proposal email is sent (see adminInvoice.ts).
+
+router.post(
+  "/admin/prospects/:id/roadmap/upload",
+  requireStaffAuth,
+  upload.single("roadmap"),
+  async (req: Request, res: Response): Promise<void> => {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+    const file = req.file;
+    if (!file) { res.status(400).json({ error: "No file uploaded" }); return; }
+
+    const name = file.originalname.toLowerCase();
+    const isPdf = file.mimetype === "application/pdf" || name.endsWith(".pdf");
+    const isDocx =
+      file.mimetype ===
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+      name.endsWith(".docx");
+
+    if (!isPdf && !isDocx) {
+      res.status(400).json({ error: "Only PDF and DOCX files are supported" });
+      return;
+    }
+
+    const [prospect] = await db
+      .select({ id: prospectsTable.id })
+      .from(prospectsTable)
+      .where(eq(prospectsTable.id, id))
+      .limit(1);
+    if (!prospect) { res.status(404).json({ error: "Prospect not found" }); return; }
+
+    const base64 = file.buffer.toString("base64");
+
+    const [updated] = await db
+      .update(prospectsTable)
+      .set({
+        roadmapUploadedAt: new Date(),
+        roadmapUploadedFileName: file.originalname,
+        roadmapUploadedData: base64,
+      })
+      .where(eq(prospectsTable.id, id))
+      .returning({
+        id: prospectsTable.id,
+        roadmapUploadedAt: prospectsTable.roadmapUploadedAt,
+        roadmapUploadedFileName: prospectsTable.roadmapUploadedFileName,
+      });
+
+    res.json({ success: true, fileName: file.originalname, prospect: updated });
+  },
+);
+
+// ─── Route: Remove uploaded roadmap ──────────────────────────────────────────
+
+router.delete(
+  "/admin/prospects/:id/roadmap/upload",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+    await db
+      .update(prospectsTable)
+      .set({
+        roadmapUploadedAt: null,
+        roadmapUploadedFileName: null,
+        roadmapUploadedData: null,
+      })
+      .where(eq(prospectsTable.id, id));
+
+    res.json({ success: true });
+  },
+);
+
 // ─── Route: Send roadmap by email ─────────────────────────────────────────────
 
 router.post(
