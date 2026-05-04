@@ -413,7 +413,52 @@ export function boothLeadStaffAlertEmail(
   };
 }
 
-// ─── Template 11: Staff invitation ────────────────────────────────────────────
+// ─── Template 11: Payment received — staff alert ─────────────────────────────
+
+export function paymentReceivedStaffAlertEmail(
+  clientName: string,
+  clientEmail: string,
+  productLabel: string,
+  amountDisplay: string,
+  isNewAccount: boolean,
+): { subject: string; html: string; text: string } {
+  return {
+    subject: `💳 Payment received — ${clientName} (${productLabel})`,
+    html: layout(`
+      ${h1("Payment Received")}
+      ${p(`A client has just completed payment for <strong>${productLabel}</strong>. ${isNewAccount ? "A new portal account has been created and credentials emailed to the client." : "The client already had an account — their access has been upgraded."}`)}
+      <table cellpadding="0" cellspacing="0" style="border:1px solid #e9ecef;border-radius:8px;width:100%;margin:0 0 24px;overflow:hidden;">
+        <tr style="background:#f8f9fb;">
+          <td colspan="2" style="padding:10px 16px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;">Payment Details</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;width:130px;">Client</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;">${clientName}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Email</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;"><a href="mailto:${clientEmail}" style="color:#1E2D6B;">${clientEmail}</a></td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Product</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;">${productLabel}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Amount</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#16a34a;border-top:1px solid #e9ecef;">${amountDisplay}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Account</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;">${isNewAccount ? "New — credentials sent to client" : "Existing — access upgraded"}</td>
+        </tr>
+      </table>
+      ${btn("View in Cases", `${APP_URL}/internal/cases`)}
+    `),
+    text: `Payment received!\n\nClient: ${clientName}\nEmail: ${clientEmail}\nProduct: ${productLabel}\nAmount: ${amountDisplay}\nAccount: ${isNewAccount ? "New — credentials sent to client" : "Existing — access upgraded"}\n\nView cases at ${APP_URL}/internal/cases`,
+  };
+}
+
+// ─── Template 12: Staff invitation ────────────────────────────────────────────
 
 export function prospectInviteEmail(
   firstName: string,

@@ -3,9 +3,11 @@ import Stripe from "stripe";
 import crypto from "crypto";
 import { db, purchasesTable, clientUserProductsTable, profilesTable, pendingAccessGrantsTable, prospectsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { sendEmail, purchaseConfirmationEmail, prospectAccountCreatedEmail } from "../services/emailService";
+import { sendEmail, purchaseConfirmationEmail, prospectAccountCreatedEmail, paymentReceivedStaffAlertEmail } from "../services/emailService";
 import { hashPassword } from "../services/auth";
 import { provisionClientDriveFromProspect } from "../services/googleDrive";
+
+const STAFF_EMAIL = "support@pinnaclecube.com";
 
 const router = Router();
 
@@ -305,6 +307,29 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
                 .where(eq(prospectsTable.id, prospectId));
             }
             resolvedProfileId = existingProfile.id;
+          }
+
+          // ── Staff payment alert ───────────────────────────────────────
+          if (resolvedProfileId) {
+            const amountDisplay = config
+              ? (config.numericAmount === "0" && session.amount_total
+                  ? `$${Math.round(session.amount_total / 100)}`
+                  : config.displayPrice)
+              : session.amount_total
+                ? `$${Math.round(session.amount_total / 100)}`
+                : "—";
+            sendEmail(
+              STAFF_EMAIL,
+              paymentReceivedStaffAlertEmail(
+                existingProspect.fullName,
+                prospectEmail,
+                config?.label ?? product ?? "Unknown product",
+                amountDisplay,
+                profileJustCreated,
+              ),
+            ).catch((err: unknown) => {
+              console.error("[stripe/webhook] Staff payment alert failed:", err);
+            });
           }
 
           // ── Provision Drive workspace in background ──────────────────────

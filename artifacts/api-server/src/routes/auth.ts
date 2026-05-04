@@ -12,7 +12,9 @@ import {
   stripPassword,
 } from "../services/auth";
 import { requireClientAuth } from "../middlewares/clientAuth";
-import { sendEmail, welcomeEmail, passwordResetRequestEmail, prospectAccountCreatedEmail } from "../services/emailService";
+import { sendEmail, welcomeEmail, passwordResetRequestEmail, prospectAccountCreatedEmail, paymentReceivedStaffAlertEmail } from "../services/emailService";
+
+const STAFF_EMAIL = "support@pinnaclecube.com";
 
 const router = Router();
 
@@ -567,6 +569,28 @@ router.post("/auth/payment-provision-and-login", async (req, res): Promise<void>
     res.status(500).json({ error: "Failed to create or find account" });
     return;
   }
+
+  // ── Staff payment alert ─────────────────────────────────────────────────────
+  const amountDisplay = config
+    ? (config.numericAmount === "0" && session.amount_total
+        ? `$${Math.round(session.amount_total / 100)}`
+        : config.numericAmount !== "0"
+          ? `$${config.numericAmount}`
+          : "—")
+    : session.amount_total
+      ? `$${Math.round(session.amount_total / 100)}`
+      : "—";
+
+  sendEmail(
+    STAFF_EMAIL,
+    paymentReceivedStaffAlertEmail(
+      profile.name ?? customerEmail,
+      customerEmail,
+      config?.label ?? product ?? "Unknown product",
+      amountDisplay,
+      !existingProfile,
+    ),
+  ).catch(() => {});
 
   const requiresPasswordChange = profile.mustChangePassword ?? false;
   const requiresReconsent =
