@@ -2,6 +2,7 @@ import { Router } from "express";
 import { desc, eq } from "drizzle-orm";
 import crypto from "crypto";
 import { z } from "zod";
+import Stripe from "stripe";
 import { db, profilesTable, pendingAccessGrantsTable, clientUserProductsTable, purchasesTable } from "@workspace/db";
 import {
   hashPassword,
@@ -11,7 +12,7 @@ import {
   stripPassword,
 } from "../services/auth";
 import { requireClientAuth } from "../middlewares/clientAuth";
-import { sendEmail, welcomeEmail, passwordResetRequestEmail } from "../services/emailService";
+import { sendEmail, welcomeEmail, passwordResetRequestEmail, prospectAccountCreatedEmail } from "../services/emailService";
 
 const router = Router();
 
@@ -416,6 +417,170 @@ router.post("/auth/reset-password-by-token", async (req, res) => {
 
   const sessionToken = generateToken(updated);
   res.json({ success: true, token: sessionToken, user: stripPassword(updated) });
+});
+
+// ─── POST /api/auth/payment-provision-and-login ──────────────────────────────
+// Called by the /payment-success page immediately on load — does NOT wait for
+// the Stripe webhook. Fetches the session directly from Stripe, creates/finds
+// the profile + product access row, and returns a JWT in one shot.
+// Idempotent: safe to call multiple times; onConflictDoNothing guards duplicates.
+
+const PAYMENT_PRODUCT_CONFIGS: Record<string, {
+  accessLevel: string;
+  label: string;
+  numericAmount: string;
+}> = {
+  excellence_lab: { accessLevel: "excellence_lab", label: "Excellence Lab", numericAmount: "249" },
+  evidence_vault: { accessLevel: "evidence_vault", label: "Evidence Engine", numericAmount: "49" },
+  elite_blueprint: { accessLevel: "elite_blueprint", label: "Elite Blueprint", numericAmount: "0" },
+};
+
+router.post("/auth/payment-provision-and-login", async (req, res): Promise<void> => {
+  const { sessionId } = req.body as { sessionId?: string };
+  if (!sessionId || typeof sessionId !== "string") {
+    res.status(400).json({ error: "sessionId is required" });
+    return;
+  }
+
+  const stripeKey = process.env.STRIPE_SECRET_KEY;
+  if (!stripeKey) {
+    res.status(503).json({ error: "Payment system not configured" });
+    return;
+  }
+
+  // 1. Fetch the Stripe session directly — no webhook dependency
+  let session: Stripe.Checkout.Session;
+  try {
+    const stripe = new Stripe(stripeKey);
+    session = await stripe.checkout.sessions.retrieve(sessionId);
+  } catch {
+    res.status(400).json({ error: "Invalid or expired session" });
+    return;
+  }
+
+  if (session.payment_status !== "paid") {
+    res.status(402).json({ error: "Payment not yet confirmed" });
+    return;
+  }
+
+  const product = session.metadata?.product ?? null;
+  const customerEmail = (
+    session.customer_email ?? session.customer_details?.email ?? null
+  )?.toLowerCase();
+
+  if (!customerEmail) {
+    res.status(400).json({ error: "No email found on Stripe session" });
+    return;
+  }
+
+  const config = product ? PAYMENT_PRODUCT_CONFIGS[product] : null;
+
+  // 2. Find or create the profile
+  const [existingProfile] = await db
+    .select()
+    .from(profilesTable)
+    .where(eq(profilesTable.email, customerEmail))
+    .limit(1);
+
+  let profile = existingProfile ?? null;
+
+  if (!profile) {
+    const tempPassword = crypto.randomBytes(6).toString("hex");
+    const passwordHash = await hashPassword(tempPassword);
+
+    const rawName = session.customer_details?.name?.trim() ?? customerEmail;
+    const nameParts = rawName.split(/\s+/);
+    const firstName = nameParts[0] ?? "Client";
+    const lastName = nameParts.slice(1).join(" ") || firstName;
+
+    const resolvedAmount =
+      config?.numericAmount === "0" && session.amount_total
+        ? String(Math.round(session.amount_total / 100))
+        : config?.numericAmount ?? "0";
+
+    const [newProfile] = await db
+      .insert(profilesTable)
+      .values({
+        name: rawName,
+        firstName,
+        lastName,
+        email: customerEmail,
+        passwordHash,
+        mustChangePassword: true,
+        disclaimerAccepted: false,
+        profession: "",
+        currentStatus: "new",
+        visaTarget: "eb1a",
+        accessLevel: config?.accessLevel ?? "excellence_lab",
+      })
+      .returning();
+
+    profile = newProfile ?? null;
+
+    if (config && product && profile) {
+      await db
+        .insert(clientUserProductsTable)
+        .values({
+          profileId: profile.id,
+          clientEmail: customerEmail,
+          product,
+          stripeSessionId: sessionId,
+          amountPaid: resolvedAmount,
+          status: "active",
+        })
+        .onConflictDoNothing();
+    }
+
+    await db
+      .delete(pendingAccessGrantsTable)
+      .where(eq(pendingAccessGrantsTable.email, customerEmail));
+
+    if (profile) {
+      sendEmail(
+        customerEmail,
+        prospectAccountCreatedEmail(firstName, customerEmail, tempPassword, config?.label ?? "Pinnacle³"),
+      ).catch(() => {});
+    }
+  } else {
+    // Profile already exists — ensure product access row is present
+    if (config && product) {
+      const resolvedAmount =
+        config.numericAmount === "0" && session.amount_total
+          ? String(Math.round(session.amount_total / 100))
+          : config.numericAmount;
+
+      await db
+        .insert(clientUserProductsTable)
+        .values({
+          profileId: profile.id,
+          clientEmail: customerEmail,
+          product,
+          stripeSessionId: sessionId,
+          amountPaid: resolvedAmount,
+          status: "active",
+        })
+        .onConflictDoNothing();
+    }
+  }
+
+  if (!profile) {
+    res.status(500).json({ error: "Failed to create or find account" });
+    return;
+  }
+
+  const requiresPasswordChange = profile.mustChangePassword ?? false;
+  const requiresReconsent =
+    !profile.disclaimerAccepted ||
+    profile.disclaimerVersion !== CURRENT_DISCLAIMER_VERSION;
+
+  const token = generateToken(profile);
+  res.json({
+    token,
+    product,
+    requiresPasswordChange,
+    requiresReconsent,
+    user: stripPassword(profile),
+  });
 });
 
 // ─── POST /api/auth/session-auto-login ───────────────────────────────────────

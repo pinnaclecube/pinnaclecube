@@ -17,73 +17,43 @@ function getProductRoute(product: string | null): string {
   return PRODUCT_ROUTES[product] ?? "/dashboard";
 }
 
-type Phase = "polling" | "countdown" | "timeout";
+type Phase = "loading" | "ready" | "error";
 
 export default function PaymentSuccess() {
   const [, navigate] = useLocation();
-  const [phase, setPhase] = useState<Phase>("polling");
-  const [countdown, setCountdown] = useState(5);
-  const tokenRef = useRef<string | null>(null);
-  const productRef = useRef<string | null>(null);
-  const requiresPasswordChangeRef = useRef(false);
+  const [phase, setPhase] = useState<Phase>("loading");
+  const destinationRef = useRef<string>("/set-password");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get("session_id");
     if (!sessionId) {
-      setPhase("timeout");
+      setPhase("error");
       return;
     }
 
-    let cancelled = false;
-    let pollCount = 0;
-    const MAX_POLLS = 14; // ~21 seconds at 1.5s intervals
-
-    const poll = async () => {
-      if (cancelled) return;
-      try {
-        const res = await fetch("/api/auth/session-auto-login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.token) {
-            localStorage.setItem(TOKEN_KEY, data.token);
-            tokenRef.current = data.token;
-            productRef.current = data.product ?? null;
-            requiresPasswordChangeRef.current = data.requiresPasswordChange ?? false;
-            if (!cancelled) setPhase("countdown");
-            return;
-          }
-        }
-      } catch { /* ignore network hiccup, keep polling */ }
-
-      pollCount++;
-      if (pollCount >= MAX_POLLS) {
-        if (!cancelled) setPhase("timeout");
-        return;
-      }
-      setTimeout(poll, 1500);
-    };
-
-    poll();
-    return () => { cancelled = true; };
+    fetch("/api/auth/payment-provision-and-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+    })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok || !data.token) throw new Error(data.error ?? "No token");
+        localStorage.setItem(TOKEN_KEY, data.token);
+        destinationRef.current = data.requiresPasswordChange
+          ? "/set-password"
+          : getProductRoute(data.product ?? null);
+        setPhase("ready");
+      })
+      .catch(() => setPhase("error"));
   }, []);
 
   useEffect(() => {
-    if (phase !== "countdown") return;
-    if (countdown <= 0) {
-      const dest = requiresPasswordChangeRef.current
-        ? "/set-password"
-        : getProductRoute(productRef.current);
-      navigate(dest);
-      return;
-    }
-    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    if (phase !== "ready") return;
+    const t = setTimeout(() => navigate(destinationRef.current), 1200);
     return () => clearTimeout(t);
-  }, [phase, countdown, navigate]);
+  }, [phase, navigate]);
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
@@ -104,7 +74,7 @@ export default function PaymentSuccess() {
               Payment confirmed!
             </h1>
 
-            {phase === "polling" && (
+            {phase === "loading" && (
               <>
                 <p className="text-slate-600 leading-relaxed mb-8">
                   Setting up your account — this only takes a moment.
@@ -116,34 +86,19 @@ export default function PaymentSuccess() {
               </>
             )}
 
-            {phase === "countdown" && (
+            {phase === "ready" && (
               <>
                 <p className="text-slate-600 leading-relaxed mb-6">
                   Your account is ready. Signing you in now.
                 </p>
                 <div className="flex flex-col items-center gap-3 py-4">
-                  <div className="relative w-16 h-16">
-                    <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
-                      <circle cx="32" cy="32" r="28" fill="none" stroke="#e2e8f0" strokeWidth="4" />
-                      <circle
-                        cx="32" cy="32" r="28"
-                        fill="none" stroke="#1E2D6B" strokeWidth="4"
-                        strokeDasharray={`${2 * Math.PI * 28}`}
-                        strokeDashoffset={`${2 * Math.PI * 28 * (countdown / 5)}`}
-                        strokeLinecap="round"
-                        style={{ transition: "stroke-dashoffset 1s linear" }}
-                      />
-                    </svg>
-                    <span className="absolute inset-0 flex items-center justify-center text-xl font-bold text-[#1E2D6B]">
-                      {countdown}
-                    </span>
-                  </div>
-                  <p className="text-sm font-medium text-[#1E2D6B]">Signing you in…</p>
+                  <Loader2 className="w-7 h-7 text-[#1E2D6B] animate-spin" />
+                  <p className="text-sm font-medium text-[#1E2D6B]">Taking you to your dashboard…</p>
                 </div>
               </>
             )}
 
-            {phase === "timeout" && (
+            {phase === "error" && (
               <>
                 <p className="text-slate-600 leading-relaxed mb-8">
                   Your payment was received. Check your email for your login credentials, then sign in below.
