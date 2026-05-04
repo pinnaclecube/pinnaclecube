@@ -369,7 +369,7 @@ router.post(
         session = await stripe.checkout.sessions.create({
           line_items: [lineItem],
           mode: config.mode,
-          success_url: `${origin}/dashboard`,
+          success_url: `${origin}/payment-success`,
           cancel_url: `${origin}/products`,
           customer_email: prospect.email,
           expires_at: Math.floor(Date.now() / 1000) + 86400, // 24-hour expiry

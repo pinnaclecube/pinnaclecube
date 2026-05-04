@@ -476,6 +476,36 @@ export function invoiceEmail(
   };
 }
 
+// ─── Template 9: Prospect account created with temp password ──────────────────
+
+export function prospectAccountCreatedEmail(
+  firstName: string,
+  email: string,
+  tempPassword: string,
+  productLabel: string,
+): { subject: string; html: string; text: string } {
+  const loginUrl = `${APP_URL}/login`;
+  return {
+    subject: "Your Pinnacle³ account is ready — sign in now",
+    html: layout(`
+      ${h1(`Welcome to Pinnacle³, ${firstName}!`)}
+      ${p(`Your payment for <strong>${productLabel}</strong> is confirmed and your account has been created. You're all set to get started.`)}
+      <table cellpadding="0" cellspacing="0" style="background:#f0f4ff;border-left:4px solid #1E2D6B;border-radius:0 8px 8px 0;padding:20px 24px;margin:0 0 24px;width:100%;">
+        <tr><td>
+          <p style="margin:0 0 10px;font-size:12px;font-weight:600;color:#1E2D6B;text-transform:uppercase;letter-spacing:.5px;">Your login credentials</p>
+          <p style="margin:0 0 8px;font-size:14px;color:#374151;"><strong>Email:</strong> ${email}</p>
+          <p style="margin:0;font-size:14px;color:#374151;"><strong>Temporary password:</strong> <code style="background:#e8ecf8;padding:3px 10px;border-radius:4px;font-family:monospace;font-size:16px;font-weight:700;color:#1E2D6B;letter-spacing:.05em;">${tempPassword}</code></p>
+        </td></tr>
+      </table>
+      ${p("You will be asked to set a permanent password on your first login. The process takes less than a minute.")}
+      ${btn("Sign in & set your password →", loginUrl)}
+      ${divider()}
+      ${p("<strong>Keep this email safe</strong> — this is the only time your temporary password will be shown. If you run into any trouble, just reply here and we'll help immediately.")}
+    `),
+    text: `Welcome to Pinnacle³, ${firstName}!\n\nYour payment for ${productLabel} is confirmed and your account is ready.\n\nLogin credentials:\nEmail: ${email}\nTemporary password: ${tempPassword}\n\nYou'll be prompted to set a permanent password on first login.\n\nSign in at: ${loginUrl}\n\nKeep this email safe — this is the only time the temporary password is shown.`,
+  };
+}
+
 // ─── Sender helper ─────────────────────────────────────────────────────────────
 
 export interface EmailAttachment {

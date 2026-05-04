@@ -372,7 +372,13 @@ export default function InternalProspectDetail() {
                 <CheckCircle className="w-3.5 h-3.5" /> Paid
               </span>
             )}
-            {prospect.status !== "converted" && (
+            {prospect.status === "converted" && prospect.linkedProfileId ? (
+              <Link href={`/internal/case/${prospect.linkedProfileId}`}>
+                <Button size="sm" className="bg-purple-700 hover:bg-purple-800 text-white">
+                  <UserCheck className="w-3.5 h-3.5 mr-1.5" />View Case
+                </Button>
+              </Link>
+            ) : prospect.status !== "converted" && (
               <Button
                 size="sm"
                 onClick={convertCase}

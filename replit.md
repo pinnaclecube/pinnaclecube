@@ -52,11 +52,11 @@ The application is built as a monorepo using `pnpm` workspaces.
 
 **Technical Implementations & Features:**
 - **Google Drive Auto-Ingest:** A poller service (`driveIngestService.ts`) automatically detects, downloads, extracts text, and inserts files from client Google Drive criterion folders as evidence records. Processing includes AI summary generation.
-- **Stripe Integration:** Handles `Excellence Lab` and `Evidence Engine` purchases via `POST /api/stripe/checkout` and manages access granting via webhook (`POST /api/stripe/webhook`).
+- **Stripe Integration:** Handles `Excellence Lab` and `Evidence Engine` purchases via `POST /api/stripe/checkout` and manages access granting via webhook (`POST /api/stripe/webhook`). When a prospect pays via a staff-sent invoice link, the webhook auto-creates a portal account with a temp password, links `prospectsTable.linkedProfileId`, and emails credentials — skipping the generic purchase-confirmation email. Staff invoice `success_url` is `/payment-success`.
 - **AI Readiness Analysis:** The `GET /api/intake/analysis` endpoint uses Claude to analyze intake data, providing `overallReadiness`, `strongAreas`, `recommendedAreas`, and a `roadmap`. Results are cached.
 - **Readiness Intake:** A 6-step wizard, including resume upload to Google Drive via `POST /api/intake/resume`.
-- **Internal Staff Portal:** Located at `/internal/`, it provides comprehensive tools for managing cases, prospects, Elite Blueprint applications, evidence, and petition generation. Access is gated by `X-Staff-Token`.
-- **Authentication System:** JWT-based authentication stored in `localStorage['pinnacle_token']` for clients. Staff authentication uses `X-Staff-Token` in `sessionStorage`. Includes registration, login, profile management, password reset, and a disclaimer acceptance flow.
+- **Internal Staff Portal:** Located at `/internal/`, it provides comprehensive tools for managing cases, prospects, Elite Blueprint applications, evidence, and petition generation. Access is gated by `X-Staff-Token`. The Prospects list defaults to hiding converted prospects (toggle on page header); converted prospects with a `linkedProfileId` show a "View Case" deep-link in their detail view.
+- **Authentication System:** JWT-based authentication stored in `localStorage['pinnacle_token']` for clients. Staff authentication uses `X-Staff-Token` in `sessionStorage`. Includes registration, login, profile management, password reset, disclaimer acceptance flow, and a first-login forced password-change flow (`mustChangePassword` column + `POST /api/auth/set-password` light-auth endpoint + `/set-password` page).
 - **Legal/Disclaimer System:** Features `LegalFooterBar`, `AIOutputBanner`, `LessonDisclaimer`, `DocumentDisclaimer`, `AIBadge`, and `ReconsentModal` to manage legal compliance and AI disclaimers. A `DisclaimerContext` handles reconsent flow when disclaimer versions change.
 
 **Core Components:**

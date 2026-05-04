@@ -1,8 +1,10 @@
 import { Router } from "express";
 import Stripe from "stripe";
+import crypto from "crypto";
 import { db, purchasesTable, clientUserProductsTable, profilesTable, pendingAccessGrantsTable, prospectsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { sendEmail, purchaseConfirmationEmail } from "../services/emailService";
+import { sendEmail, purchaseConfirmationEmail, prospectAccountCreatedEmail } from "../services/emailService";
+import { hashPassword } from "../services/auth";
 
 const router = Router();
 
@@ -174,9 +176,14 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
     // that complete the session before funds are settled. Write paymentReceivedAt
     // only when not already set to preserve the original first-paid timestamp.
     const paymentConfirmed = session.payment_status === "paid";
+
+    // Track whether we auto-created a profile in the prospect block below so we
+    // can skip the duplicate purchase-confirmation email in the general block.
+    let profileJustCreated = false;
+
     if (prospectId && !isNaN(prospectId) && paymentConfirmed) {
       const [existingProspect] = await db
-        .select({ paymentReceivedAt: prospectsTable.paymentReceivedAt })
+        .select()
         .from(prospectsTable)
         .where(eq(prospectsTable.id, prospectId))
         .limit(1);
@@ -192,6 +199,109 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
           .catch((err: unknown) => {
             console.error("[stripe/webhook] Failed to mark prospect paid:", err);
           });
+      }
+
+      // ── Auto-create a portal account for the prospect ───────────────────────
+      // If the prospect paid via a staff-sent invoice link and doesn't have a
+      // portal account yet, create one with a temporary password and email them
+      // their login credentials. They'll be required to set a permanent password
+      // on first login (mustChangePassword = true).
+      if (existingProspect && existingProspect.email && product) {
+        try {
+          const config = PRODUCT_CONFIGS[product];
+          const prospectEmail = existingProspect.email.toLowerCase();
+
+          const [existingProfile] = await db
+            .select({ id: profilesTable.id })
+            .from(profilesTable)
+            .where(eq(profilesTable.email, prospectEmail))
+            .limit(1);
+
+          if (!existingProfile) {
+            // Generate a secure readable temp password (no ambiguous characters)
+            const tempPassword = crypto.randomBytes(6).toString("hex"); // 12 hex chars
+
+            const passwordHash = await hashPassword(tempPassword);
+
+            const nameParts = existingProspect.fullName.trim().split(/\s+/);
+            const firstName = nameParts[0] ?? existingProspect.fullName;
+            const lastName = nameParts.slice(1).join(" ") || firstName;
+
+            // Resolve amount for custom-priced products
+            const resolvedAmountForProfile =
+              config && config.numericAmount === "0" && session.amount_total
+                ? String(Math.round(session.amount_total / 100))
+                : config?.numericAmount ?? "0";
+
+            const [newProfile] = await db
+              .insert(profilesTable)
+              .values({
+                name: existingProspect.fullName,
+                firstName,
+                lastName,
+                email: prospectEmail,
+                passwordHash,
+                mustChangePassword: true,
+                disclaimerAccepted: false,
+                profession: existingProspect.currentRole ?? "",
+                currentStatus: "new",
+                visaTarget: "eb1a",
+                accessLevel: config?.accessLevel ?? "excellence_lab",
+              })
+              .returning();
+
+            // Grant product access
+            if (config && newProfile) {
+              await db
+                .insert(clientUserProductsTable)
+                .values({
+                  profileId: newProfile.id,
+                  clientEmail: prospectEmail,
+                  product,
+                  stripeSessionId: session.id,
+                  amountPaid: resolvedAmountForProfile,
+                  status: "active",
+                })
+                .onConflictDoNothing();
+            }
+
+            // Link profile ↔ prospect
+            if (newProfile) {
+              await db
+                .update(prospectsTable)
+                .set({ linkedProfileId: newProfile.id })
+                .where(eq(prospectsTable.id, prospectId));
+            }
+
+            // Clean up any stale pending grants for this email
+            await db
+              .delete(pendingAccessGrantsTable)
+              .where(eq(pendingAccessGrantsTable.email, prospectEmail));
+
+            // Send account-created email with temp credentials
+            sendEmail(
+              prospectEmail,
+              prospectAccountCreatedEmail(
+                firstName,
+                prospectEmail,
+                tempPassword,
+                config?.label ?? "Pinnacle³",
+              ),
+            ).catch(() => {});
+
+            profileJustCreated = true;
+          } else {
+            // Profile already exists — just make sure the prospect is linked
+            if (!existingProspect.linkedProfileId) {
+              await db
+                .update(prospectsTable)
+                .set({ linkedProfileId: existingProfile.id })
+                .where(eq(prospectsTable.id, prospectId));
+            }
+          }
+        } catch (err) {
+          console.error("[stripe/webhook] Auto-profile creation error:", err);
+        }
       }
     }
 
@@ -251,10 +361,14 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
             .where(eq(pendingAccessGrantsTable.stripeSessionId, session.id));
 
           const firstName = fullProfile?.firstName ?? fullProfile?.name?.split(" ")[0] ?? "there";
-          sendEmail(
-            customerEmail,
-            purchaseConfirmationEmail(firstName, config.label, config.displayPrice),
-          ).catch(() => {});
+          // Skip the generic purchase-confirmation email if we just created this
+          // profile above — the account-created email already covers it.
+          if (!profileJustCreated) {
+            sendEmail(
+              customerEmail,
+              purchaseConfirmationEmail(firstName, config.label, config.displayPrice),
+            ).catch(() => {});
+          }
         } else {
           // No profile yet — store a pending grant. Applied when the user registers.
           await db

@@ -23,7 +23,9 @@ export default function ClientLogin() {
     setLoading(true);
     try {
       const result = await login(form.email, form.password);
-      if (result.requiresReconsent) {
+      if (result.requiresPasswordChange) {
+        navigate("/set-password");
+      } else if (result.requiresReconsent) {
         setRequiresReconsent(true);
       } else if (result.accessLevel === "free") {
         navigate("/choose-plan");

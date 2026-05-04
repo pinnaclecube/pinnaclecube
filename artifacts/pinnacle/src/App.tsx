@@ -31,6 +31,8 @@ import ArticleDetail from "@/pages/ArticleDetail";
 import InstantProfileInsightStart from "@/pages/InstantProfileInsightStart";
 import InstantProfileInsightResults from "@/pages/InstantProfileInsightResults";
 import BoothCapture from "@/pages/BoothCapture";
+import SetPassword from "@/pages/SetPassword";
+import PaymentSuccess from "@/pages/PaymentSuccess";
 
 import Dashboard from "@/pages/dashboard";
 import ChoosePlan from "@/pages/ChoosePlan";
@@ -85,6 +87,8 @@ function Router() {
       <Route path="/terms" component={TermsOfService} />
       <Route path="/privacy-policy" component={PrivacyPolicy} />
       <Route path="/disclaimer" component={Disclaimer} />
+      <Route path="/payment-success" component={PaymentSuccess} />
+      <Route path="/set-password" component={SetPassword} />
 
       {/* Checkout routes */}
       <Route path="/excellence-lab/checkout" component={ExcellenceLabCheckout} />

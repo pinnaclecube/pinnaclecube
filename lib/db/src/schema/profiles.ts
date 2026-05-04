@@ -12,6 +12,7 @@ export const profilesTable = pgTable("profiles", {
   phone: text("phone"),
   // Auth
   passwordHash: text("password_hash"),
+  mustChangePassword: boolean("must_change_password").notNull().default(false),
   // Disclaimer consent
   disclaimerAccepted: boolean("disclaimer_accepted").notNull().default(false),
   disclaimerAcceptedAt: timestamp("disclaimer_accepted_at", { withTimezone: true }),

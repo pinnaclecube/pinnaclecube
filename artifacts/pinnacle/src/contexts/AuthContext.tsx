@@ -27,7 +27,7 @@ interface AuthContextValue {
   user: ClientUser | null;
   token: string | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ requiresReconsent?: boolean; accessLevel: string }>;
+  login: (email: string, password: string) => Promise<{ requiresReconsent?: boolean; requiresPasswordChange?: boolean; accessLevel: string }>;
   logout: () => void;
   register: (data: RegisterData) => Promise<void>;
   updateUser: (updates: Partial<ClientUser>) => void;
@@ -98,7 +98,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(TOKEN_KEY, data.token);
     setToken(data.token);
     setUser(u);
-    return { requiresReconsent: data.requiresReconsent ?? false, accessLevel: u.accessLevel };
+    return {
+      requiresReconsent: data.requiresReconsent ?? false,
+      requiresPasswordChange: data.requiresPasswordChange ?? false,
+      accessLevel: u.accessLevel,
+    };
   }, []);
 
   const logout = useCallback(() => {

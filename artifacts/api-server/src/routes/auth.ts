@@ -147,10 +147,13 @@ router.post("/auth/login", async (req, res) => {
     !profile.disclaimerAccepted ||
     profile.disclaimerVersion !== CURRENT_DISCLAIMER_VERSION;
 
+  const requiresPasswordChange = profile.mustChangePassword ?? false;
+
   const token = generateToken(profile);
   res.json({
     token,
     requiresReconsent,
+    requiresPasswordChange,
     user: stripPassword(profile),
   });
 });
@@ -264,6 +267,48 @@ router.post(
     res.json({ success: true });
   },
 );
+
+// ─── POST /api/auth/set-password ─────────────────────────────────────────────
+// First-login password setup for accounts created via the prospect invoice flow.
+// Uses a lighter auth check (token-only, no disclaimer/paywall gate) so new
+// users can set their password before they've accepted the disclaimer.
+router.post("/auth/set-password", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Authorization required" });
+    return;
+  }
+
+  let payload: { sub: number };
+  try {
+    payload = verifyToken(authHeader.slice(7)) as { sub: number };
+  } catch {
+    res.status(401).json({ error: "Invalid or expired token" });
+    return;
+  }
+
+  const { new_password } = req.body as { new_password?: string };
+  if (!new_password || new_password.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
+    return;
+  }
+
+  const passwordHash = await hashPassword(new_password);
+  const [updated] = await db
+    .update(profilesTable)
+    .set({ passwordHash, mustChangePassword: false })
+    .where(eq(profilesTable.id, payload.sub))
+    .returning();
+
+  if (!updated) {
+    res.status(404).json({ error: "Account not found" });
+    return;
+  }
+
+  // Issue a fresh token so the client doesn't need to re-login
+  const newToken = generateToken(updated);
+  res.json({ success: true, token: newToken, user: stripPassword(updated) });
+});
 
 // ─── GET /api/auth/me ────────────────────────────────────────────────────────
 router.get("/auth/me", requireClientAuth, (req: any, res) => {

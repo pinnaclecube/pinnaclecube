@@ -49,6 +49,7 @@ export default function InternalProspects() {
   const [prospects, setProspects] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  const [hideConverted, setHideConverted] = useState(true);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [form, setForm] = useState({ fullName: "", email: "", phone: "", currentRole: "", fieldOfWork: "", sourceType: "manual" });
@@ -83,7 +84,13 @@ export default function InternalProspects() {
     } finally { setSaving(false); }
   };
 
-  const filtered = prospects.filter((p: any) => {
+  const visibleProspects = hideConverted
+    ? prospects.filter((p: any) => p.status !== "converted")
+    : prospects;
+
+  const convertedCount = prospects.filter((p: any) => p.status === "converted").length;
+
+  const filtered = visibleProspects.filter((p: any) => {
     const matchesSearch =
       (p.fullName ?? "").toLowerCase().includes(search.toLowerCase()) ||
       (p.email ?? "").toLowerCase().includes(search.toLowerCase()) ||
@@ -98,8 +105,8 @@ export default function InternalProspects() {
 
   const countFor = (key: SourceFilter) =>
     key === "all"
-      ? prospects.length
-      : prospects.filter((p) => (p.sourceType ?? "manual") === key).length;
+      ? visibleProspects.length
+      : visibleProspects.filter((p) => (p.sourceType ?? "manual") === key).length;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -108,11 +115,30 @@ export default function InternalProspects() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-2xl font-bold">Prospects</h2>
-            <p className="text-sm text-muted-foreground">{prospects.length} total</p>
+            <p className="text-sm text-muted-foreground">
+              {visibleProspects.length} showing
+              {hideConverted && convertedCount > 0 && (
+                <span className="ml-1 text-purple-600">· {convertedCount} converted hidden</span>
+              )}
+            </p>
           </div>
-          <Button size="sm" onClick={() => setShowAddModal(true)} className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
-            <Plus className="w-4 h-4 mr-1.5" /> Add Prospect
-          </Button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setHideConverted((v) => !v)}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
+                hideConverted
+                  ? "bg-white border-gray-200 text-gray-600 hover:border-gray-300"
+                  : "bg-purple-100 border-purple-200 text-purple-700",
+              )}
+            >
+              <span className={cn("w-2 h-2 rounded-full", hideConverted ? "bg-gray-300" : "bg-purple-500")} />
+              {hideConverted ? "Show converted" : "Hide converted"}
+            </button>
+            <Button size="sm" onClick={() => setShowAddModal(true)} className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
+              <Plus className="w-4 h-4 mr-1.5" /> Add Prospect
+            </Button>
+          </div>
         </div>
 
         {/* Source filter tabs */}
