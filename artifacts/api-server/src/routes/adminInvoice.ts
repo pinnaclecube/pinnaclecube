@@ -7,11 +7,13 @@
 
 import { Router, type IRouter, type Request, type Response } from "express";
 import { eq, and, desc } from "drizzle-orm";
-import { db, prospectsTable, purchasesTable } from "@workspace/db";
+import { db, prospectsTable, purchasesTable, profilesTable } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
-import { sendEmail, invoiceEmail, prospectInviteEmail } from "../services/emailService";
+import { sendEmail, invoiceEmail, prospectInviteEmail, prospectAccountCreatedEmail } from "../services/emailService";
 import Stripe from "stripe";
 import PDFDocument from "pdfkit";
+import bcrypt from "bcrypt";
+import crypto from "crypto";
 
 const router: IRouter = Router();
 
@@ -461,22 +463,61 @@ router.post(
     const [prospect] = await db.select().from(prospectsTable).where(eq(prospectsTable.id, id)).limit(1);
     if (!prospect) { res.status(404).json({ error: "Prospect not found" }); return; }
 
+    const prospectEmail = prospect.email.toLowerCase();
+    const nameParts = prospect.fullName.trim().split(/\s+/);
+    const firstName = nameParts[0] ?? prospect.fullName;
+    const lastName = nameParts.slice(1).join(" ") || firstName;
+
+    // ── Auto-create a profile if one doesn't exist for this email ──────────────
+    let linkedProfileId = prospect.linkedProfileId ?? null;
+
+    const [existingProfile] = await db
+      .select({ id: profilesTable.id })
+      .from(profilesTable)
+      .where(eq(profilesTable.email, prospectEmail))
+      .limit(1);
+
+    if (existingProfile) {
+      linkedProfileId = existingProfile.id;
+    } else {
+      const tempPassword = crypto.randomBytes(6).toString("hex");
+      const passwordHash = await bcrypt.hash(tempPassword, 12);
+
+      const [newProfile] = await db
+        .insert(profilesTable)
+        .values({
+          name: prospect.fullName,
+          firstName,
+          lastName,
+          email: prospectEmail,
+          passwordHash,
+          mustChangePassword: true,
+          disclaimerAccepted: false,
+          profession: prospect.currentRole ?? "",
+          currentStatus: "new",
+          visaTarget: (prospect.roadmapVisaCategory?.toLowerCase().replace(/[^a-z0-9]/g, "") ?? "eb1a"),
+          accessLevel: "free",
+        })
+        .returning();
+
+      if (newProfile) {
+        linkedProfileId = newProfile.id;
+        sendEmail(
+          prospectEmail,
+          prospectAccountCreatedEmail(firstName, prospectEmail, tempPassword, "Pinnacle³"),
+        ).catch(() => {});
+      }
+    }
+
     const alreadyInvited = prospect.registrationStatus !== "not_invited";
 
     const [updated] = await db.update(prospectsTable).set({
       status: "converted",
       registrationStatus: alreadyInvited ? prospect.registrationStatus : "invited",
+      ...(linkedProfileId ? { linkedProfileId } : {}),
     }).where(eq(prospectsTable.id, id)).returning();
 
-    // Send registration invite email (same flow as /invite endpoint)
-    if (prospect.email) {
-      const origin = process.env.FRONTEND_URL ?? "https://pinnaclecube.com";
-      const registrationLink = `${origin}/register?invite=${encodeURIComponent(prospect.email)}`;
-      const firstName = prospect.fullName.split(" ")[0] ?? prospect.fullName;
-      sendEmail(prospect.email, prospectInviteEmail(firstName, registrationLink)).catch(() => {});
-    }
-
-    res.json({ success: true, prospect: updated, message: "Prospect converted and invite sent" });
+    res.json({ success: true, prospect: updated, message: "Prospect converted and case created" });
   },
 );
 
