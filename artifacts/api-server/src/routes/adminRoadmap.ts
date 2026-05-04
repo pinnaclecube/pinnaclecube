@@ -269,6 +269,44 @@ router.post(
   },
 );
 
+// ─── Route: Download uploaded roadmap ────────────────────────────────────────
+
+router.get(
+  "/admin/prospects/:id/roadmap/upload/download",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+    const [prospect] = await db
+      .select({
+        roadmapUploadedData: prospectsTable.roadmapUploadedData,
+        roadmapUploadedFileName: prospectsTable.roadmapUploadedFileName,
+      })
+      .from(prospectsTable)
+      .where(eq(prospectsTable.id, id))
+      .limit(1);
+
+    if (!prospect?.roadmapUploadedData) {
+      res.status(404).json({ error: "No uploaded roadmap found" });
+      return;
+    }
+
+    const fileName = prospect.roadmapUploadedFileName ?? "roadmap";
+    const isPdf = fileName.toLowerCase().endsWith(".pdf");
+    const contentType = isPdf
+      ? "application/pdf"
+      : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+    const fileBuffer = Buffer.from(prospect.roadmapUploadedData, "base64");
+
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.setHeader("Content-Length", fileBuffer.length);
+    res.end(fileBuffer);
+  },
+);
+
 // ─── Route: Remove uploaded roadmap ──────────────────────────────────────────
 
 router.delete(

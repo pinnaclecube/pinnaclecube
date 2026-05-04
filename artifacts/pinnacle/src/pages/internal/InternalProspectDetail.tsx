@@ -684,6 +684,38 @@ export default function InternalProspectDetail() {
                     <span className="text-xs text-muted-foreground">
                       Uploaded {new Date(prospect.roadmapUploadedAt).toLocaleDateString()}
                     </span>
+                    <a
+                      href={`/api/admin/prospects/${prospect.id}/roadmap/upload/download`}
+                      download={prospect.roadmapUploadedFileName ?? "roadmap"}
+                      className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 transition-colors"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const token = getStaffToken() ?? "";
+                        fetch(`/api/admin/prospects/${prospect.id}/roadmap/upload/download`, {
+                          headers: { "X-Staff-Token": token },
+                        })
+                          .then((res) => {
+                            if (!res.ok) {
+                              alert(`Failed to download roadmap (${res.status}). Please try again.`);
+                              return;
+                            }
+                            res.blob().then((blob) => {
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement("a");
+                              a.href = url;
+                              a.download = prospect.roadmapUploadedFileName ?? "roadmap";
+                              a.click();
+                              URL.revokeObjectURL(url);
+                            });
+                          })
+                          .catch(() => {
+                            alert("Network error downloading roadmap. Please try again.");
+                          });
+                      }}
+                    >
+                      <Download className="w-3 h-3" />
+                      Download
+                    </a>
                     <label className={cn(
                       "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs cursor-pointer transition-colors",
                       roadmapUploading ? "opacity-50 pointer-events-none" : "border-gray-200 hover:bg-gray-50"
