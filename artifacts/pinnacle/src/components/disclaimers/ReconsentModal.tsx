@@ -21,11 +21,14 @@ export function ReconsentModal() {
     if (!canSubmit) return;
     setLoading(true);
     try {
+      const token = localStorage.getItem("pinnacle_token");
       const res = await fetch("/api/auth/accept-disclaimer", {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version: "1.0", accepted: true }),
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ disclaimer_version: "1.0" }),
       });
       if (!res.ok) throw new Error("Failed to save acceptance");
       setRequiresReconsent(false);
