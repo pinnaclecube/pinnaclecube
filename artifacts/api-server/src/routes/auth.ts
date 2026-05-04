@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { db, profilesTable, pendingAccessGrantsTable, clientUserProductsTable } from "@workspace/db";
+import { db, profilesTable, pendingAccessGrantsTable, clientUserProductsTable, purchasesTable } from "@workspace/db";
 import {
   hashPassword,
   comparePassword,
@@ -313,6 +313,75 @@ router.post("/auth/set-password", async (req, res) => {
 // ─── GET /api/auth/me ────────────────────────────────────────────────────────
 router.get("/auth/me", requireClientAuth, (req: any, res) => {
   res.json({ user: stripPassword(req.clientUser) });
+});
+
+// ─── POST /api/auth/session-auto-login ───────────────────────────────────────
+// Called by the /payment-success page after Stripe checkout. Accepts the
+// checkout session ID, looks up the profile that was created by the webhook,
+// and returns a JWT so the user can be signed in automatically.
+// Returns 202 (not ready yet) while the webhook hasn't processed yet — the
+// client polls until it gets a 200 or gives up after ~20 seconds.
+router.post("/auth/session-auto-login", async (req, res) => {
+  const { sessionId } = req.body as { sessionId?: string };
+  if (!sessionId || typeof sessionId !== "string") {
+    res.status(400).json({ error: "sessionId is required" });
+    return;
+  }
+
+  // Look up the client_user_products row written by the webhook
+  const [purchase] = await db
+    .select({
+      clientEmail: clientUserProductsTable.clientEmail,
+      product: clientUserProductsTable.product,
+    })
+    .from(clientUserProductsTable)
+    .where(eq(clientUserProductsTable.stripeSessionId, sessionId))
+    .limit(1);
+
+  // Fallback: also check the purchases table (written slightly earlier)
+  let email = purchase?.clientEmail ?? null;
+  let product = purchase?.product ?? null;
+
+  if (!email) {
+    const [row] = await db
+      .select({ userEmail: purchasesTable.userEmail, product: purchasesTable.product })
+      .from(purchasesTable)
+      .where(eq(purchasesTable.stripeSessionId, sessionId))
+      .limit(1);
+    email = row?.userEmail ?? null;
+    product = row?.product ?? null;
+  }
+
+  if (!email) {
+    // Webhook hasn't processed yet — tell the client to keep polling
+    res.status(202).json({ ready: false });
+    return;
+  }
+
+  const [profile] = await db
+    .select()
+    .from(profilesTable)
+    .where(eq(profilesTable.email, email.toLowerCase()))
+    .limit(1);
+
+  if (!profile) {
+    res.status(202).json({ ready: false });
+    return;
+  }
+
+  const requiresPasswordChange = profile.mustChangePassword ?? false;
+  const requiresReconsent =
+    !profile.disclaimerAccepted ||
+    profile.disclaimerVersion !== (process.env.CURRENT_DISCLAIMER_VERSION ?? "1.0");
+
+  const token = generateToken(profile);
+  res.json({
+    token,
+    product,
+    requiresPasswordChange,
+    requiresReconsent,
+    user: stripPassword(profile),
+  });
 });
 
 export default router;

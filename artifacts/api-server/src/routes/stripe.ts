@@ -287,7 +287,9 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
                 tempPassword,
                 config?.label ?? "Pinnacle³",
               ),
-            ).catch(() => {});
+            ).catch((err: unknown) => {
+              console.error("[stripe/webhook] Failed to send account-created email to", prospectEmail, err);
+            });
 
             profileJustCreated = true;
           } else {
