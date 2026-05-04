@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Checkbox } from "@/components/ui/checkbox";
 import StaffNav from "@/components/layout/StaffNav";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
-import { ArrowLeft, BookOpen, Trophy, Briefcase, Mail, ExternalLink, Check, RefreshCw, Upload, FileText, Sparkles, Download, Send, ChevronDown, ChevronUp, Loader2, CreditCard, UserCheck, Copy, CheckCircle } from "lucide-react";
+import { ArrowLeft, BookOpen, Trophy, Briefcase, Mail, ExternalLink, Check, RefreshCw, Upload, FileText, Sparkles, Download, Send, ChevronDown, ChevronUp, Loader2, CreditCard, UserCheck, Copy, CheckCircle, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const VISA_CATEGORIES = ["EB-1A", "EB-2 NIW", "O-1A"];
@@ -284,6 +284,8 @@ export default function InternalProspectDetail() {
   }
 
   const alreadyInvited = prospect.registrationStatus !== "not_invited";
+  const roadmapReady = Boolean(roadmapData || prospect.roadmapGeneratedAt);
+  const invoiceLocked = !roadmapReady && !prospect.invoiceSentAt && !prospect.paymentReceivedAt;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -624,14 +626,21 @@ export default function InternalProspectDetail() {
           </Card>
 
           {/* ── Proposal & Invoice Card ── */}
-          <Card className="border-purple-100">
+          <Card className={cn("border-purple-100", invoiceLocked && "opacity-75")}>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <CreditCard className="w-4 h-4 text-purple-700" />
                 Proposal & Invoice
+                {invoiceLocked && <Lock className="w-3.5 h-3.5 text-gray-400 ml-1" />}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {invoiceLocked && (
+                <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5">
+                  <Lock className="w-4 h-4 text-gray-400 shrink-0" />
+                  <p className="text-sm text-gray-500">Generate a roadmap above to unlock this section.</p>
+                </div>
+              )}
               {prospect.paymentReceivedAt && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />
@@ -701,7 +710,7 @@ export default function InternalProspectDetail() {
                 </div>
               ) : null}
 
-              <div className="space-y-3">
+              <div className={cn("space-y-3", invoiceLocked && "pointer-events-none select-none")}>
                 <label className="text-xs font-medium text-muted-foreground block">Product to Invoice</label>
                 <div className="flex gap-2 flex-wrap">
                   {[
@@ -711,12 +720,15 @@ export default function InternalProspectDetail() {
                   ].map(({ key, label, price }) => (
                     <button
                       key={key}
+                      disabled={invoiceLocked}
                       onClick={() => { setInvoiceProduct(key); setInvoiceMsg(null); }}
                       className={cn(
                         "px-3 py-2 rounded-md text-sm font-medium border transition-colors text-left",
-                        invoiceProduct === key
-                          ? "bg-purple-700 text-white border-purple-700"
-                          : "text-gray-600 border-gray-200 hover:border-purple-300 hover:text-purple-700"
+                        invoiceLocked
+                          ? "text-gray-400 border-gray-200 bg-gray-50 cursor-not-allowed"
+                          : invoiceProduct === key
+                            ? "bg-purple-700 text-white border-purple-700"
+                            : "text-gray-600 border-gray-200 hover:border-purple-300 hover:text-purple-700"
                       )}
                     >
                       <span className="block">{label}</span>
@@ -736,8 +748,12 @@ export default function InternalProspectDetail() {
                         step="1"
                         placeholder="e.g. 4999"
                         value={eliteAmount}
+                        disabled={invoiceLocked}
                         onChange={(e) => setEliteAmount(e.target.value)}
-                        className="w-full pl-7 pr-3 py-2 rounded-md border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                        className={cn(
+                          "w-full pl-7 pr-3 py-2 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent",
+                          invoiceLocked ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-gray-200"
+                        )}
                       />
                     </div>
                     <p className="text-xs text-muted-foreground">Whole dollar amount — no decimals needed</p>
@@ -754,7 +770,7 @@ export default function InternalProspectDetail() {
                   <Button
                     size="sm"
                     onClick={sendInvoice}
-                    disabled={invoiceSending || !prospect.email}
+                    disabled={invoiceSending || !prospect.email || invoiceLocked}
                     className="bg-purple-700 hover:bg-purple-800 text-white"
                   >
                     {invoiceSending
