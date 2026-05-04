@@ -5,6 +5,7 @@ import { db, purchasesTable, clientUserProductsTable, profilesTable, pendingAcce
 import { eq } from "drizzle-orm";
 import { sendEmail, purchaseConfirmationEmail, prospectAccountCreatedEmail } from "../services/emailService";
 import { hashPassword } from "../services/auth";
+import { provisionClientDriveFromProspect } from "../services/googleDrive";
 
 const router = Router();
 
@@ -217,6 +218,8 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
             .where(eq(profilesTable.email, prospectEmail))
             .limit(1);
 
+          let resolvedProfileId: number | null = null;
+
           if (!existingProfile) {
             // Generate a secure readable temp password (no ambiguous characters)
             const tempPassword = crypto.randomBytes(6).toString("hex"); // 12 hex chars
@@ -271,6 +274,7 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
                 .update(prospectsTable)
                 .set({ linkedProfileId: newProfile.id })
                 .where(eq(prospectsTable.id, prospectId));
+              resolvedProfileId = newProfile.id;
             }
 
             // Clean up any stale pending grants for this email
@@ -300,6 +304,21 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
                 .set({ linkedProfileId: existingProfile.id })
                 .where(eq(prospectsTable.id, prospectId));
             }
+            resolvedProfileId = existingProfile.id;
+          }
+
+          // ── Provision Drive workspace in background ──────────────────────
+          if (resolvedProfileId) {
+            setImmediate(() => {
+              provisionClientDriveFromProspect(resolvedProfileId!, prospectEmail, {
+                driveFileId: existingProspect.driveFileId,
+                resumeFileName: existingProspect.resumeFileName,
+                fullName: existingProspect.fullName,
+              }).catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                console.error("[stripe/webhook] Drive provision failed for profile", resolvedProfileId, ":", msg);
+              });
+            });
           }
         } catch (err) {
           console.error("[stripe/webhook] Auto-profile creation error:", err);

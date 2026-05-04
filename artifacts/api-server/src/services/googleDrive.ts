@@ -508,7 +508,60 @@ export async function publishPetitionFile(
   return { id: res.data.id!, webViewLink: res.data.webViewLink ?? "" };
 }
 
-// ─── 10. getClientFolderSummary ───────────────────────────────────────────────
+// ─── 10. provisionClientDriveFromProspect ─────────────────────────────────────
+// Creates the standard Drive workspace for a newly converted prospect/case and,
+// if the prospect already has a resume file in Drive, copies it into the new
+// Resume/ folder so staff can find it immediately.
+//
+// Safe to call from setImmediate — all errors are logged, never thrown.
+
+export async function provisionClientDriveFromProspect(
+  profileId: number,
+  clientEmail: string,
+  prospect: {
+    driveFileId?: string | null;
+    resumeFileName?: string | null;
+    fullName: string;
+  },
+): Promise<void> {
+  // 1. Create (or find) the standard folder hierarchy
+  const roots = await createClientRootFolders(profileId, clientEmail);
+
+  // 2. Copy the prospect's resume file into Resume/ if one is stored in Drive
+  if (prospect.driveFileId) {
+    try {
+      const drive = getDriveClient();
+
+      // Build a tidy file name: Resume_<LastName>_<YYYY-MM-DD>.<ext>
+      const nameParts = prospect.fullName.trim().split(/\s+/);
+      const lastName = (nameParts.slice(1).join("_") || nameParts[0]) ?? "Client";
+      const date = new Date().toISOString().split("T")[0];
+      const ext =
+        prospect.resumeFileName && prospect.resumeFileName.includes(".")
+          ? "." + prospect.resumeFileName.split(".").pop()
+          : "";
+      const fileName = `Resume_${sanitizeFileName(lastName)}_${date}${ext}`;
+
+      await drive.files.copy({
+        fileId: prospect.driveFileId,
+        requestBody: {
+          name: fileName,
+          parents: [roots.resumeFolderId],
+        },
+        fields: "id",
+      });
+    } catch (copyErr: unknown) {
+      // Non-fatal — workspace was still created; log and continue
+      const msg = copyErr instanceof Error ? copyErr.message : String(copyErr);
+      console.error(
+        `[provisionClientDriveFromProspect] Resume copy failed for profile ${profileId}:`,
+        msg,
+      );
+    }
+  }
+}
+
+// ─── 11. getClientFolderSummary ───────────────────────────────────────────────
 
 export async function getClientFolderSummary(userId: number) {
   const [driveRoot] = await db
