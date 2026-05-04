@@ -191,6 +191,26 @@ router.patch(
   },
 );
 
+// ─── Delete prospect ───────────────────────────────────────────────────────────
+
+router.delete(
+  "/admin/prospects/:id",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+    const [deleted] = await db
+      .delete(prospectsTable)
+      .where(eq(prospectsTable.id, id))
+      .returning({ id: prospectsTable.id });
+
+    if (!deleted) { res.status(404).json({ error: "Prospect not found" }); return; }
+
+    res.json({ success: true });
+  },
+);
+
 // ─── Invite prospect ───────────────────────────────────────────────────────────
 
 router.post(

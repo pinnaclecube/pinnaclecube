@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, useParams } from "wouter";
+import { Link, useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Checkbox } from "@/components/ui/checkbox";
 import StaffNav from "@/components/layout/StaffNav";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
-import { ArrowLeft, BookOpen, Trophy, Briefcase, Mail, ExternalLink, Check, RefreshCw, Upload, FileText, Sparkles, Download, Send, ChevronDown, ChevronUp, Loader2, CreditCard, UserCheck, Copy, CheckCircle, Lock, X } from "lucide-react";
+import { ArrowLeft, BookOpen, Trophy, Briefcase, Mail, ExternalLink, Check, RefreshCw, Upload, FileText, Sparkles, Download, Send, ChevronDown, ChevronUp, Loader2, CreditCard, UserCheck, Copy, CheckCircle, Lock, X, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const VISA_CATEGORIES = ["EB-1A", "EB-2 NIW", "O-1A"];
@@ -67,6 +67,9 @@ export default function InternalProspectDetail() {
 
   const [converting, setConverting] = useState(false);
   const [convertMsg, setConvertMsg] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [, navigate] = useLocation();
 
   const fetchSessionStatus = async (prospectId: string) => {
     try {
@@ -299,6 +302,21 @@ export default function InternalProspectDetail() {
     setConverting(false);
   };
 
+  const deleteProspect = async () => {
+    setDeleting(true);
+    try {
+      const r = await staffFetch(`/admin/prospects/${id}`, { method: "DELETE" });
+      if (r.ok) {
+        navigate("/internal/prospects");
+      } else {
+        const d = await r.json();
+        setConvertMsg(d.error ?? "Delete failed");
+        setShowDeleteConfirm(false);
+      }
+    } catch { setConvertMsg("Delete failed"); setShowDeleteConfirm(false); }
+    setDeleting(false);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -354,7 +372,17 @@ export default function InternalProspectDetail() {
           </div>
           <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
             {!editing ? (
-              <Button size="sm" variant="outline" onClick={() => setEditing(true)}>Edit</Button>
+              <>
+                <Button size="sm" variant="outline" onClick={() => setEditing(true)}>Edit</Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" />Delete
+                </Button>
+              </>
             ) : (
               <>
                 <Button size="sm" variant="ghost" onClick={() => { setEditing(false); setEditForm(prospect); }}>Cancel</Button>
@@ -954,6 +982,27 @@ export default function InternalProspectDetail() {
           </Card>
         </div>
       </main>
+
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-red-700">Delete prospect?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground py-2">
+            This will permanently delete <strong>{prospect?.fullName}</strong> and all associated data (notes, roadmap, invoice history). This cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)} disabled={deleting}>Cancel</Button>
+            <Button
+              onClick={deleteProspect}
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleting ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Deleting…</> : <><Trash2 className="w-3.5 h-3.5 mr-1.5" />Delete permanently</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showInviteConfirm} onOpenChange={setShowInviteConfirm}>
         <DialogContent>
