@@ -112,13 +112,15 @@ function FileRow({ file, onPreview, indent }: FileRowProps) {
         >
           <Eye className="w-3 h-3" /> Preview
         </Button>
-        {file.webViewLink && (
-          <a href={file.webViewLink} target="_blank" rel="noopener noreferrer">
-            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs gap-1" title="Open in Drive">
-              <ExternalLink className="w-3 h-3" />
-            </Button>
-          </a>
-        )}
+        <a
+          href={file.webViewLink ?? `https://drive.google.com/file/d/${file.id}/view`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs gap-1" title="Open in Drive">
+            <ExternalLink className="w-3 h-3" />
+          </Button>
+        </a>
       </div>
     </div>
   );
