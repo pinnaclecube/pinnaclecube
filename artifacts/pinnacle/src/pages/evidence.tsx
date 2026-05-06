@@ -17,6 +17,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { DriveFileBrowser } from "@/components/evidence/DriveFileBrowser";
+import { useProductAccess } from "@/hooks/useProductAccess";
 
 const TOKEN_KEY = "pinnacle_token";
 function getToken() { return localStorage.getItem(TOKEN_KEY); }
@@ -101,12 +102,86 @@ export default function EvidenceVault() {
   const { data: evidenceList, isLoading, refetch } = useListEvidence();
   const { criteria, requiresIntake, loading: criteriaLoading, refetchCriteria } = useEvidenceCriteria();
   const { syncInfo: driveSync, clearBadge } = useDriveSync();
+  const { hasEvidenceVault } = useProductAccess();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"evidence" | "drive">("evidence");
   const driveToastShown = useRef(false);
 
   const hasDriveFolders = criteria.some((c) => c.drive_folder_url);
+
+  // ── Drive provisioning polling ─────────────────────────────────────────────
+  // When the user has an Evidence Vault subscription but no criteria folders
+  // are connected yet, poll every 5 s (up to 60 s) so the tab self-updates
+  // the moment auto-provisioning completes in the background.
+  //
+  // Split into three effects so the polling interval is NEVER torn down and
+  // restarted mid-flight just because criteriaLoading flips during a refetch.
+  const [isProvisioningDrive, setIsProvisioningDrive] = useState(false);
+  const [justProvisioned, setJustProvisioned] = useState(false);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollCountRef = useRef(0);
+  // Becomes true once the first successful criteria load completes (avoids
+  // criteriaLoading being a dep of the interval-management effect).
+  const [criteriaReady, setCriteriaReady] = useState(false);
+
+  // Effect 1: detect when the first criteria fetch completes (regardless of
+  // list length) so Effect 2 never needs criteriaLoading as a dependency.
+  useEffect(() => {
+    if (!criteriaLoading && !criteriaReady) {
+      setCriteriaReady(true);
+    }
+  }, [criteriaLoading, criteriaReady]);
+
+  // Effect 2: manage the stable polling interval
+  // Deps intentionally exclude criteriaLoading so loading cycles during refetch
+  // do NOT tear down and restart the interval or reset the counter.
+  // Guard !requiresIntake ensures we never poll when intake is incomplete —
+  // auto-provisioning only runs after intake + visa path are set.
+  useEffect(() => {
+    if (!criteriaReady || !hasEvidenceVault || hasDriveFolders || requiresIntake) {
+      return;
+    }
+
+    setIsProvisioningDrive(true);
+    pollCountRef.current = 0;
+
+    // Kick off an immediate first check rather than waiting 5 s.
+    refetchCriteria();
+
+    pollIntervalRef.current = setInterval(() => {
+      pollCountRef.current += 1;
+      if (pollCountRef.current >= 12) {
+        clearInterval(pollIntervalRef.current!);
+        pollIntervalRef.current = null;
+        setIsProvisioningDrive(false);
+        return;
+      }
+      refetchCriteria();
+    }, 5000);
+
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+    };
+  }, [criteriaReady, hasEvidenceVault, hasDriveFolders, requiresIntake, refetchCriteria]);
+
+  // Effect 3: fire the success UI when hasDriveFolders transitions to true.
+  // Auto-dismiss the banner after 8 s so it is transient rather than permanent.
+  useEffect(() => {
+    if (hasDriveFolders && isProvisioningDrive) {
+      setIsProvisioningDrive(false);
+      setJustProvisioned(true);
+      toast({
+        title: "Your Drive folders are ready",
+        description: "Files you drop into these folders will sync automatically into your Evidence Engine.",
+      });
+      const t = setTimeout(() => setJustProvisioned(false), 8000);
+      return () => clearTimeout(t);
+    }
+  }, [hasDriveFolders, isProvisioningDrive, toast]);
 
   const clientDriveFetchFn = useMemo(
     () => () =>
@@ -530,7 +605,7 @@ export default function EvidenceVault() {
 
       <AIOutputBanner variant="analysis" />
 
-      {/* Tab switcher — Drive Files tab only visible when folders are connected */}
+      {/* Tab switcher — Drive Files tab visible when folders are connected or being provisioned */}
       <div className="flex items-center gap-1 border-b mb-6">
         <button
           type="button"
@@ -547,7 +622,7 @@ export default function EvidenceVault() {
             <span className="ml-2 text-xs font-normal text-muted-foreground">({evidenceList.length})</span>
           )}
         </button>
-        {hasDriveFolders && (
+        {(hasDriveFolders || isProvisioningDrive) && (
           <button
             type="button"
             onClick={() => setActiveTab("drive")}
@@ -558,13 +633,22 @@ export default function EvidenceVault() {
                 : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
-            <HardDriveDownload className="w-3.5 h-3.5" /> Drive Files
+            <HardDriveDownload className="w-3.5 h-3.5" />
+            Drive Files
+            {isProvisioningDrive && (
+              <span className="inline-flex items-center justify-center w-2 h-2 rounded-full bg-[#1E2D6B] animate-pulse ml-0.5" />
+            )}
           </button>
         )}
       </div>
 
       {activeTab === "drive" ? (
-        <DriveFileBrowser fetchFn={clientDriveFetchFn} />
+        <DriveFileBrowser
+          key={hasDriveFolders ? "folders-ready" : "no-folders"}
+          fetchFn={clientDriveFetchFn}
+          isProvisioning={isProvisioningDrive}
+          justProvisioned={justProvisioned}
+        />
       ) : (
         <>
           <div className="flex flex-col md:flex-row gap-4 mb-6">

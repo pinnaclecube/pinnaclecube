@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   FileText, FileImage, File, FolderOpen, Folder,
   ExternalLink, Eye, RefreshCw, ChevronDown, ChevronRight,
-  AlertTriangle, Loader2, HardDriveDownload,
+  AlertTriangle, Loader2, HardDriveDownload, CheckCircle2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DrivePreviewModal } from "./DrivePreviewModal";
@@ -37,6 +37,8 @@ export interface DriveCriteriaFolder {
 
 interface DriveFileBrowserProps {
   fetchFn: () => Promise<{ criteria: DriveCriteriaFolder[] }>;
+  isProvisioning?: boolean;
+  justProvisioned?: boolean;
 }
 
 function fileIcon(mimeType: string) {
@@ -244,7 +246,7 @@ function CriteriaFolderSection({ folder, onPreview }: CriteriaFolderSectionProps
   );
 }
 
-export function DriveFileBrowser({ fetchFn }: DriveFileBrowserProps) {
+export function DriveFileBrowser({ fetchFn, isProvisioning = false, justProvisioned = false }: DriveFileBrowserProps) {
   const [criteria, setCriteria] = useState<DriveCriteriaFolder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -283,6 +285,34 @@ export function DriveFileBrowser({ fetchFn }: DriveFileBrowserProps) {
   }
 
   if (criteria.length === 0) {
+    if (isProvisioning) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+          <div className="relative">
+            <div className="w-14 h-14 rounded-full bg-[#1E2D6B]/8 flex items-center justify-center">
+              <HardDriveDownload className="w-7 h-7 text-[#1E2D6B]" />
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white flex items-center justify-center shadow-sm border border-gray-200">
+              <Loader2 className="w-3 h-3 text-[#1E2D6B] animate-spin" />
+            </div>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-foreground">Setting up your Drive folders…</p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+              Your evidence workspace is being created in Google Drive. This usually takes less than a minute — this tab will update automatically.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 mt-1">
+            <div className="flex gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#1E2D6B] animate-bounce [animation-delay:0ms]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#1E2D6B] animate-bounce [animation-delay:150ms]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#1E2D6B] animate-bounce [animation-delay:300ms]" />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
         <HardDriveDownload className="w-10 h-10 text-muted-foreground/50" />
@@ -301,6 +331,15 @@ export function DriveFileBrowser({ fetchFn }: DriveFileBrowserProps) {
 
   return (
     <div className="space-y-3">
+      {justProvisioned && (
+        <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+          <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
+          <p className="text-sm text-green-800 font-medium">
+            Your Drive folders are ready! Files you add to these folders will sync automatically.
+          </p>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
           {totalFiles} file{totalFiles !== 1 ? "s" : ""} across {criteria.length} connected folder{criteria.length !== 1 ? "s" : ""}
