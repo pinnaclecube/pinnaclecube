@@ -95,6 +95,8 @@ export async function findOrCreateFolder(
       fields: "files(id, webViewLink)",
       spaces: "drive",
       pageSize: 1,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
     });
     const files = res.data.files ?? [];
     if (files.length > 0) {
@@ -121,6 +123,7 @@ export async function findOrCreateFolder(
       parents: [parentId],
     },
     fields: "id, webViewLink",
+    supportsAllDrives: true,
   });
 
   return { id: res.data.id!, webViewLink: res.data.webViewLink ?? "" };
@@ -343,6 +346,7 @@ export async function uploadEvidenceFile(
       body: Readable.from(fileBuffer),
     },
     fields: "id, webViewLink",
+    supportsAllDrives: true,
   });
 
   return {
@@ -390,6 +394,7 @@ export async function uploadResumeFile(
       body: Readable.from(fileBuffer),
     },
     fields: "id, webViewLink",
+    supportsAllDrives: true,
   });
 
   return {
@@ -454,6 +459,7 @@ export async function uploadPetitionDraftFile(
       body: Readable.from(fileBuffer),
     },
     fields: "id, webViewLink",
+    supportsAllDrives: true,
   });
 
   return {
@@ -505,6 +511,7 @@ export async function publishPetitionFile(
     fileId: draftFileId,
     requestBody: { parents: [targetFolderId] },
     fields: "id, webViewLink",
+    supportsAllDrives: true,
   });
 
   return { id: res.data.id!, webViewLink: res.data.webViewLink ?? "" };
@@ -551,6 +558,7 @@ export async function provisionClientDriveFromProspect(
           parents: [roots.resumeFolderId],
         },
         fields: "id",
+        supportsAllDrives: true,
       });
     } catch (copyErr: unknown) {
       // Non-fatal — workspace was still created; log and continue
@@ -686,6 +694,8 @@ export async function listFolderFiles(
       fields: "nextPageToken, files(id, name, mimeType, size, modifiedTime, webViewLink)",
       spaces: "drive",
       pageSize: 100,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
       ...(pageToken ? { pageToken } : {}),
     });
 
@@ -725,6 +735,8 @@ export async function listFolderContents(
       fields: "nextPageToken, files(id, name, mimeType, size, modifiedTime, webViewLink)",
       spaces: "drive",
       pageSize: 100,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
       ...(pageToken ? { pageToken } : {}),
     });
 
