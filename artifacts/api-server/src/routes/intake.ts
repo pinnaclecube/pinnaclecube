@@ -138,29 +138,33 @@ router.post("/intake/complete", requireClientAuth, async (req: any, res): Promis
     .set({ readinessCompleted: true, readinessCompletedAt: new Date(), status: "completed" })
     .where(eq(readinessIntakeTable.profileId, profileId));
 
-  setImmediate(async () => {
-    try {
-      // Check for active Evidence Engine subscription
-      const [evProduct] = await db
-        .select({ id: clientUserProductsTable.id })
-        .from(clientUserProductsTable)
-        .where(
-          and(
-            eq(clientUserProductsTable.profileId, profileId),
-            eq(clientUserProductsTable.product, "evidence_vault"),
-            eq(clientUserProductsTable.status, "active"),
-          ),
-        )
-        .limit(1);
+  // Skip Drive provisioning entirely if criteria folders are already set up
+  // (driveFoldersCreated is set to true by createCriteriaEvidenceFolders)
+  if (!intake.driveFoldersCreated) {
+    setImmediate(async () => {
+      try {
+        // Check for active Evidence Engine subscription
+        const [evProduct] = await db
+          .select({ id: clientUserProductsTable.id })
+          .from(clientUserProductsTable)
+          .where(
+            and(
+              eq(clientUserProductsTable.profileId, profileId),
+              eq(clientUserProductsTable.product, "evidence_vault"),
+              eq(clientUserProductsTable.status, "active"),
+            ),
+          )
+          .limit(1);
 
-      // Evidence Engine subscribers: full provision (root + criteria + notification)
-      // All other users: root only (needed for resume upload; no notification)
-      const visaPathToProvision = evProduct ? (intake.visaPath ?? null) : null;
-      await autoProvisionDrive(profileId, profile.email, visaPathToProvision);
-    } catch (err) {
-      console.error(`[intake/complete] Drive provision failed for profile ${profileId}:`, err);
-    }
-  });
+        // Evidence Engine subscribers: full provision (root + criteria + notification)
+        // All other users: root only (needed for resume upload; no notification)
+        const visaPathToProvision = evProduct ? (intake.visaPath ?? null) : null;
+        await autoProvisionDrive(profileId, profile.email, visaPathToProvision);
+      } catch (err) {
+        console.error(`[intake/complete] Drive provision failed for profile ${profileId}:`, err);
+      }
+    });
+  }
 
   if (intake.visaPath) {
     await db

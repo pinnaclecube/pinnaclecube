@@ -591,10 +591,22 @@ export async function autoProvisionDrive(
     if (visaPath) {
       await createCriteriaEvidenceFolders(profileId, visaPath);
 
-      // In-app notification: criteria folders are ready
-      await db
-        .insert(notificationsTable)
-        .values({
+      // In-app notification: criteria folders are ready — dedupe by checking for
+      // existing drive_provisioned notification before inserting (no unique DB
+      // constraint exists on this table, so we guard in code instead)
+      const [existingNotif] = await db
+        .select({ id: notificationsTable.id })
+        .from(notificationsTable)
+        .where(
+          and(
+            eq(notificationsTable.profileId, profileId),
+            eq(notificationsTable.notificationType, "drive_provisioned"),
+          ),
+        )
+        .limit(1);
+
+      if (!existingNotif) {
+        await db.insert(notificationsTable).values({
           profileId,
           userType: "client",
           notificationType: "drive_provisioned",
@@ -604,8 +616,8 @@ export async function autoProvisionDrive(
           link: "/evidence",
           status: "unread",
           priority: "high",
-        })
-        .onConflictDoNothing();
+        });
+      }
     }
 
     // Activity log
