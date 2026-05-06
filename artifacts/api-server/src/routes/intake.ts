@@ -1,10 +1,10 @@
 import { Router } from "express";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import multer from "multer";
 import Anthropic from "@anthropic-ai/sdk";
-import { db, readinessIntakeTable, profilesTable, resumeUploadsTable } from "@workspace/db";
+import { db, readinessIntakeTable, profilesTable, resumeUploadsTable, clientUserProductsTable, clientDriveFoldersTable } from "@workspace/db";
 import { requireClientAuth } from "../middlewares/clientAuth";
-import { createClientRootFolders, uploadResumeFile } from "../services/googleDrive";
+import { autoProvisionDrive, uploadResumeFile } from "../services/googleDrive";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -81,6 +81,41 @@ router.post("/intake", requireClientAuth, async (req: any, res): Promise<void> =
       .returning();
     res.status(201).json({ intake: created });
   }
+
+  // Auto-provision criteria Drive folders when visa path is saved and user has Evidence Engine
+  const newVisaPath = updateData.visaPath as string | undefined;
+  if (newVisaPath && newVisaPath !== "unsure") {
+    const clientEmail = req.clientUser.email as string;
+    setImmediate(async () => {
+      try {
+        // Only for active Evidence Engine subscribers
+        const [evProduct] = await db
+          .select({ id: clientUserProductsTable.id })
+          .from(clientUserProductsTable)
+          .where(
+            and(
+              eq(clientUserProductsTable.profileId, profileId),
+              eq(clientUserProductsTable.product, "evidence_vault"),
+              eq(clientUserProductsTable.status, "active"),
+            ),
+          )
+          .limit(1);
+        if (!evProduct) return;
+
+        // Skip if criteria folders are already set up
+        const [existingFolder] = await db
+          .select({ id: clientDriveFoldersTable.id })
+          .from(clientDriveFoldersTable)
+          .where(eq(clientDriveFoldersTable.profileId, profileId))
+          .limit(1);
+        if (existingFolder) return;
+
+        await autoProvisionDrive(profileId, clientEmail, newVisaPath);
+      } catch (err: unknown) {
+        console.error(`[intake/POST] Drive auto-provision failed for profile ${profileId}:`, err);
+      }
+    });
+  }
 });
 
 // ─── POST /api/intake/complete ────────────────────────────────────────────────
@@ -103,19 +138,29 @@ router.post("/intake/complete", requireClientAuth, async (req: any, res): Promis
     .set({ readinessCompleted: true, readinessCompletedAt: new Date(), status: "completed" })
     .where(eq(readinessIntakeTable.profileId, profileId));
 
-  if (!intake.driveFoldersCreated) {
-    setImmediate(async () => {
-      try {
-        await createClientRootFolders(profileId, profile.email);
-        await db
-          .update(readinessIntakeTable)
-          .set({ driveFoldersCreated: true, driveFoldersCreatedAt: new Date() })
-          .where(eq(readinessIntakeTable.profileId, profileId));
-      } catch (err) {
-        console.error(`[intake/complete] Drive folder creation failed for profile ${profileId}:`, err);
-      }
-    });
-  }
+  setImmediate(async () => {
+    try {
+      // Check for active Evidence Engine subscription
+      const [evProduct] = await db
+        .select({ id: clientUserProductsTable.id })
+        .from(clientUserProductsTable)
+        .where(
+          and(
+            eq(clientUserProductsTable.profileId, profileId),
+            eq(clientUserProductsTable.product, "evidence_vault"),
+            eq(clientUserProductsTable.status, "active"),
+          ),
+        )
+        .limit(1);
+
+      // Evidence Engine subscribers: full provision (root + criteria + notification)
+      // All other users: root only (needed for resume upload; no notification)
+      const visaPathToProvision = evProduct ? (intake.visaPath ?? null) : null;
+      await autoProvisionDrive(profileId, profile.email, visaPathToProvision);
+    } catch (err) {
+      console.error(`[intake/complete] Drive provision failed for profile ${profileId}:`, err);
+    }
+  });
 
   if (intake.visaPath) {
     await db

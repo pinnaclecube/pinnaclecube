@@ -1,11 +1,11 @@
 import { Router } from "express";
 import Stripe from "stripe";
 import crypto from "crypto";
-import { db, purchasesTable, clientUserProductsTable, profilesTable, pendingAccessGrantsTable, prospectsTable } from "@workspace/db";
+import { db, purchasesTable, clientUserProductsTable, profilesTable, pendingAccessGrantsTable, prospectsTable, readinessIntakeTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { sendEmail, purchaseConfirmationEmail, prospectAccountCreatedEmail, paymentReceivedStaffAlertEmail } from "../services/emailService";
 import { hashPassword } from "../services/auth";
-import { provisionClientDriveFromProspect } from "../services/googleDrive";
+import { provisionClientDriveFromProspect, autoProvisionDrive } from "../services/googleDrive";
 
 const STAFF_EMAIL = "support@pinnaclecube.com";
 
@@ -414,6 +414,23 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
               customerEmail,
               purchaseConfirmationEmail(firstName, config.label, config.displayPrice),
             ).catch(() => {});
+          }
+
+          // Auto-provision Google Drive workspace for Evidence Engine purchases
+          if (product === "evidence_vault") {
+            setImmediate(async () => {
+              try {
+                const [intake] = await db
+                  .select({ visaPath: readinessIntakeTable.visaPath })
+                  .from(readinessIntakeTable)
+                  .where(eq(readinessIntakeTable.profileId, profile.id))
+                  .limit(1);
+                await autoProvisionDrive(profile.id, customerEmail, intake?.visaPath ?? null);
+              } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : String(err);
+                console.error(`[stripe/webhook] Drive auto-provision failed for profile ${profile.id}:`, msg);
+              }
+            });
           }
         } else {
           // No profile yet — store a pending grant. Applied when the user registers.

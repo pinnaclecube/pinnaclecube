@@ -14,6 +14,8 @@ import {
   clientDriveRootsTable,
   clientDriveFoldersTable,
   readinessIntakeTable,
+  notificationsTable,
+  clientActivityLogTable,
 } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import {
@@ -561,7 +563,70 @@ export async function provisionClientDriveFromProspect(
   }
 }
 
-// ─── 11. getClientFolderSummary ───────────────────────────────────────────────
+// ─── 11. autoProvisionDrive ───────────────────────────────────────────────────
+// Fire-and-forget helper: creates root + (if visa path known) criteria folders,
+// logs activity, and sends an in-app notification. Never throws.
+
+// Strip separators and lowercase before matching intake / profile values to VisaPathKey
+function normalizeVisaPath(raw: string | null | undefined): VisaPathKey | null {
+  if (!raw) return null;
+  const s = raw.toLowerCase().replace(/[-_ ]/g, "");
+  if (s === "eb1a") return "eb1a";
+  if (s === "niw" || s === "eb2niw") return "niw";
+  if (s === "o1" || s === "o1a") return "o1" as VisaPathKey;
+  return null;
+}
+
+export async function autoProvisionDrive(
+  profileId: number,
+  clientEmail: string,
+  visaPathRaw: string | null | undefined,
+): Promise<void> {
+  try {
+    // Step 1: Root folders — always, idempotent
+    await createClientRootFolders(profileId, clientEmail);
+
+    // Step 2: Per-criterion folders — only when visa path is known
+    const visaPath = normalizeVisaPath(visaPathRaw);
+    if (visaPath) {
+      await createCriteriaEvidenceFolders(profileId, visaPath);
+
+      // In-app notification: criteria folders are ready
+      await db
+        .insert(notificationsTable)
+        .values({
+          profileId,
+          userType: "client",
+          notificationType: "drive_provisioned",
+          title: "Your Drive folders are ready",
+          message:
+            "Your evidence folders have been set up in Google Drive. You can upload files directly in Drive and they will sync automatically into your Evidence Engine.",
+          link: "/evidence",
+          status: "unread",
+          priority: "high",
+        })
+        .onConflictDoNothing();
+    }
+
+    // Activity log
+    await db.insert(clientActivityLogTable).values({
+      profileId,
+      eventType: "drive_auto_provisioned",
+      eventData: {
+        message: visaPath
+          ? `Drive workspace auto-provisioned (${visaPath.toUpperCase()}) — root + criteria folders created.`
+          : "Drive root workspace auto-provisioned (no visa path yet — criteria folders pending).",
+        visaPath: visaPath ?? null,
+      },
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[autoProvisionDrive] Failed for profile ${profileId}:`, msg);
+    // Never rethrow — safe to call from setImmediate
+  }
+}
+
+// ─── 12. getClientFolderSummary ───────────────────────────────────────────────
 
 export async function getClientFolderSummary(userId: number) {
   const [driveRoot] = await db

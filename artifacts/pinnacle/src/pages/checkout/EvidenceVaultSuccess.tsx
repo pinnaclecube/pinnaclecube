@@ -23,10 +23,10 @@ export default function EvidenceVaultSuccess() {
           </div>
           <h1 className="text-3xl font-bold mb-3">Access Activated!</h1>
           <p className="text-muted-foreground mb-2 leading-relaxed">
-            Your Evidence Engine is ready. Your Google Drive folders are being set up — you'll receive an email when they're available.
+            Your Evidence Engine is ready. Your Google Drive root folders are being created now in the background.
           </p>
           <p className="text-muted-foreground mb-8 leading-relaxed">
-            First, complete your <strong>Readiness Intake</strong> so we can personalize your evidence strategy and identify any gaps.
+            Once you complete your <strong>Readiness Intake</strong> and select a visa path, your per-criterion evidence folders will be set up automatically and will appear in the <strong>Drive Files</strong> tab — no manual setup required.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link href="/dashboard/readiness-intake">
