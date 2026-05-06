@@ -14,8 +14,9 @@ import StaffNav from "@/components/layout/StaffNav";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
 import {
   ArrowLeft, Plus, Check, AlertTriangle, Lock,
-  RefreshCw, ExternalLink, Loader2, CheckCircle, Clock, Zap, Activity, FolderOpen, FolderPlus, CloudDownload, ChevronDown, ChevronRight, History,
+  RefreshCw, ExternalLink, Loader2, CheckCircle, Clock, Zap, Activity, FolderOpen, FolderPlus, CloudDownload, ChevronDown, ChevronRight, History, HardDriveDownload,
 } from "lucide-react";
+import { DriveFileBrowser } from "@/components/evidence/DriveFileBrowser";
 import { cn } from "@/lib/utils";
 
 const TABS = ["Overview", "Evidence", "Excellence Lab", "Petition Workspace", "Documents"] as const;
@@ -401,6 +402,15 @@ function EvidenceTab({ userId }: { userId: string }) {
   const [driveSyncStatus, setDriveSyncStatus] = useState<DriveSyncStatus | null>(null);
   const [ingestLog, setIngestLog] = useState<DriveIngestLogEntry[]>([]);
   const [showIngestLog, setShowIngestLog] = useState(false);
+  const [showDriveBrowser, setShowDriveBrowser] = useState(false);
+
+  const staffDriveFetchFn = useCallback(
+    () => staffFetch(`/admin/profiles/${userId}/drive-files`).then((r) => {
+      if (!r.ok) throw new Error("Failed to load Drive files");
+      return r.json();
+    }),
+    [userId],
+  );
 
   const reloadSyncStatus = useCallback(async () => {
     const r = await staffFetch(`/admin/profiles/${userId}/drive-sync-status`);
@@ -598,6 +608,31 @@ function EvidenceTab({ userId }: { userId: string }) {
                 ))}
               </div>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Drive File Browser */}
+      <div className="rounded-lg border bg-white">
+        <button
+          type="button"
+          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+          onClick={() => setShowDriveBrowser((v) => !v)}
+        >
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <HardDriveDownload className="w-4 h-4 text-[#1E2D6B]" />
+            <span>Drive File Browser</span>
+            {driveSyncStatus !== null && driveSyncStatus.foldersConfigured > 0 && (
+              <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-normal">
+                {driveSyncStatus.foldersConfigured} folder{driveSyncStatus.foldersConfigured !== 1 ? "s" : ""} connected
+              </span>
+            )}
+          </div>
+          {showDriveBrowser ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+        </button>
+        {showDriveBrowser && (
+          <div className="border-t p-4">
+            <DriveFileBrowser fetchFn={staffDriveFetchFn} />
           </div>
         )}
       </div>

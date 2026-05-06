@@ -5,7 +5,7 @@ import type { Evidence } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Upload, X, FileText, AlertCircle, CloudDownload, RefreshCw, FolderOpen, Link2, CheckCircle2, ExternalLink } from "lucide-react";
+import { Plus, Search, Upload, X, FileText, AlertCircle, CloudDownload, RefreshCw, FolderOpen, Link2, CheckCircle2, ExternalLink, HardDriveDownload } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
@@ -13,9 +13,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { DriveFileBrowser } from "@/components/evidence/DriveFileBrowser";
 
 const TOKEN_KEY = "pinnacle_token";
 function getToken() { return localStorage.getItem(TOKEN_KEY); }
@@ -102,7 +103,21 @@ export default function EvidenceVault() {
   const { syncInfo: driveSync, clearBadge } = useDriveSync();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"evidence" | "drive">("evidence");
   const driveToastShown = useRef(false);
+
+  const hasDriveFolders = criteria.some((c) => c.drive_folder_url);
+
+  const clientDriveFetchFn = useMemo(
+    () => () =>
+      fetch("/api/evidence/drive-files", {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      }).then((r) => {
+        if (!r.ok) throw new Error("Failed to load Drive files");
+        return r.json();
+      }),
+    [],
+  );
 
   useEffect(() => {
     if (driveToastShown.current) return;
@@ -515,74 +530,113 @@ export default function EvidenceVault() {
 
       <AIOutputBanner variant="analysis" />
 
-      <div className="flex flex-col md:flex-row gap-4 mb-6">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Search evidence…" className="pl-9" />
-        </div>
+      {/* Tab switcher — Drive Files tab only visible when folders are connected */}
+      <div className="flex items-center gap-1 border-b mb-6">
+        <button
+          type="button"
+          onClick={() => setActiveTab("evidence")}
+          className={cn(
+            "px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px",
+            activeTab === "evidence"
+              ? "border-[#1E2D6B] text-[#1E2D6B]"
+              : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          Evidence Records
+          {evidenceList && evidenceList.length > 0 && (
+            <span className="ml-2 text-xs font-normal text-muted-foreground">({evidenceList.length})</span>
+          )}
+        </button>
+        {hasDriveFolders && (
+          <button
+            type="button"
+            onClick={() => setActiveTab("drive")}
+            className={cn(
+              "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px",
+              activeTab === "drive"
+                ? "border-[#1E2D6B] text-[#1E2D6B]"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <HardDriveDownload className="w-3.5 h-3.5" /> Drive Files
+          </button>
+        )}
       </div>
 
-      {isLoading ? (
-        <div className="space-y-4">
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-24 w-full" />
-        </div>
-      ) : !evidenceList || evidenceList.length === 0 ? (
-        <Card className="text-center py-16">
-          <CardContent>
-            <div className="w-16 h-16 rounded-full bg-gray-50 flex items-center justify-center mx-auto mb-4">
-              <Upload className="w-8 h-8 text-muted-foreground" />
-            </div>
-            <h3 className="text-xl font-bold mb-2">No evidence uploaded yet</h3>
-            <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-              Begin by uploading artifacts that substantiate your achievements — publications, awards, letters, and more.
-            </p>
-            <Button onClick={() => setOpen(true)} className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
-              <Upload className="w-4 h-4 mr-2" /> Upload Your First Document
-            </Button>
-          </CardContent>
-        </Card>
+      {activeTab === "drive" ? (
+        <DriveFileBrowser fetchFn={clientDriveFetchFn} />
       ) : (
-        <div className="space-y-4">
-          {(evidenceList as EvidenceItem[]).map((evidence) => (
-            <Link key={evidence.id} href={`/evidence/${evidence.id}`}>
-              <Card className="hover:border-[#1E2D6B]/50 transition-colors cursor-pointer">
-                <CardContent className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className="w-9 h-9 rounded-lg bg-[#1E2D6B]/8 flex items-center justify-center shrink-0">
-                      <FileText className="w-4 h-4 text-[#1E2D6B]" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-3 mb-1 flex-wrap">
-                        <h3 className="font-bold text-foreground truncate">{evidence.title}</h3>
-                        <Badge variant="secondary" className={getStatusColor(evidence.status)}>
-                          {evidence.status.charAt(0).toUpperCase() + evidence.status.slice(1)}
-                        </Badge>
-                        {evidence.primaryCriteriaId && (
-                          <Badge variant="outline" className="text-xs font-mono">{evidence.primaryCriteriaId}</Badge>
-                        )}
-                        {evidence.source === "drive_ingest" && (
-                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 border border-blue-100">
-                            <CloudDownload className="w-2.5 h-2.5" /> From Drive
-                          </span>
-                        )}
+        <>
+          <div className="flex flex-col md:flex-row gap-4 mb-6">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input placeholder="Search evidence…" className="pl-9" />
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+          ) : !evidenceList || evidenceList.length === 0 ? (
+            <Card className="text-center py-16">
+              <CardContent>
+                <div className="w-16 h-16 rounded-full bg-gray-50 flex items-center justify-center mx-auto mb-4">
+                  <Upload className="w-8 h-8 text-muted-foreground" />
+                </div>
+                <h3 className="text-xl font-bold mb-2">No evidence uploaded yet</h3>
+                <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                  Begin by uploading artifacts that substantiate your achievements — publications, awards, letters, and more.
+                </p>
+                <Button onClick={() => setOpen(true)} className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
+                  <Upload className="w-4 h-4 mr-2" /> Upload Your First Document
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {(evidenceList as EvidenceItem[]).map((evidence) => (
+                <Link key={evidence.id} href={`/evidence/${evidence.id}`}>
+                  <Card className="hover:border-[#1E2D6B]/50 transition-colors cursor-pointer">
+                    <CardContent className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <div className="w-9 h-9 rounded-lg bg-[#1E2D6B]/8 flex items-center justify-center shrink-0">
+                          <FileText className="w-4 h-4 text-[#1E2D6B]" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-3 mb-1 flex-wrap">
+                            <h3 className="font-bold text-foreground truncate">{evidence.title}</h3>
+                            <Badge variant="secondary" className={getStatusColor(evidence.status)}>
+                              {evidence.status.charAt(0).toUpperCase() + evidence.status.slice(1)}
+                            </Badge>
+                            {evidence.primaryCriteriaId && (
+                              <Badge variant="outline" className="text-xs font-mono">{evidence.primaryCriteriaId}</Badge>
+                            )}
+                            {evidence.source === "drive_ingest" && (
+                              <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                                <CloudDownload className="w-2.5 h-2.5" /> From Drive
+                              </span>
+                            )}
+                          </div>
+                          {evidence.description && (
+                            <p className="text-sm text-muted-foreground line-clamp-1">{evidence.description}</p>
+                          )}
+                          <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                            {evidence.fileName && <span className="truncate max-w-[200px]">{evidence.fileName}</span>}
+                            {evidence.dateAchieved && <span>• {new Date(evidence.dateAchieved).toLocaleDateString()}</span>}
+                          </div>
+                        </div>
                       </div>
-                      {evidence.description && (
-                        <p className="text-sm text-muted-foreground line-clamp-1">{evidence.description}</p>
-                      )}
-                      <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                        {evidence.fileName && <span className="truncate max-w-[200px]">{evidence.fileName}</span>}
-                        {evidence.dateAchieved && <span>• {new Date(evidence.dateAchieved).toLocaleDateString()}</span>}
-                      </div>
-                    </div>
-                  </div>
-                  <Button variant="ghost" size="sm" className="shrink-0">View Details</Button>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
-        </div>
+                      <Button variant="ghost" size="sm" className="shrink-0">View Details</Button>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </AppLayout>
   );

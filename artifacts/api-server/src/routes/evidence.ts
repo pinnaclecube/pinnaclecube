@@ -19,7 +19,7 @@ import {
   notificationsTable,
 } from "@workspace/db";
 import { requireClientAuth } from "../middlewares/clientAuth";
-import { uploadEvidenceFile, getDriveClient, listFolderFiles } from "../services/googleDrive";
+import { uploadEvidenceFile, getDriveClient, listFolderFiles, listFolderContents } from "../services/googleDrive";
 import { extractText, generateAISummary, getAI } from "../services/evidenceProcessing";
 import { getCriteriaForVisaPath, AI_DISCLAIMER, type VisaPathKey } from "@workspace/shared";
 
@@ -230,6 +230,77 @@ router.post("/evidence/drive-folder", requireClientAuth, async (req: any, res) =
   }
 
   res.status(201).json({ folder: folderRow });
+});
+
+// ─── GET /api/evidence/drive-files ────────────────────────────────────────────
+// Returns the full Drive folder tree for all connected criterion folders.
+// Up to 2 levels deep: criterion folder → optional sub-folders → files.
+
+router.get("/evidence/drive-files", requireClientAuth, async (req: any, res) => {
+  const userId: number = req.clientUser.id;
+
+  const folders = await db
+    .select({
+      criteriaId: clientDriveFoldersTable.criteriaId,
+      folderName: clientDriveFoldersTable.folderName,
+      driveFolderId: clientDriveFoldersTable.driveFolderId,
+      driveFolderUrl: clientDriveFoldersTable.driveFolderUrl,
+    })
+    .from(clientDriveFoldersTable)
+    .where(eq(clientDriveFoldersTable.profileId, userId));
+
+  if (folders.length === 0) {
+    res.json({ criteria: [] });
+    return;
+  }
+
+  const drive = getDriveClient();
+
+  const criteria = await Promise.all(
+    folders.map(async (folder) => {
+      try {
+        const items = await listFolderContents(drive, folder.driveFolderId);
+        const files = items.filter((i) => !i.isFolder);
+        const subfolderItems = items.filter((i) => i.isFolder);
+
+        const subfolders = await Promise.all(
+          subfolderItems.map(async (sf) => {
+            try {
+              const sfItems = await listFolderContents(drive, sf.id);
+              return {
+                id: sf.id,
+                name: sf.name,
+                files: sfItems.filter((i) => !i.isFolder).map(({ isFolder: _, ...f }) => f),
+              };
+            } catch {
+              return { id: sf.id, name: sf.name, files: [], error: "Could not access subfolder" };
+            }
+          }),
+        );
+
+        return {
+          criteriaId: folder.criteriaId,
+          criteriaName: folder.folderName,
+          folderName: folder.folderName,
+          driveFolderUrl: folder.driveFolderUrl,
+          files: files.map(({ isFolder: _, ...f }) => f),
+          subfolders,
+        };
+      } catch {
+        return {
+          criteriaId: folder.criteriaId,
+          criteriaName: folder.folderName,
+          folderName: folder.folderName,
+          driveFolderUrl: folder.driveFolderUrl,
+          files: [],
+          subfolders: [],
+          error: "Could not access this Drive folder",
+        };
+      }
+    }),
+  );
+
+  res.json({ criteria });
 });
 
 // ─── GET /api/evidence/coverage ───────────────────────────────────────────────

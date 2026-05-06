@@ -28,7 +28,7 @@ import {
   notificationsTable,
 } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
-import { createClientRootFolders, createCriteriaEvidenceFolders } from "../services/googleDrive";
+import { createClientRootFolders, createCriteriaEvidenceFolders, getDriveClient, listFolderContents } from "../services/googleDrive";
 import { ingestClientFolders } from "../services/driveIngestService";
 import { sendEmail, actionItemEmail, passwordResetEmail } from "../services/emailService";
 import { z } from "zod/v4";
@@ -667,6 +667,81 @@ router.get(
       .limit(limit);
 
     res.json({ entries, total: entries.length });
+  },
+);
+
+// ─── Drive file browser ────────────────────────────────────────────────────────
+// Returns the full Drive folder tree for a client profile (up to 2 levels deep).
+
+router.get(
+  "/admin/profiles/:id/drive-files",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const id = parseId(req.params.id);
+    if (!id) { res.status(400).json({ error: "Invalid profile ID" }); return; }
+
+    const folders = await db
+      .select({
+        criteriaId: clientDriveFoldersTable.criteriaId,
+        folderName: clientDriveFoldersTable.folderName,
+        driveFolderId: clientDriveFoldersTable.driveFolderId,
+        driveFolderUrl: clientDriveFoldersTable.driveFolderUrl,
+      })
+      .from(clientDriveFoldersTable)
+      .where(eq(clientDriveFoldersTable.profileId, id));
+
+    if (folders.length === 0) {
+      res.json({ criteria: [] });
+      return;
+    }
+
+    const drive = getDriveClient();
+
+    const criteria = await Promise.all(
+      folders.map(async (folder) => {
+        try {
+          const items = await listFolderContents(drive, folder.driveFolderId);
+          const files = items.filter((i) => !i.isFolder);
+          const subfolderItems = items.filter((i) => i.isFolder);
+
+          const subfolders = await Promise.all(
+            subfolderItems.map(async (sf) => {
+              try {
+                const sfItems = await listFolderContents(drive, sf.id);
+                return {
+                  id: sf.id,
+                  name: sf.name,
+                  files: sfItems.filter((i) => !i.isFolder).map(({ isFolder: _, ...f }) => f),
+                };
+              } catch {
+                return { id: sf.id, name: sf.name, files: [], error: "Could not access subfolder" };
+              }
+            }),
+          );
+
+          return {
+            criteriaId: folder.criteriaId,
+            criteriaName: folder.folderName,
+            folderName: folder.folderName,
+            driveFolderUrl: folder.driveFolderUrl,
+            files: files.map(({ isFolder: _, ...f }) => f),
+            subfolders,
+          };
+        } catch {
+          return {
+            criteriaId: folder.criteriaId,
+            criteriaName: folder.folderName,
+            folderName: folder.folderName,
+            driveFolderUrl: folder.driveFolderUrl,
+            files: [],
+            subfolders: [],
+            error: "Could not access this Drive folder",
+          };
+        }
+      }),
+    );
+
+    res.json({ criteria });
   },
 );
 

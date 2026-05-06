@@ -629,6 +629,46 @@ export async function listFolderFiles(
   return results;
 }
 
+// ─── 11b. listFolderContents — files + sub-folders in one call ────────────────
+
+export interface DriveFolderItem extends DriveFile {
+  isFolder: boolean;
+}
+
+export async function listFolderContents(
+  drive: drive_v3.Drive,
+  folderId: string,
+): Promise<DriveFolderItem[]> {
+  const results: DriveFolderItem[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const res = await drive.files.list({
+      q: `'${folderId}' in parents AND trashed = false`,
+      fields: "nextPageToken, files(id, name, mimeType, size, modifiedTime, webViewLink)",
+      spaces: "drive",
+      pageSize: 100,
+      ...(pageToken ? { pageToken } : {}),
+    });
+
+    for (const f of res.data.files ?? []) {
+      results.push({
+        id: f.id!,
+        name: f.name ?? "untitled",
+        mimeType: f.mimeType ?? "application/octet-stream",
+        size: f.size ?? null,
+        modifiedTime: f.modifiedTime ?? null,
+        webViewLink: f.webViewLink ?? null,
+        isFolder: f.mimeType === "application/vnd.google-apps.folder",
+      });
+    }
+
+    pageToken = res.data.nextPageToken ?? undefined;
+  } while (pageToken);
+
+  return results;
+}
+
 // ─── 12. downloadDriveFile ────────────────────────────────────────────────────
 
 export interface DownloadedFile {
