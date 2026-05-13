@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/PhoneInput";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -52,7 +53,7 @@ export default function InternalProspects() {
   const [hideConverted, setHideConverted] = useState(true);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [form, setForm] = useState({ fullName: "", email: "", phone: "", currentRole: "", fieldOfWork: "", sourceType: "manual" });
+  const [form, setForm] = useState({ fullName: "", email: "", phone: "", phoneCountryCode: "+1", currentRole: "", fieldOfWork: "", sourceType: "manual" });
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
@@ -72,13 +73,14 @@ export default function InternalProspects() {
     if (!form.fullName.trim()) return;
     setSaving(true);
     try {
+      const { phoneCountryCode, phone, ...rest } = form;
       const r = await staffFetch("/admin/prospects", {
         method: "POST",
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...rest, phone: phone.trim() ? `${phoneCountryCode} ${phone.trim()}` : "" }),
       });
       if (r.ok) {
         setShowAddModal(false);
-        setForm({ fullName: "", email: "", phone: "", currentRole: "", fieldOfWork: "", sourceType: "manual" });
+        setForm({ fullName: "", email: "", phone: "", phoneCountryCode: "+1", currentRole: "", fieldOfWork: "", sourceType: "manual" });
         await load();
       }
     } finally { setSaving(false); }
@@ -255,7 +257,12 @@ export default function InternalProspects() {
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Phone <span className="text-gray-400 font-normal">(optional)</span></label>
-              <Input type="tel" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} placeholder="+1 (555) 000-0000" />
+              <PhoneInput
+                countryCode={form.phoneCountryCode}
+                phone={form.phone}
+                onCountryCodeChange={(code) => setForm((p) => ({ ...p, phoneCountryCode: code }))}
+                onPhoneChange={(v) => setForm((p) => ({ ...p, phone: v }))}
+              />
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Current Role</label>

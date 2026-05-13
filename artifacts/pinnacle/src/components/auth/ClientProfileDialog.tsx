@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { PhoneInput, parsePhoneString, combinePhone } from "@/components/ui/PhoneInput";
 
 interface ClientProfileDialogProps {
   open: boolean;
@@ -18,10 +19,12 @@ export function ClientProfileDialog({ open, onOpenChange }: ClientProfileDialogP
   const [saving, setSaving] = useState(false);
   const [changingPw, setChangingPw] = useState(false);
 
+  const parsedPhone = parsePhoneString(user?.phone ?? "");
   const [form, setForm] = useState({
     first_name: user?.firstName ?? "",
     last_name: user?.lastName ?? "",
-    phone: user?.phone ?? "",
+    phoneCountryCode: parsedPhone.countryCode,
+    phoneLocal: parsedPhone.local,
     country: user?.country ?? "",
     city: user?.city ?? "",
     linkedin_url: user?.linkedinUrl ?? "",
@@ -33,13 +36,14 @@ export function ClientProfileDialog({ open, onOpenChange }: ClientProfileDialogP
   const handleSave = async () => {
     setSaving(true);
     try {
+      const { phoneCountryCode, phoneLocal, ...rest } = form;
       const res = await fetch("/api/auth/update-profile", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...rest, phone: combinePhone(phoneCountryCode, phoneLocal) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Save failed");
@@ -111,7 +115,13 @@ export function ClientProfileDialog({ open, onOpenChange }: ClientProfileDialogP
           </div>
           <div>
             <Label>Phone</Label>
-            <Input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} className="mt-1" placeholder="+1 555 000 0000" />
+            <PhoneInput
+              countryCode={form.phoneCountryCode}
+              phone={form.phoneLocal}
+              onCountryCodeChange={(code) => setForm((f) => ({ ...f, phoneCountryCode: code }))}
+              onPhoneChange={(v) => setForm((f) => ({ ...f, phoneLocal: v }))}
+              className="mt-1"
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>

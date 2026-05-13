@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PhoneInput, combinePhone } from "@/components/ui/PhoneInput";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,6 +20,7 @@ export default function EliteBlueprintApply() {
   const [form, setForm] = useState({
     name: "",
     email: "",
+    phoneCountryCode: "+1",
     phone: "",
     current_role: "",
     company: "",
@@ -43,10 +45,11 @@ export default function EliteBlueprintApply() {
     setError("");
 
     try {
+      const { phoneCountryCode, phone, ...rest } = form;
       const res = await fetch("/api/blueprint/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, disclaimer_acknowledged: true }),
+        body: JSON.stringify({ ...rest, phone: combinePhone(phoneCountryCode, phone), disclaimer_acknowledged: true }),
       });
       if (!res.ok) {
         const d = await res.json();
@@ -89,7 +92,13 @@ export default function EliteBlueprintApply() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label>Phone</Label>
-                    <Input value={form.phone} onChange={(e) => set("phone", e.target.value)} className="mt-1" placeholder="+1 555 000 0000" />
+                    <PhoneInput
+                      countryCode={form.phoneCountryCode}
+                      phone={form.phone}
+                      onCountryCodeChange={(code) => set("phoneCountryCode", code)}
+                      onPhoneChange={(v) => set("phone", v)}
+                      className="mt-1"
+                    />
                   </div>
                   <div>
                     <Label>Target Visa *</Label>
