@@ -15,8 +15,8 @@
  *  order ensures no orphaned records).
  */
 
-import { Router, type Request, type Response } from "express";
-import { eq, and, or } from "drizzle-orm";
+import { Router, type Response } from "express";
+import { eq, and } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db, clientDriveFoldersTable, driveSubfoldersTable } from "@workspace/db";
 import { requireClientAuth } from "../middlewares/clientAuth";
@@ -46,7 +46,7 @@ async function resolveParent(
   profileId: number,
   parentDriveId: string,
 ): Promise<ParentResolution | null> {
-  // Check criteria folders first
+  // 1. Check criteria folders (top-level connected Drive folders)
   const [criteriaFolder] = await db
     .select({ id: clientDriveFoldersTable.id })
     .from(clientDriveFoldersTable)
@@ -62,7 +62,7 @@ async function resolveParent(
     return { parentType: "criteria_folder", parentId: criteriaFolder.id, parentDriveId };
   }
 
-  // Check user-created subfolders
+  // 2. Check app-created subfolders
   const [subfolder] = await db
     .select({ id: driveSubfoldersTable.id })
     .from(driveSubfoldersTable)
@@ -76,6 +76,54 @@ async function resolveParent(
 
   if (subfolder) {
     return { parentType: "subfolder", parentId: subfolder.id, parentDriveId };
+  }
+
+  // 3. Drive-native subfolder: the parentDriveId wasn't created through the app but
+  //    may be a real subfolder of one of the profile's criteria folders (e.g. the user
+  //    created it directly in Google Drive). Verify by fetching the folder's metadata
+  //    from Drive and checking whether its parent is one of this profile's criteria folders.
+  try {
+    const drive = getDriveClient();
+    const meta = await drive.files.get({
+      fileId: parentDriveId,
+      fields: "id,name,parents",
+    });
+    const driveParents: string[] = (meta.data.parents as string[] | undefined) ?? [];
+
+    if (driveParents.length > 0) {
+      // Fetch all criteria folders for this profile
+      const criteriaFolders = await db
+        .select({ id: clientDriveFoldersTable.id, driveFolderId: clientDriveFoldersTable.driveFolderId })
+        .from(clientDriveFoldersTable)
+        .where(eq(clientDriveFoldersTable.profileId, profileId));
+
+      const criteriaIds = new Set(criteriaFolders.map((f) => f.driveFolderId));
+      const matchingCriteria = criteriaFolders.find((f) => driveParents.includes(f.driveFolderId));
+
+      if (matchingCriteria) {
+        // The parent is a direct child of a criteria folder — valid
+        return { parentType: "criteria_folder", parentId: matchingCriteria.id, parentDriveId };
+      }
+
+      // Also check one level deeper: the parentDriveId's grandparent might be a criteria folder
+      // (i.e. the user is creating inside a Drive-native sub-subfolder)
+      const grandparentMeta = await Promise.all(
+        driveParents.map((pid) =>
+          drive.files.get({ fileId: pid, fields: "id,parents" }).catch(() => null),
+        ),
+      );
+      for (const gm of grandparentMeta) {
+        const gParents: string[] = (gm?.data?.parents as string[] | undefined) ?? [];
+        const matchingGrandparent = criteriaFolders.find((f) => gParents.includes(f.driveFolderId));
+        if (matchingGrandparent) {
+          return { parentType: "criteria_folder", parentId: matchingGrandparent.id, parentDriveId };
+        }
+      }
+
+      void criteriaIds; // suppress unused-variable lint
+    }
+  } catch {
+    // Drive metadata lookup failed — fall through to deny
   }
 
   return null;
