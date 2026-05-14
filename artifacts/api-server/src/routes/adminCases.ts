@@ -745,6 +745,7 @@ router.get(
     );
 
     const criteria = results.filter((r) => r !== null);
+    res.set("Cache-Control", "no-store");
     res.json({ criteria });
   },
 );

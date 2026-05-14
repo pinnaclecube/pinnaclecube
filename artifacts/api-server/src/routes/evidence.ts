@@ -305,6 +305,7 @@ router.get("/evidence/drive-files", requireClientAuth, async (req: any, res) => 
   );
 
   const criteria = results.filter((r) => r !== null);
+  res.set("Cache-Control", "no-store");
   res.json({ criteria });
 });
 
