@@ -1,6 +1,12 @@
-import { pgTable, text, serial, integer, boolean, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, integer, boolean, jsonb, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+
+export const driveSyncStatusEnum = pgEnum("drive_sync_status", [
+  "pending",
+  "synced",
+  "failed",
+]);
 
 export const casePetitionSetupTable = pgTable("case_petition_setup", {
   id: serial("id").primaryKey(),
@@ -10,6 +16,8 @@ export const casePetitionSetupTable = pgTable("case_petition_setup", {
   exhibitNumberingStyle: text("exhibit_numbering_style").notNull().default("numeric"),
   status: text("status").notNull().default("setup"),
   createdByStaff: text("created_by_staff").notNull(),
+  driveSyncStatus: driveSyncStatusEnum("drive_sync_status"),
+  driveSyncError: text("drive_sync_error"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
