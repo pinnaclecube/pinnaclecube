@@ -383,6 +383,8 @@ function CriteriaFolderSection({ folder, onPreview, onCreateFolder, onCreateSubf
 
 // ─── Main browser ─────────────────────────────────────────────────────────────
 
+const POLL_INTERVAL_MS = 30_000;
+
 export function DriveFileBrowser({
   fetchFn,
   createFolderFn,
@@ -391,19 +393,67 @@ export function DriveFileBrowser({
 }: DriveFileBrowserProps) {
   const [criteria, setCriteria] = useState<DriveCriteriaFolder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<DriveFileItem | null>(null);
+  const isFetchingRef = useRef(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    fetchFn()
-      .then((d) => setCriteria(d.criteria ?? []))
-      .catch(() => setError("Could not load Drive files. Please try again."))
-      .finally(() => setLoading(false));
-  }, [fetchFn]);
+  const fetchData = useCallback(
+    (opts: { silent?: boolean } = {}) => {
+      if (isFetchingRef.current) return;
+      isFetchingRef.current = true;
+      if (!opts.silent) setLoading(true);
+      else setRefreshing(true);
+      setError(null);
+      fetchFn()
+        .then((d) => { setCriteria(d.criteria ?? []); })
+        .catch(() => { if (!opts.silent) setError("Could not load Drive files. Please try again."); })
+        .finally(() => {
+          isFetchingRef.current = false;
+          setLoading(false);
+          setRefreshing(false);
+        });
+    },
+    [fetchFn],
+  );
 
-  useEffect(() => { load(); }, [load]);
+  const load = useCallback(() => fetchData({ silent: false }), [fetchData]);
+  const refresh = useCallback(() => fetchData({ silent: true }), [fetchData]);
+
+  const startPolling = useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      if (document.visibilityState === "visible") refresh();
+    }, POLL_INTERVAL_MS);
+  }, [refresh]);
+
+  const stopPolling = useCallback(() => {
+    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+  }, []);
+
+  useEffect(() => {
+    fetchData({ silent: false });
+  }, [fetchData]);
+
+  useEffect(() => {
+    startPolling();
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") { refresh(); startPolling(); }
+      else stopPolling();
+    };
+    const onFocus = () => refresh();
+
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      stopPolling();
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [refresh, startPolling, stopPolling]);
 
   if (loading) {
     return (
@@ -483,11 +533,17 @@ export function DriveFileBrowser({
       )}
 
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
           {totalFiles} file{totalFiles !== 1 ? "s" : ""} across {criteria.length} connected folder{criteria.length !== 1 ? "s" : ""}
+          {refreshing && (
+            <span className="inline-flex items-center gap-1 text-[#3D4FA8]">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span className="text-[10px]">syncing…</span>
+            </span>
+          )}
         </p>
-        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5" onClick={load}>
-          <RefreshCw className="w-3 h-3" /> Refresh
+        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5" onClick={refresh} disabled={refreshing}>
+          <RefreshCw className={cn("w-3 h-3", refreshing && "animate-spin")} /> Refresh
         </Button>
       </div>
 
@@ -499,12 +555,12 @@ export function DriveFileBrowser({
             onPreview={setPreviewFile}
             onCreateFolder={
               createFolderFn
-                ? (name) => createFolderFn({ name, parentDriveId: folder.driveFolderId }).then(load)
+                ? (name) => createFolderFn({ name, parentDriveId: folder.driveFolderId }).then(refresh)
                 : undefined
             }
             onCreateSubfolderIn={
               createFolderFn
-                ? (parentDriveId, name) => createFolderFn({ name, parentDriveId }).then(load)
+                ? (parentDriveId, name) => createFolderFn({ name, parentDriveId }).then(refresh)
                 : undefined
             }
           />
