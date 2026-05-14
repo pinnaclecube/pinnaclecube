@@ -10,6 +10,7 @@ import { eq, and } from "drizzle-orm";
 import {
   db,
   casePetitionSetupTable,
+  caseFoldersTable,
   petitionCriteriaExhibitsTable,
   petitionRecoLettersTable,
   petitionPackageTable,
@@ -17,8 +18,11 @@ import {
   activityTable,
   clientActivityLogTable,
   visaCriteriaTable,
+  profilesTable,
 } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
+import { createCaseFolders } from "../services/createCaseFolders";
+import { logger } from "../lib/logger";
 import {
   generateCriteriaExhibit,
   generateRecoLetter,
@@ -102,6 +106,7 @@ router.post(
         exhibitNumberingStyle,
         status: "setup",
         createdByStaff: "staff",
+        driveSyncStatus: "pending",
       })
       .returning();
 
@@ -132,6 +137,11 @@ router.post(
       .returning();
 
     res.status(201).json({ setup, exhibits, package: pkg });
+
+    // Fire Drive folder creation asynchronously — does not block the response
+    createCaseFolders(setup.id).catch((err) =>
+      logger.error({ caseId: setup.id, err }, "[petitionAdmin] createCaseFolders background error"),
+    );
   },
 );
 
@@ -951,6 +961,77 @@ router.post(
 
     console.info(`[staff] Full package published for caseSetup ${caseSetupId}: ${publishedCount} docs`);
     res.json({ success: true, publishedCount });
+  },
+);
+
+// ─── GET /internal/petition/failed-drive-syncs ───────────────────────────────
+
+router.get(
+  "/internal/petition/failed-drive-syncs",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const failed = await db
+      .select({
+        caseId: casePetitionSetupTable.id,
+        profileId: casePetitionSetupTable.profileId,
+        visaPath: casePetitionSetupTable.visaPath,
+        driveSyncStatus: casePetitionSetupTable.driveSyncStatus,
+        driveSyncError: casePetitionSetupTable.driveSyncError,
+        clientName: profilesTable.name,
+        clientEmail: profilesTable.email,
+        createdAt: casePetitionSetupTable.createdAt,
+      })
+      .from(casePetitionSetupTable)
+      .innerJoin(profilesTable, eq(profilesTable.id, casePetitionSetupTable.profileId))
+      .where(eq(casePetitionSetupTable.driveSyncStatus, "failed"));
+
+    res.json({ cases: failed });
+  },
+);
+
+// ─── POST /internal/petition/setup/:caseId/retry-drive ───────────────────────
+
+router.post(
+  "/internal/petition/setup/:caseId/retry-drive",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const caseId = parseInt(req.params.caseId as string, 10);
+    if (isNaN(caseId)) {
+      res.status(400).json({ error: "Invalid caseId" });
+      return;
+    }
+
+    const [caseSetup] = await db
+      .select()
+      .from(casePetitionSetupTable)
+      .where(eq(casePetitionSetupTable.id, caseId))
+      .limit(1);
+
+    if (!caseSetup) {
+      res.status(404).json({ error: "Case not found" });
+      return;
+    }
+
+    // Clear any partial folder records from the previous attempt
+    await db.delete(caseFoldersTable).where(eq(caseFoldersTable.caseId, caseId));
+
+    // Run synchronously so the caller gets a definitive result
+    await createCaseFolders(caseId);
+
+    const [updated] = await db
+      .select({
+        driveSyncStatus: casePetitionSetupTable.driveSyncStatus,
+        driveSyncError: casePetitionSetupTable.driveSyncError,
+      })
+      .from(casePetitionSetupTable)
+      .where(eq(casePetitionSetupTable.id, caseId))
+      .limit(1);
+
+    res.json({
+      success: updated?.driveSyncStatus === "synced",
+      driveSyncStatus: updated?.driveSyncStatus,
+      driveSyncError: updated?.driveSyncError ?? null,
+    });
   },
 );
 
