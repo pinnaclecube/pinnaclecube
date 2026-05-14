@@ -41,12 +41,33 @@ export const driveIngestLogsTable = pgTable("drive_ingest_logs", {
   ingestedAt: timestamp("ingested_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ─── User-created subfolders ───────────────────────────────────────────────────
+// Tracks subfolders created via the app UI under criteria folders or other subfolders.
+
+export const driveSubfoldersTable = pgTable("drive_subfolders", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  profileId: integer("profile_id").notNull(),
+  parentType: text("parent_type").notNull(), // 'criteria_folder' | 'subfolder'
+  parentId: integer("parent_id").notNull(),  // FK to client_drive_folders.id or drive_subfolders.id
+  parentDriveId: text("parent_drive_id").notNull(), // cached Drive ID of parent
+  driveId: text("drive_id").notNull(),
+  driveUrl: text("drive_url"),
+  role: text("role").notNull(), // 'client' | 'staff'
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const insertClientDriveRootSchema = createInsertSchema(clientDriveRootsTable).omit({ id: true });
 export const insertClientDriveFolderSchema = createInsertSchema(clientDriveFoldersTable).omit({ id: true, createdAt: true });
 export const insertDriveIngestLogSchema = createInsertSchema(driveIngestLogsTable).omit({ id: true, ingestedAt: true });
+export const insertDriveSubfolderSchema = createInsertSchema(driveSubfoldersTable).omit({ id: true, createdAt: true });
+
 export type InsertClientDriveRoot = z.infer<typeof insertClientDriveRootSchema>;
 export type ClientDriveRoot = typeof clientDriveRootsTable.$inferSelect;
 export type InsertClientDriveFolder = z.infer<typeof insertClientDriveFolderSchema>;
 export type ClientDriveFolder = typeof clientDriveFoldersTable.$inferSelect;
 export type DriveIngestLog = typeof driveIngestLogsTable.$inferSelect;
 export type InsertDriveIngestLog = z.infer<typeof insertDriveIngestLogSchema>;
+export type DriveSubfolder = typeof driveSubfoldersTable.$inferSelect;
+export type InsertDriveSubfolder = z.infer<typeof insertDriveSubfolderSchema>;

@@ -194,6 +194,21 @@ export default function EvidenceVault() {
     [],
   );
 
+  const clientCreateFolderFn = useCallback(
+    async (opts: { name: string; parentDriveId: string }) => {
+      const res = await fetch("/api/drive/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify(opts),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? "Failed to create folder");
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     if (driveToastShown.current) return;
     if (driveSync && driveSync.unreadDriveNotifications > 0) {
@@ -646,6 +661,7 @@ export default function EvidenceVault() {
         <DriveFileBrowser
           key={hasDriveFolders ? "folders-ready" : "no-folders"}
           fetchFn={clientDriveFetchFn}
+          createFolderFn={clientCreateFolderFn}
           isProvisioning={isProvisioningDrive}
           justProvisioned={justProvisioned}
         />

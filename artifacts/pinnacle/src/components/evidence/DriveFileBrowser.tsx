@@ -1,10 +1,11 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   FileText, FileImage, File, FolderOpen, Folder,
   ExternalLink, Eye, RefreshCw, ChevronDown, ChevronRight,
   AlertTriangle, Loader2, HardDriveDownload, CheckCircle2,
+  FolderPlus, X, Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DrivePreviewModal } from "./DrivePreviewModal";
@@ -29,14 +30,18 @@ export interface DriveCriteriaFolder {
   criteriaId: string;
   criteriaName: string;
   folderName: string;
+  driveFolderId: string;
   driveFolderUrl: string | null;
   files: DriveFileItem[];
   subfolders: DriveSubfolder[];
   error?: string;
 }
 
+export type CreateFolderFn = (opts: { name: string; parentDriveId: string }) => Promise<void>;
+
 interface DriveFileBrowserProps {
   fetchFn: () => Promise<{ criteria: DriveCriteriaFolder[] }>;
+  createFolderFn?: CreateFolderFn;
   isProvisioning?: boolean;
   justProvisioned?: boolean;
 }
@@ -74,6 +79,77 @@ function formatDate(dateStr: string | null): string {
   if (!dateStr) return "";
   return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
+
+// ─── Inline "New Folder" input ────────────────────────────────────────────────
+
+interface NewFolderRowProps {
+  onCreate: (name: string) => Promise<void>;
+  onCancel: () => void;
+}
+
+function NewFolderRow({ onCreate, onCancel }: NewFolderRowProps) {
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const handleSave = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setSaving(true);
+    setError("");
+    try {
+      await onCreate(trimmed);
+      onCancel();
+    } catch (err: any) {
+      setError(err.message ?? "Failed to create folder");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="border-t border-dashed border-indigo-200 bg-indigo-50/60 px-3 py-2">
+      <div className="flex items-center gap-2">
+        <FolderPlus className="w-3.5 h-3.5 text-[#1E2D6B] shrink-0" />
+        <input
+          ref={inputRef}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleSave();
+            if (e.key === "Escape") onCancel();
+          }}
+          placeholder="Folder name…"
+          disabled={saving}
+          className="flex-1 text-xs bg-white border border-indigo-200 rounded px-2 py-1 focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-300 disabled:opacity-60"
+        />
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving || !name.trim()}
+          className="flex items-center gap-1 text-xs font-medium text-white bg-[#1E2D6B] hover:bg-[#3D4FA8] disabled:opacity-50 px-2 py-1 rounded transition-colors"
+        >
+          {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+          Create
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={saving}
+          className="flex items-center text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      {error && <p className="text-xs text-red-600 mt-1 pl-6">{error}</p>}
+    </div>
+  );
+}
+
+// ─── File row ─────────────────────────────────────────────────────────────────
 
 interface FileRowProps {
   file: DriveFileItem;
@@ -128,30 +204,48 @@ function FileRow({ file, onPreview, indent }: FileRowProps) {
   );
 }
 
+// ─── Subfolder section ────────────────────────────────────────────────────────
+
 interface SubfolderSectionProps {
   subfolder: DriveSubfolder;
   onPreview: (file: DriveFileItem) => void;
+  onCreateFolder?: (name: string) => Promise<void>;
 }
 
-function SubfolderSection({ subfolder, onPreview }: SubfolderSectionProps) {
+function SubfolderSection({ subfolder, onPreview, onCreateFolder }: SubfolderSectionProps) {
   const [open, setOpen] = useState(true);
+  const [showNewFolder, setShowNewFolder] = useState(false);
 
   return (
     <div className="border-t border-dashed border-gray-200">
-      <button
-        type="button"
-        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-gray-50 transition-colors"
-        onClick={() => setOpen((v) => !v)}
-      >
-        {open ? (
-          <FolderOpen className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-        ) : (
-          <Folder className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+      <div className="flex items-center gap-0">
+        <button
+          type="button"
+          className="flex-1 flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-gray-50 transition-colors"
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? (
+            <FolderOpen className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          ) : (
+            <Folder className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          )}
+          <span className="font-medium flex-1 truncate">{subfolder.name}</span>
+          <span className="text-muted-foreground mr-1">{subfolder.files.length} file{subfolder.files.length !== 1 ? "s" : ""}</span>
+          {open ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+        </button>
+
+        {onCreateFolder && open && !showNewFolder && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setShowNewFolder(true); }}
+            className="shrink-0 flex items-center gap-1 px-2 py-2 text-xs text-muted-foreground hover:text-[#1E2D6B] transition-colors"
+            title="New subfolder"
+          >
+            <FolderPlus className="w-3.5 h-3.5" />
+          </button>
         )}
-        <span className="font-medium flex-1 truncate">{subfolder.name}</span>
-        <span className="text-muted-foreground mr-1">{subfolder.files.length} file{subfolder.files.length !== 1 ? "s" : ""}</span>
-        {open ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
-      </button>
+      </div>
+
       {open && (
         <>
           {subfolder.error && (
@@ -159,60 +253,85 @@ function SubfolderSection({ subfolder, onPreview }: SubfolderSectionProps) {
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {subfolder.error}
             </div>
           )}
-          {subfolder.files.length === 0 && !subfolder.error && (
+          {subfolder.files.length === 0 && !subfolder.error && !showNewFolder && (
             <p className="px-8 py-2 text-xs text-muted-foreground italic">No files in this folder.</p>
           )}
           {subfolder.files.map((file) => (
             <FileRow key={file.id} file={file} onPreview={onPreview} indent />
           ))}
+          {showNewFolder && onCreateFolder && (
+            <NewFolderRow
+              onCreate={onCreateFolder}
+              onCancel={() => setShowNewFolder(false)}
+            />
+          )}
         </>
       )}
     </div>
   );
 }
 
+// ─── Criteria folder section ──────────────────────────────────────────────────
+
 interface CriteriaFolderSectionProps {
   folder: DriveCriteriaFolder;
   onPreview: (file: DriveFileItem) => void;
+  onCreateFolder?: (name: string) => Promise<void>;
+  onCreateSubfolderIn?: (parentDriveId: string, name: string) => Promise<void>;
 }
 
-function CriteriaFolderSection({ folder, onPreview }: CriteriaFolderSectionProps) {
+function CriteriaFolderSection({ folder, onPreview, onCreateFolder, onCreateSubfolderIn }: CriteriaFolderSectionProps) {
   const [open, setOpen] = useState(true);
+  const [showNewFolder, setShowNewFolder] = useState(false);
   const totalFiles = folder.files.length + folder.subfolders.reduce((s, sf) => s + sf.files.length, 0);
 
   return (
     <div className="rounded-lg border bg-white overflow-hidden">
-      <button
-        type="button"
-        className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
-        onClick={() => setOpen((v) => !v)}
-      >
-        {open ? (
-          <FolderOpen className="w-4 h-4 text-[#1E2D6B] shrink-0" />
-        ) : (
-          <Folder className="w-4 h-4 text-[#1E2D6B] shrink-0" />
-        )}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-sm text-[#1E2D6B] truncate">{folder.criteriaName}</span>
-            <span className="font-mono text-xs text-muted-foreground">{folder.criteriaId}</span>
+      <div className="flex items-center gap-0">
+        <button
+          type="button"
+          className="flex-1 flex items-center gap-2.5 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? (
+            <FolderOpen className="w-4 h-4 text-[#1E2D6B] shrink-0" />
+          ) : (
+            <Folder className="w-4 h-4 text-[#1E2D6B] shrink-0" />
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-sm text-[#1E2D6B] truncate">{folder.criteriaName}</span>
+              <span className="font-mono text-xs text-muted-foreground">{folder.criteriaId}</span>
+            </div>
           </div>
-        </div>
-        <Badge variant="secondary" className="shrink-0 text-xs">{totalFiles} file{totalFiles !== 1 ? "s" : ""}</Badge>
+          <Badge variant="secondary" className="shrink-0 text-xs">{totalFiles} file{totalFiles !== 1 ? "s" : ""}</Badge>
+          {open ? <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
+        </button>
+
+        {open && onCreateFolder && !showNewFolder && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setShowNewFolder(true); }}
+            className="shrink-0 flex items-center gap-1 px-2 py-3 text-xs text-muted-foreground hover:text-[#1E2D6B] transition-colors"
+            title="New subfolder"
+          >
+            <FolderPlus className="w-4 h-4" />
+          </button>
+        )}
+
         {folder.driveFolderUrl && (
           <a
             href={folder.driveFolderUrl}
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="shrink-0 text-[#1E2D6B] hover:text-[#3D4FA8]"
+            className="shrink-0 text-[#1E2D6B] hover:text-[#3D4FA8] px-3 py-3"
             title="Open folder in Drive"
           >
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
         )}
-        {open ? <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
-      </button>
+      </div>
 
       {open && (
         <div className="border-t divide-y divide-gray-100">
@@ -229,7 +348,7 @@ function CriteriaFolderSection({ folder, onPreview }: CriteriaFolderSectionProps
             </div>
           )}
 
-          {!folder.error && folder.files.length === 0 && folder.subfolders.length === 0 && (
+          {!folder.error && folder.files.length === 0 && folder.subfolders.length === 0 && !showNewFolder && (
             <p className="px-4 py-3 text-xs text-muted-foreground italic">This folder is empty.</p>
           )}
 
@@ -238,15 +357,38 @@ function CriteriaFolderSection({ folder, onPreview }: CriteriaFolderSectionProps
           ))}
 
           {folder.subfolders.map((sf) => (
-            <SubfolderSection key={sf.id} subfolder={sf} onPreview={onPreview} />
+            <SubfolderSection
+              key={sf.id}
+              subfolder={sf}
+              onPreview={onPreview}
+              onCreateFolder={
+                onCreateSubfolderIn
+                  ? (name) => onCreateSubfolderIn(sf.id, name)
+                  : undefined
+              }
+            />
           ))}
+
+          {showNewFolder && onCreateFolder && (
+            <NewFolderRow
+              onCreate={onCreateFolder}
+              onCancel={() => setShowNewFolder(false)}
+            />
+          )}
         </div>
       )}
     </div>
   );
 }
 
-export function DriveFileBrowser({ fetchFn, isProvisioning = false, justProvisioned = false }: DriveFileBrowserProps) {
+// ─── Main browser ─────────────────────────────────────────────────────────────
+
+export function DriveFileBrowser({
+  fetchFn,
+  createFolderFn,
+  isProvisioning = false,
+  justProvisioned = false,
+}: DriveFileBrowserProps) {
   const [criteria, setCriteria] = useState<DriveCriteriaFolder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -351,7 +493,21 @@ export function DriveFileBrowser({ fetchFn, isProvisioning = false, justProvisio
 
       <div className="space-y-2">
         {criteria.map((folder) => (
-          <CriteriaFolderSection key={folder.criteriaId} folder={folder} onPreview={setPreviewFile} />
+          <CriteriaFolderSection
+            key={folder.criteriaId}
+            folder={folder}
+            onPreview={setPreviewFile}
+            onCreateFolder={
+              createFolderFn
+                ? (name) => createFolderFn({ name, parentDriveId: folder.driveFolderId }).then(load)
+                : undefined
+            }
+            onCreateSubfolderIn={
+              createFolderFn
+                ? (parentDriveId, name) => createFolderFn({ name, parentDriveId }).then(load)
+                : undefined
+            }
+          />
         ))}
       </div>
 

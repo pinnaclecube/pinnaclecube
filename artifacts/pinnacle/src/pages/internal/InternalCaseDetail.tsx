@@ -412,6 +412,20 @@ function EvidenceTab({ userId }: { userId: string }) {
     [userId],
   );
 
+  const staffCreateFolderFn = useCallback(
+    async (opts: { name: string; parentDriveId: string }) => {
+      const res = await staffFetch("/admin/drive-folders", {
+        method: "POST",
+        body: JSON.stringify({ ...opts, profileId: parseInt(userId) }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? "Failed to create folder");
+      }
+    },
+    [userId],
+  );
+
   const reloadSyncStatus = useCallback(async () => {
     const r = await staffFetch(`/admin/profiles/${userId}/drive-sync-status`);
     if (r.ok) {
@@ -632,7 +646,7 @@ function EvidenceTab({ userId }: { userId: string }) {
         </button>
         {showDriveBrowser && (
           <div className="border-t p-4">
-            <DriveFileBrowser fetchFn={staffDriveFetchFn} />
+            <DriveFileBrowser fetchFn={staffDriveFetchFn} createFolderFn={staffCreateFolderFn} />
           </div>
         )}
       </div>
