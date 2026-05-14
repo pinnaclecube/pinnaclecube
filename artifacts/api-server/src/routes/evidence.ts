@@ -258,51 +258,60 @@ router.get("/evidence/drive-files", requireClientAuth, async (req: any, res) => 
 
   const criteria = await Promise.all(
     folders.map(async (folder) => {
-      try {
-        const items = await listFolderContents(drive, folder.driveFolderId);
-        const files = items.filter((i) => !i.isFolder);
-        const subfolderItems = items.filter((i) => i.isFolder);
+      const base = {
+        criteriaId: folder.criteriaId,
+        criteriaName: folder.folderName,
+        folderName: folder.folderName,
+        driveFolderId: folder.driveFolderId,
+        driveFolderUrl: folder.driveFolderUrl,
+      };
 
-        const subfolders = await Promise.all(
-          subfolderItems.map(async (sf) => {
-            try {
-              const sfItems = await listFolderContents(drive, sf.id);
-              return {
-                id: sf.id,
-                name: sf.name,
-                files: sfItems.filter((i) => !i.isFolder).map(({ isFolder: _, ...f }) => f),
-              };
-            } catch {
-              return { id: sf.id, name: sf.name, files: [], error: "Could not access subfolder" };
-            }
-          }),
-        );
+      // Run existence check and listing in parallel to avoid extra round-trip latency
+      const [metaResult, itemsResult] = await Promise.allSettled([
+        drive.files.get({ fileId: folder.driveFolderId, fields: "id,trashed", supportsAllDrives: true }),
+        listFolderContents(drive, folder.driveFolderId),
+      ]);
 
-        return {
-          criteriaId: folder.criteriaId,
-          criteriaName: folder.folderName,
-          folderName: folder.folderName,
-          driveFolderId: folder.driveFolderId,
-          driveFolderUrl: folder.driveFolderUrl,
-          files: files.map(({ isFolder: _, ...f }) => f),
-          subfolders,
-        };
-      } catch {
-        return {
-          criteriaId: folder.criteriaId,
-          criteriaName: folder.folderName,
-          folderName: folder.folderName,
-          driveFolderId: folder.driveFolderId,
-          driveFolderUrl: folder.driveFolderUrl,
-          files: [],
-          subfolders: [],
-          error: "Could not access this Drive folder",
-        };
-      }
+      const folderMeta = metaResult.status === "fulfilled" ? metaResult.value.data : null;
+      const notFound = !folderMeta || folderMeta.trashed === true;
+
+      if (notFound) return { ...base, files: [], subfolders: [], notFound: true };
+      if (itemsResult.status === "rejected") return { ...base, files: [], subfolders: [], error: "Could not access this Drive folder" };
+
+      const items = itemsResult.value;
+      const files = items.filter((i) => !i.isFolder);
+      const subfolderItems = items.filter((i) => i.isFolder);
+
+      const subfolders = await Promise.all(
+        subfolderItems.map(async (sf) => {
+          try {
+            const sfItems = await listFolderContents(drive, sf.id);
+            return { id: sf.id, name: sf.name, files: sfItems.filter((i) => !i.isFolder).map(({ isFolder: _, ...f }) => f) };
+          } catch {
+            return { id: sf.id, name: sf.name, files: [], error: "Could not access subfolder" };
+          }
+        }),
+      );
+
+      return { ...base, files: files.map(({ isFolder: _, ...f }) => f), subfolders };
     }),
   );
 
   res.json({ criteria });
+});
+
+// ─── DELETE /api/evidence/drive-connection/:criteriaId ─────────────────────────
+// Removes a stale / user-deleted Drive folder connection from the client's account.
+
+router.delete("/evidence/drive-connection/:criteriaId", requireClientAuth, async (req: any, res) => {
+  const userId: number = req.clientUser.id;
+  const { criteriaId } = req.params;
+
+  await db
+    .delete(clientDriveFoldersTable)
+    .where(and(eq(clientDriveFoldersTable.profileId, userId), eq(clientDriveFoldersTable.criteriaId, criteriaId)));
+
+  res.json({ ok: true });
 });
 
 // ─── GET /api/evidence/coverage ───────────────────────────────────────────────

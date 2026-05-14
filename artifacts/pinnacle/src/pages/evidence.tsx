@@ -209,6 +209,14 @@ export default function EvidenceVault() {
     [],
   );
 
+  const clientDisconnectFolderFn = useCallback(async (criteriaId: string) => {
+    const res = await fetch(`/api/evidence/drive-connection/${criteriaId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    if (!res.ok) throw new Error("Failed to disconnect folder");
+  }, []);
+
   useEffect(() => {
     if (driveToastShown.current) return;
     if (driveSync && driveSync.unreadDriveNotifications > 0) {
@@ -662,6 +670,7 @@ export default function EvidenceVault() {
           key={hasDriveFolders ? "folders-ready" : "no-folders"}
           fetchFn={clientDriveFetchFn}
           createFolderFn={clientCreateFolderFn}
+          disconnectFolderFn={clientDisconnectFolderFn}
           isProvisioning={isProvisioningDrive}
           justProvisioned={justProvisioned}
         />

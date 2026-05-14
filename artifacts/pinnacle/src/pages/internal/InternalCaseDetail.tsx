@@ -426,6 +426,14 @@ function EvidenceTab({ userId }: { userId: string }) {
     [userId],
   );
 
+  const staffDisconnectFolderFn = useCallback(
+    async (criteriaId: string) => {
+      const res = await staffFetch(`/admin/drive-connection/${criteriaId}/${userId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to disconnect folder");
+    },
+    [userId],
+  );
+
   const reloadSyncStatus = useCallback(async () => {
     const r = await staffFetch(`/admin/profiles/${userId}/drive-sync-status`);
     if (r.ok) {
@@ -646,7 +654,7 @@ function EvidenceTab({ userId }: { userId: string }) {
         </button>
         {showDriveBrowser && (
           <div className="border-t p-4">
-            <DriveFileBrowser fetchFn={staffDriveFetchFn} createFolderFn={staffCreateFolderFn} />
+            <DriveFileBrowser fetchFn={staffDriveFetchFn} createFolderFn={staffCreateFolderFn} disconnectFolderFn={staffDisconnectFolderFn} />
           </div>
         )}
       </div>
