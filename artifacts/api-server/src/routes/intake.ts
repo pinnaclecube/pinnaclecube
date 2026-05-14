@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import multer from "multer";
 import Anthropic from "@anthropic-ai/sdk";
-import { db, readinessIntakeTable, profilesTable, resumeUploadsTable, clientUserProductsTable, clientDriveFoldersTable } from "@workspace/db";
+import { db, readinessIntakeTable, profilesTable, resumeUploadsTable, clientDriveFoldersTable } from "@workspace/db";
 import { requireClientAuth } from "../middlewares/clientAuth";
 import { autoProvisionDrive, uploadResumeFile } from "../services/googleDrive";
 
@@ -82,26 +82,12 @@ router.post("/intake", requireClientAuth, async (req: any, res): Promise<void> =
     res.status(201).json({ intake: created });
   }
 
-  // Auto-provision criteria Drive folders when visa path is saved and user has Evidence Engine
+  // Auto-provision Drive folders for ALL clients who save a visa path (not just Evidence Engine subscribers)
   const newVisaPath = updateData.visaPath as string | undefined;
   if (newVisaPath && newVisaPath !== "unsure") {
     const clientEmail = req.clientUser.email as string;
     setImmediate(async () => {
       try {
-        // Only for active Evidence Engine subscribers
-        const [evProduct] = await db
-          .select({ id: clientUserProductsTable.id })
-          .from(clientUserProductsTable)
-          .where(
-            and(
-              eq(clientUserProductsTable.profileId, profileId),
-              eq(clientUserProductsTable.product, "evidence_vault"),
-              eq(clientUserProductsTable.status, "active"),
-            ),
-          )
-          .limit(1);
-        if (!evProduct) return;
-
         // Skip if criteria folders are already set up
         const [existingFolder] = await db
           .select({ id: clientDriveFoldersTable.id })
@@ -112,7 +98,7 @@ router.post("/intake", requireClientAuth, async (req: any, res): Promise<void> =
 
         await autoProvisionDrive(profileId, clientEmail, newVisaPath);
       } catch (err: unknown) {
-        console.error(`[intake/POST] Drive auto-provision failed for profile ${profileId}:`, err);
+        req.log?.error({ err, profileId }, "[intake/POST] Drive auto-provision failed");
       }
     });
   }
@@ -138,30 +124,14 @@ router.post("/intake/complete", requireClientAuth, async (req: any, res): Promis
     .set({ readinessCompleted: true, readinessCompletedAt: new Date(), status: "completed" })
     .where(eq(readinessIntakeTable.profileId, profileId));
 
-  // Skip Drive provisioning entirely if criteria folders are already set up
+  // Auto-provision Drive for ALL clients on intake completion — provision root + criteria folders
   // (driveFoldersCreated is set to true by createCriteriaEvidenceFolders)
   if (!intake.driveFoldersCreated) {
     setImmediate(async () => {
       try {
-        // Check for active Evidence Engine subscription
-        const [evProduct] = await db
-          .select({ id: clientUserProductsTable.id })
-          .from(clientUserProductsTable)
-          .where(
-            and(
-              eq(clientUserProductsTable.profileId, profileId),
-              eq(clientUserProductsTable.product, "evidence_vault"),
-              eq(clientUserProductsTable.status, "active"),
-            ),
-          )
-          .limit(1);
-
-        // Evidence Engine subscribers: full provision (root + criteria + notification)
-        // All other users: root only (needed for resume upload; no notification)
-        const visaPathToProvision = evProduct ? (intake.visaPath ?? null) : null;
-        await autoProvisionDrive(profileId, profile.email, visaPathToProvision);
+        await autoProvisionDrive(profileId, profile.email, intake.visaPath ?? null);
       } catch (err) {
-        console.error(`[intake/complete] Drive provision failed for profile ${profileId}:`, err);
+        req.log?.error({ err, profileId }, "[intake/complete] Drive provision failed");
       }
     });
   }

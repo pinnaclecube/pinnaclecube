@@ -170,6 +170,9 @@ function OverviewTab({ userId, data, onReload }: { userId: string; data: any; on
                   <div className="flex items-center gap-1.5 text-xs text-green-700">
                     <CheckCircle className="w-3.5 h-3.5" />
                     <span className="font-medium">Workspace provisioned</span>
+                    {profile.driveSyncStatus === "synced" && (
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-700 border border-green-200">synced</span>
+                    )}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <a href={`https://drive.google.com/drive/folders/${driveRoot.clientRootFolderId}`} target="_blank" rel="noopener noreferrer"
@@ -192,10 +195,24 @@ function OverviewTab({ userId, data, onReload }: { userId: string; data: any; on
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <div className="flex items-center gap-1.5 text-xs text-amber-700">
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    <span>Not provisioned — folders have not been created in Google Drive.</span>
-                  </div>
+                  {profile.driveSyncStatus === "pending" ? (
+                    <div className="flex items-center gap-1.5 text-xs text-blue-700">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Auto-provisioning in progress…</span>
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 border border-blue-200">pending</span>
+                    </div>
+                  ) : profile.driveSyncStatus === "failed" ? (
+                    <div className="flex items-center gap-1.5 text-xs text-red-700">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span className="font-medium">Auto-provisioning failed</span>
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700 border border-red-200">failed</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 text-xs text-amber-700">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span>Not provisioned — folders have not been created in Google Drive.</span>
+                    </div>
+                  )}
                   {provisionMsg && (
                     <p className={cn("text-xs font-medium", provisionMsg.type === "success" ? "text-green-700" : "text-red-600")}>
                       {provisionMsg.text}
@@ -203,7 +220,7 @@ function OverviewTab({ userId, data, onReload }: { userId: string; data: any; on
                   )}
                   <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={provisionDrive} disabled={provisioning}>
                     {provisioning ? <Loader2 className="w-3 h-3 animate-spin" /> : <FolderPlus className="w-3 h-3" />}
-                    {provisioning ? "Creating workspace…" : "Provision Drive Workspace"}
+                    {provisioning ? "Creating workspace…" : profile.driveSyncStatus === "failed" ? "Retry Drive Provision" : "Provision Drive Workspace"}
                   </Button>
                 </div>
               )}

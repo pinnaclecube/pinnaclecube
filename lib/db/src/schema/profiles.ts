@@ -36,6 +36,7 @@ export const profilesTable = pgTable("profiles", {
   passwordResetExpiresAt: timestamp("password_reset_expires_at", { withTimezone: true }),
   // Access
   accessLevel: text("access_level").notNull().default("free"),
+  driveSyncStatus: text("drive_sync_status"), // null | 'pending' | 'synced' | 'failed'
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

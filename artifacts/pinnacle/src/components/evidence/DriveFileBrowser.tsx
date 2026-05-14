@@ -508,9 +508,9 @@ export function DriveFileBrowser({
     return (
       <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
         <HardDriveDownload className="w-10 h-10 text-muted-foreground/50" />
-        <p className="text-sm font-medium text-foreground">No Drive folders connected yet</p>
+        <p className="text-sm font-medium text-foreground">Drive folders are being set up</p>
         <p className="text-xs text-muted-foreground max-w-xs">
-          Connect a Google Drive folder to a USCIS criterion using the "Connect Drive Folder" button and files will appear here.
+          Your Google Drive evidence folders are being created automatically. This usually takes under a minute — check back shortly.
         </p>
       </div>
     );

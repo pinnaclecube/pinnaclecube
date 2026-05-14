@@ -57,6 +57,7 @@ router.get(
         visaTarget: profilesTable.visaTarget,
         accessLevel: profilesTable.accessLevel,
         profession: profilesTable.profession,
+        driveSyncStatus: profilesTable.driveSyncStatus,
         createdAt: profilesTable.createdAt,
       })
       .from(profilesTable)
@@ -540,6 +541,29 @@ router.patch(
 
     if (!updated) { res.status(404).json({ error: "Document not found" }); return; }
     res.json({ success: true, document: updated });
+  },
+);
+
+// ─── Drive sync failures (admin dashboard) ─────────────────────────────────────
+
+router.get(
+  "/admin/drive-sync-failures",
+  requireStaffAuth,
+  async (_req: Request, res: Response): Promise<void> => {
+    const failed = await db
+      .select({
+        id: profilesTable.id,
+        name: profilesTable.name,
+        email: profilesTable.email,
+        visaTarget: profilesTable.visaTarget,
+        accessLevel: profilesTable.accessLevel,
+        driveSyncStatus: profilesTable.driveSyncStatus,
+        createdAt: profilesTable.createdAt,
+      })
+      .from(profilesTable)
+      .where(sql`${profilesTable.driveSyncStatus} = 'failed'`);
+
+    res.json({ failed, total: failed.length });
   },
 );
 

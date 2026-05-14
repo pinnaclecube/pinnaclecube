@@ -5,7 +5,7 @@ import type { Evidence } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Upload, X, FileText, AlertCircle, CloudDownload, RefreshCw, FolderOpen, Link2, CheckCircle2, ExternalLink, HardDriveDownload } from "lucide-react";
+import { Plus, Search, Upload, X, FileText, AlertCircle, CloudDownload, RefreshCw, HardDriveDownload } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
@@ -181,6 +181,7 @@ export default function EvidenceVault() {
       const t = setTimeout(() => setJustProvisioned(false), 8000);
       return () => clearTimeout(t);
     }
+    return undefined;
   }, [hasDriveFolders, isProvisioningDrive, toast]);
 
   const clientDriveFetchFn = useMemo(
@@ -238,68 +239,11 @@ export default function EvidenceVault() {
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Connect Drive folder dialog state
-  const [driveOpen, setDriveOpen] = useState(false);
-  const [driveCriteriaId, setDriveCriteriaId] = useState("");
-  const [driveFolderUrl, setDriveFolderUrl] = useState("");
-  const [driveConnecting, setDriveConnecting] = useState(false);
-
   const resetForm = useCallback(() => {
     setCriteriaId("");
     setDescription("");
     setSelectedFiles([]);
   }, []);
-
-  const resetDriveForm = useCallback(() => {
-    setDriveCriteriaId("");
-    setDriveFolderUrl("");
-  }, []);
-
-  const onConnectDriveFolder = async () => {
-    if (!driveCriteriaId) {
-      toast({ title: "Please select a USCIS criterion", variant: "destructive" });
-      return;
-    }
-    const trimmed = driveFolderUrl.trim();
-    if (!trimmed) {
-      toast({ title: "Please paste a Google Drive folder link", variant: "destructive" });
-      return;
-    }
-    if (!trimmed.includes("/folders/")) {
-      toast({
-        title: "Invalid Drive URL",
-        description: "Expected a link like https://drive.google.com/drive/folders/…",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setDriveConnecting(true);
-    try {
-      const res = await fetch("/api/evidence/drive-folder", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${getToken()}`,
-        },
-        body: JSON.stringify({ criteria_id: driveCriteriaId, folder_url: trimmed }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast({ title: data.error ?? "Could not connect folder", variant: "destructive" });
-        return;
-      }
-      toast({ title: "Drive folder connected", description: "New files will be ingested automatically on the next sync." });
-      setDriveOpen(false);
-      resetDriveForm();
-      refetch();
-      refetchCriteria();
-    } catch {
-      toast({ title: "Network error — please try again", variant: "destructive" });
-    } finally {
-      setDriveConnecting(false);
-    }
-  };
 
   const handleFilesChosen = (files: FileList | null) => {
     if (!files) return;
@@ -391,107 +335,6 @@ export default function EvidenceVault() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Connect Drive Folder dialog */}
-          <Dialog open={driveOpen} onOpenChange={(v) => { setDriveOpen(v); if (!v) resetDriveForm(); }}>
-            <DialogTrigger asChild>
-              <Button variant="outline" className="border-[#1E2D6B]/30 text-[#1E2D6B] hover:bg-[#1E2D6B]/5">
-                <FolderOpen className="w-4 h-4 mr-2" /> Connect Drive Folder
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[520px]">
-              <DialogHeader>
-                <DialogTitle>Connect a Google Drive Folder</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-5 pt-2">
-                <p className="text-sm text-muted-foreground">
-                  Share a Google Drive folder with Pinnacle and any files you drop in it will be
-                  automatically ingested as evidence on the next sync cycle.
-                </p>
-
-                {requiresIntake && (
-                  <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span>Please complete your Readiness Intake before connecting a folder.</span>
-                  </div>
-                )}
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="drive-criterion">USCIS Criterion <span className="text-red-500">*</span></Label>
-                  <Select
-                    value={driveCriteriaId}
-                    onValueChange={setDriveCriteriaId}
-                    disabled={requiresIntake || criteriaLoading}
-                  >
-                    <SelectTrigger id="drive-criterion">
-                      <SelectValue placeholder={criteriaLoading ? "Loading criteria…" : "Select a criterion"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {criteria.map((c) => (
-                        <SelectItem key={c.criteria_id} value={c.criteria_id}>
-                          <span className="font-mono text-xs text-muted-foreground mr-2">{c.criteria_id}</span>
-                          {c.display_name}
-                          {c.drive_folder_url && (
-                            <span className="ml-2 text-xs text-green-600 font-medium">● connected</span>
-                          )}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="drive-url">Google Drive Folder Link <span className="text-red-500">*</span></Label>
-                  <div className="relative">
-                    <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="drive-url"
-                      className="pl-9"
-                      placeholder="https://drive.google.com/drive/folders/…"
-                      value={driveFolderUrl}
-                      onChange={(e) => setDriveFolderUrl(e.target.value)}
-                      disabled={requiresIntake}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Make sure the folder is shared with the Pinnacle service account so files can be read automatically.
-                  </p>
-                </div>
-
-                {/* Show currently connected folder if criterion is selected */}
-                {driveCriteriaId && criteria.find((c) => c.criteria_id === driveCriteriaId)?.drive_folder_url && (
-                  <div className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
-                    <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <span className="font-medium">Folder already connected.</span>
-                      {" "}Pasting a new link will replace it.{" "}
-                      <a
-                        href={criteria.find((c) => c.criteria_id === driveCriteriaId)?.drive_folder_url ?? "#"}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 underline hover:text-green-900"
-                      >
-                        Open current folder <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex justify-end gap-2 pt-1">
-                  <Button variant="outline" onClick={() => { setDriveOpen(false); resetDriveForm(); }}>
-                    Cancel
-                  </Button>
-                  <Button
-                    className="bg-[#1E2D6B] hover:bg-[#3D4FA8]"
-                    onClick={onConnectDriveFolder}
-                    disabled={driveConnecting || requiresIntake || !driveCriteriaId || !driveFolderUrl.trim()}
-                  >
-                    {driveConnecting ? "Connecting…" : "Connect Folder"}
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-
           <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
             <DialogTrigger asChild>
               <Button className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
@@ -620,7 +463,7 @@ export default function EvidenceVault() {
 
       <AIOutputBanner variant="analysis" />
 
-      {/* Tab switcher — Drive Files tab visible when folders are connected or being provisioned */}
+      {/* Tab switcher — Drive Files tab always visible (auto-provisioned for all eligible users) */}
       <div className="flex items-center gap-1 border-b mb-6">
         <button
           type="button"
@@ -637,24 +480,22 @@ export default function EvidenceVault() {
             <span className="ml-2 text-xs font-normal text-muted-foreground">({evidenceList.length})</span>
           )}
         </button>
-        {(hasDriveFolders || isProvisioningDrive) && (
-          <button
-            type="button"
-            onClick={() => setActiveTab("drive")}
-            className={cn(
-              "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px",
-              activeTab === "drive"
-                ? "border-[#1E2D6B] text-[#1E2D6B]"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <HardDriveDownload className="w-3.5 h-3.5" />
-            Drive Files
-            {isProvisioningDrive && (
-              <span className="inline-flex items-center justify-center w-2 h-2 rounded-full bg-[#1E2D6B] animate-pulse ml-0.5" />
-            )}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setActiveTab("drive")}
+          className={cn(
+            "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px",
+            activeTab === "drive"
+              ? "border-[#1E2D6B] text-[#1E2D6B]"
+              : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <HardDriveDownload className="w-3.5 h-3.5" />
+          Drive Files
+          {isProvisioningDrive && (
+            <span className="inline-flex items-center justify-center w-2 h-2 rounded-full bg-[#1E2D6B] animate-pulse ml-0.5" />
+          )}
+        </button>
       </div>
 
       {activeTab === "drive" ? (

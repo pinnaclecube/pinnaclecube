@@ -13,11 +13,13 @@ import { db } from "@workspace/db";
 import {
   clientDriveRootsTable,
   clientDriveFoldersTable,
+  profilesTable,
   readinessIntakeTable,
   notificationsTable,
   clientActivityLogTable,
 } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
+import { logger } from "../lib/logger";
 import {
   getCriteriaForVisaPath,
   sanitizeFileName,
@@ -572,8 +574,9 @@ export async function provisionClientDriveFromProspect(
 }
 
 // ─── 11. autoProvisionDrive ───────────────────────────────────────────────────
-// Fire-and-forget helper: creates root + (if visa path known) criteria folders,
-// logs activity, and sends an in-app notification. Never throws.
+// Shared trigger for all case creation / product purchase events.
+// Marks driveSyncStatus → pending → synced (or failed after one retry).
+// Safe to call from setImmediate — all errors are caught internally.
 
 // Strip separators and lowercase before matching intake / profile values to VisaPathKey
 function normalizeVisaPath(raw: string | null | undefined): VisaPathKey | null {
@@ -585,64 +588,101 @@ function normalizeVisaPath(raw: string | null | undefined): VisaPathKey | null {
   return null;
 }
 
+async function runProvision(
+  profileId: number,
+  clientEmail: string,
+  visaPathRaw: string | null | undefined,
+): Promise<void> {
+  // Step 1: Root folders — always, idempotent
+  await createClientRootFolders(profileId, clientEmail);
+
+  // Step 2: Per-criterion folders — only when visa path is known
+  const visaPath = normalizeVisaPath(visaPathRaw);
+  if (visaPath) {
+    await createCriteriaEvidenceFolders(profileId, visaPath);
+
+    // In-app notification — deduplicated (no unique constraint on this table)
+    const [existingNotif] = await db
+      .select({ id: notificationsTable.id })
+      .from(notificationsTable)
+      .where(
+        and(
+          eq(notificationsTable.profileId, profileId),
+          eq(notificationsTable.notificationType, "drive_provisioned"),
+        ),
+      )
+      .limit(1);
+
+    if (!existingNotif) {
+      await db.insert(notificationsTable).values({
+        profileId,
+        userType: "client",
+        notificationType: "drive_provisioned",
+        title: "Your Drive folders are ready",
+        message:
+          "Your evidence folders have been set up in Google Drive. You can upload files directly in Drive and they will sync automatically into your Evidence Engine.",
+        link: "/evidence",
+        status: "unread",
+        priority: "high",
+      });
+    }
+  }
+
+  // Activity log
+  await db.insert(clientActivityLogTable).values({
+    profileId,
+    eventType: "drive_auto_provisioned",
+    eventData: {
+      message: visaPath
+        ? `Drive workspace auto-provisioned (${visaPath.toUpperCase()}) — root + criteria folders created.`
+        : "Drive root workspace auto-provisioned (no visa path yet — criteria folders pending).",
+      visaPath: visaPath ?? null,
+    },
+  });
+}
+
 export async function autoProvisionDrive(
   profileId: number,
   clientEmail: string,
   visaPathRaw: string | null | undefined,
 ): Promise<void> {
+  // Mark pending — best-effort, non-blocking
+  await db
+    .update(profilesTable)
+    .set({ driveSyncStatus: "pending" })
+    .where(eq(profilesTable.id, profileId))
+    .catch((err) => logger.warn({ err, profileId }, "[autoProvisionDrive] Could not set pending status"));
+
+  // First attempt
   try {
-    // Step 1: Root folders — always, idempotent
-    await createClientRootFolders(profileId, clientEmail);
+    await runProvision(profileId, clientEmail, visaPathRaw);
+    await db
+      .update(profilesTable)
+      .set({ driveSyncStatus: "synced" })
+      .where(eq(profilesTable.id, profileId))
+      .catch((err) => logger.warn({ err, profileId }, "[autoProvisionDrive] Could not set synced status"));
+    return;
+  } catch (err1: unknown) {
+    logger.warn({ err: err1, profileId }, "[autoProvisionDrive] First attempt failed — retrying in 5s");
+  }
 
-    // Step 2: Per-criterion folders — only when visa path is known
-    const visaPath = normalizeVisaPath(visaPathRaw);
-    if (visaPath) {
-      await createCriteriaEvidenceFolders(profileId, visaPath);
+  // Wait 5 s then retry once
+  await new Promise<void>((resolve) => setTimeout(resolve, 5000));
 
-      // In-app notification: criteria folders are ready — dedupe by checking for
-      // existing drive_provisioned notification before inserting (no unique DB
-      // constraint exists on this table, so we guard in code instead)
-      const [existingNotif] = await db
-        .select({ id: notificationsTable.id })
-        .from(notificationsTable)
-        .where(
-          and(
-            eq(notificationsTable.profileId, profileId),
-            eq(notificationsTable.notificationType, "drive_provisioned"),
-          ),
-        )
-        .limit(1);
-
-      if (!existingNotif) {
-        await db.insert(notificationsTable).values({
-          profileId,
-          userType: "client",
-          notificationType: "drive_provisioned",
-          title: "Your Drive folders are ready",
-          message:
-            "Your evidence folders have been set up in Google Drive. You can upload files directly in Drive and they will sync automatically into your Evidence Engine.",
-          link: "/evidence",
-          status: "unread",
-          priority: "high",
-        });
-      }
-    }
-
-    // Activity log
-    await db.insert(clientActivityLogTable).values({
-      profileId,
-      eventType: "drive_auto_provisioned",
-      eventData: {
-        message: visaPath
-          ? `Drive workspace auto-provisioned (${visaPath.toUpperCase()}) — root + criteria folders created.`
-          : "Drive root workspace auto-provisioned (no visa path yet — criteria folders pending).",
-        visaPath: visaPath ?? null,
-      },
-    });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[autoProvisionDrive] Failed for profile ${profileId}:`, msg);
-    // Never rethrow — safe to call from setImmediate
+  try {
+    await runProvision(profileId, clientEmail, visaPathRaw);
+    await db
+      .update(profilesTable)
+      .set({ driveSyncStatus: "synced" })
+      .where(eq(profilesTable.id, profileId))
+      .catch((err) => logger.warn({ err, profileId }, "[autoProvisionDrive] Could not set synced status after retry"));
+  } catch (err2: unknown) {
+    logger.error({ err: err2, profileId }, "[autoProvisionDrive] Failed after retry — marking as failed");
+    await db
+      .update(profilesTable)
+      .set({ driveSyncStatus: "failed" })
+      .where(eq(profilesTable.id, profileId))
+      .catch(() => {});
   }
 }
 

@@ -416,8 +416,8 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
             ).catch(() => {});
           }
 
-          // Auto-provision Google Drive workspace for Evidence Engine purchases
-          if (product === "evidence_vault") {
+          // Auto-provision Google Drive workspace for Evidence Engine and Elite Blueprint purchases
+          if (product === "evidence_vault" || product === "elite_blueprint") {
             setImmediate(async () => {
               try {
                 const [intake] = await db
