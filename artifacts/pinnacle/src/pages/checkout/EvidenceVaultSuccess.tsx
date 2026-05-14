@@ -22,11 +22,8 @@ export default function EvidenceVaultSuccess() {
             <CheckCircle2 className="w-10 h-10 text-green-600" />
           </div>
           <h1 className="text-3xl font-bold mb-3">Access Activated!</h1>
-          <p className="text-muted-foreground mb-2 leading-relaxed">
-            Your Evidence Engine is ready. Your Google Drive root folders are being created now in the background.
-          </p>
           <p className="text-muted-foreground mb-8 leading-relaxed">
-            Once you complete your <strong>Readiness Intake</strong> and select a visa path, your per-criterion evidence folders will be set up automatically and will appear in the <strong>Drive Files</strong> tab — no manual setup required.
+            Your Evidence Engine is ready. Complete your <strong>Readiness Intake</strong> to unlock your personalized criteria and begin tracking your petition evidence.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link href="/dashboard/readiness-intake">

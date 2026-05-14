@@ -13,7 +13,6 @@ import {
 } from "../services/auth";
 import { requireClientAuth } from "../middlewares/clientAuth";
 import { sendEmail, welcomeEmail, passwordResetRequestEmail, prospectAccountCreatedEmail, paymentReceivedStaffAlertEmail } from "../services/emailService";
-import { autoProvisionDrive } from "../services/googleDrive";
 import { logger } from "../lib/logger";
 
 const STAFF_EMAIL = "support@pinnaclecube.com";
@@ -593,23 +592,6 @@ router.post("/auth/payment-provision-and-login", async (req, res): Promise<void>
       !existingProfile,
     ),
   ).catch(() => {});
-
-  // Auto-provision Drive workspace for Evidence Engine and Elite Blueprint
-  if (product === "evidence_vault" || product === "elite_blueprint") {
-    const profileId = profile.id;
-    setImmediate(async () => {
-      try {
-        const [intake] = await db
-          .select({ visaPath: readinessIntakeTable.visaPath })
-          .from(readinessIntakeTable)
-          .where(eq(readinessIntakeTable.profileId, profileId))
-          .limit(1);
-        await autoProvisionDrive(profileId, customerEmail, intake?.visaPath ?? null);
-      } catch (err: unknown) {
-        logger.error({ err, profileId }, "[payment-provision] Drive auto-provision failed");
-      }
-    });
-  }
 
   const requiresPasswordChange = profile.mustChangePassword ?? false;
   const requiresReconsent =

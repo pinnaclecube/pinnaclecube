@@ -14,9 +14,8 @@ import StaffNav from "@/components/layout/StaffNav";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
 import {
   ArrowLeft, Plus, Check, AlertTriangle, Lock,
-  RefreshCw, ExternalLink, Loader2, CheckCircle, Clock, Zap, Activity, FolderOpen, FolderPlus, CloudDownload, ChevronDown, ChevronRight, History, HardDriveDownload,
+  RefreshCw, ExternalLink, Loader2, CheckCircle, Clock, Zap, Activity,
 } from "lucide-react";
-import { DriveFileBrowser } from "@/components/evidence/DriveFileBrowser";
 import { cn } from "@/lib/utils";
 
 const TABS = ["Overview", "Evidence", "Excellence Lab", "Petition Workspace", "Documents"] as const;
@@ -56,7 +55,7 @@ function StatusBadge({ status }: { status: string }) {
 // ─── Tab 1: Overview ────────────────────────────────────────────────────────────
 
 function OverviewTab({ userId, data, onReload }: { userId: string; data: any; onReload: () => void }) {
-  const { profile, intake, resume, driveRoot } = data;
+  const { profile, intake, resume } = data;
   const [actionItems, setActionItems] = useState<any[]>([]);
   const [showNewItem, setShowNewItem] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -66,8 +65,6 @@ function OverviewTab({ userId, data, onReload }: { userId: string; data: any; on
   const [showResetPw, setShowResetPw] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [provisioning, setProvisioning] = useState(false);
-  const [provisionMsg, setProvisionMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     staffFetch(`/admin/profiles/${userId}/action-items`)
@@ -116,25 +113,6 @@ function OverviewTab({ userId, data, onReload }: { userId: string; data: any; on
     window.location.href = "/internal/cases";
   };
 
-  const provisionDrive = async () => {
-    setProvisioning(true);
-    setProvisionMsg(null);
-    try {
-      const r = await staffFetch(`/admin/profiles/${userId}/provision-drive`, { method: "POST" });
-      const d = await r.json();
-      if (r.ok) {
-        setProvisionMsg({ type: "success", text: d.message ?? "Drive workspace provisioned successfully." });
-        onReload();
-      } else {
-        setProvisionMsg({ type: "error", text: d.detail ?? d.error ?? "Drive provisioning failed." });
-      }
-    } catch {
-      setProvisionMsg({ type: "error", text: "Network error — check API server logs." });
-    } finally {
-      setProvisioning(false);
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -162,68 +140,6 @@ function OverviewTab({ userId, data, onReload }: { userId: string; data: any; on
                   <p className="font-medium capitalize">{v}</p>
                 </div>
               ) : null)}
-            </div>
-            <div className="pt-2 border-t">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Drive Workspace</p>
-              {driveRoot ? (
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-xs text-green-700">
-                    <CheckCircle className="w-3.5 h-3.5" />
-                    <span className="font-medium">Workspace provisioned</span>
-                    {profile.driveSyncStatus === "synced" && (
-                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-700 border border-green-200">synced</span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <a href={`https://drive.google.com/drive/folders/${driveRoot.clientRootFolderId}`} target="_blank" rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-[#1E2D6B] hover:underline">
-                      <FolderOpen className="w-3 h-3" /> Root
-                    </a>
-                    {driveRoot.evidenceRootFolderId && (
-                      <a href={`https://drive.google.com/drive/folders/${driveRoot.evidenceRootFolderId}`} target="_blank" rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-[#1E2D6B] hover:underline">
-                        <FolderOpen className="w-3 h-3" /> Evidence
-                      </a>
-                    )}
-                    {driveRoot.resumeFolderId && (
-                      <a href={`https://drive.google.com/drive/folders/${driveRoot.resumeFolderId}`} target="_blank" rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-[#1E2D6B] hover:underline">
-                        <FolderOpen className="w-3 h-3" /> Resume
-                      </a>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {profile.driveSyncStatus === "pending" ? (
-                    <div className="flex items-center gap-1.5 text-xs text-blue-700">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Auto-provisioning in progress…</span>
-                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 border border-blue-200">pending</span>
-                    </div>
-                  ) : profile.driveSyncStatus === "failed" ? (
-                    <div className="flex items-center gap-1.5 text-xs text-red-700">
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      <span className="font-medium">Auto-provisioning failed</span>
-                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700 border border-red-200">failed</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1.5 text-xs text-amber-700">
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      <span>Not provisioned — folders have not been created in Google Drive.</span>
-                    </div>
-                  )}
-                  {provisionMsg && (
-                    <p className={cn("text-xs font-medium", provisionMsg.type === "success" ? "text-green-700" : "text-red-600")}>
-                      {provisionMsg.text}
-                    </p>
-                  )}
-                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={provisionDrive} disabled={provisioning}>
-                    {provisioning ? <Loader2 className="w-3 h-3 animate-spin" /> : <FolderPlus className="w-3 h-3" />}
-                    {provisioning ? "Creating workspace…" : profile.driveSyncStatus === "failed" ? "Retry Drive Provision" : "Provision Drive Workspace"}
-                  </Button>
-                </div>
-              )}
             </div>
           </CardContent>
         </Card>
@@ -271,12 +187,6 @@ function OverviewTab({ userId, data, onReload }: { userId: string; data: any; on
                     {resume.extractionStatus}
                   </span>
                 </p>
-                {resume.driveFileUrl && (
-                  <a href={resume.driveFileUrl} target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-[#1E2D6B] hover:underline">
-                    <ExternalLink className="w-3 h-3" /> View in Drive
-                  </a>
-                )}
                 {resume.extractedText && (
                   <details>
                     <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">Preview extracted text</summary>
@@ -390,23 +300,6 @@ function OverviewTab({ userId, data, onReload }: { userId: string; data: any; on
 
 // ─── Tab 2: Evidence ────────────────────────────────────────────────────────────
 
-interface DriveSyncStatus {
-  foldersConfigured: number;
-  driveIngestedCount: number;
-  lastSyncAt: string | null;
-}
-
-interface DriveIngestLogEntry {
-  id: number;
-  profileId: number;
-  criteriaId: string;
-  driveFileId: string;
-  fileName: string;
-  extractionStatus: string;
-  errorMessage: string | null;
-  ingestedAt: string;
-}
-
 function EvidenceTab({ userId }: { userId: string }) {
   const [groups, setGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -414,50 +307,6 @@ function EvidenceTab({ userId }: { userId: string }) {
   const [noteInput, setNoteInput] = useState<Record<number, string>>({});
   const [reclassifyTarget, setReclassifyTarget] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
-  const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [driveSyncStatus, setDriveSyncStatus] = useState<DriveSyncStatus | null>(null);
-  const [ingestLog, setIngestLog] = useState<DriveIngestLogEntry[]>([]);
-  const [showIngestLog, setShowIngestLog] = useState(false);
-  const [showDriveBrowser, setShowDriveBrowser] = useState(false);
-
-  const staffDriveFetchFn = useCallback(
-    () => staffFetch(`/admin/profiles/${userId}/drive-files`).then((r) => {
-      if (!r.ok) throw new Error("Failed to load Drive files");
-      return r.json();
-    }),
-    [userId],
-  );
-
-  const staffCreateFolderFn = useCallback(
-    async (opts: { name: string; parentDriveId: string }) => {
-      const res = await staffFetch("/admin/drive-folders", {
-        method: "POST",
-        body: JSON.stringify({ ...opts, profileId: parseInt(userId) }),
-      });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d.error ?? "Failed to create folder");
-      }
-    },
-    [userId],
-  );
-
-  const reloadSyncStatus = useCallback(async () => {
-    const r = await staffFetch(`/admin/profiles/${userId}/drive-sync-status`);
-    if (r.ok) {
-      const d = await r.json();
-      setDriveSyncStatus(d);
-    }
-  }, [userId]);
-
-  const reloadIngestLog = useCallback(async () => {
-    const r = await staffFetch(`/admin/profiles/${userId}/drive-ingest-log`);
-    if (r.ok) {
-      const d = await r.json();
-      setIngestLog(d.entries ?? []);
-    }
-  }, [userId]);
 
   const reload = useCallback(async () => {
     const r = await staffFetch(`/admin/profiles/${userId}/evidence`);
@@ -469,40 +318,12 @@ function EvidenceTab({ userId }: { userId: string }) {
     Promise.all([
       staffFetch(`/admin/profiles/${userId}/evidence`).then((r) => r.json()),
       staffFetch("/criteria").then((r) => r.json()),
-      staffFetch(`/admin/profiles/${userId}/drive-sync-status`).then((r) => r.json()),
-      staffFetch(`/admin/profiles/${userId}/drive-ingest-log`).then((r) => r.json()),
-    ]).then(([ev, cr, ds, lg]) => {
+    ]).then(([ev, cr]) => {
       setGroups(ev.evidence ?? []);
       setCriteriaOptions(cr.criteria ?? []);
-      setDriveSyncStatus(ds);
-      setIngestLog(lg.entries ?? []);
       setLoading(false);
     });
   }, [userId]);
-
-  const syncDrive = async () => {
-    setSyncing(true);
-    setSyncResult(null);
-    try {
-      const r = await staffFetch(`/admin/profiles/${userId}/sync-drive`, { method: "POST" });
-      const d = await r.json();
-      if (r.ok) {
-        const msg = d.totalIngested > 0
-          ? `Synced — ${d.totalIngested} new file(s) ingested across ${d.foldersScanned} folder(s).`
-          : `Sync complete — no new files found (${d.foldersScanned} folders scanned).`;
-        setSyncResult({ type: "success", text: msg });
-        if (d.totalIngested > 0) await reload();
-        await reloadSyncStatus();
-        await reloadIngestLog();
-      } else {
-        setSyncResult({ type: "error", text: d.detail ?? d.error ?? "Sync failed." });
-      }
-    } catch {
-      setSyncResult({ type: "error", text: "Network error — check API server logs." });
-    } finally {
-      setSyncing(false);
-    }
-  };
 
   const saveNote = async (eid: number) => {
     const note = noteInput[eid];
@@ -536,137 +357,9 @@ function EvidenceTab({ userId }: { userId: string }) {
 
   return (
     <div className="space-y-6">
-      {/* Drive sync controls */}
-      <div className="rounded-lg border bg-gray-50 p-3 space-y-2">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <CloudDownload className="w-4 h-4 shrink-0 text-blue-600" />
-            <span>Google Drive auto-ingest</span>
-            {driveSyncStatus !== null && driveSyncStatus.foldersConfigured > 0 && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
-                {driveSyncStatus.foldersConfigured} folder{driveSyncStatus.foldersConfigured !== 1 ? "s" : ""}
-              </span>
-            )}
-          </div>
-          <div className="flex flex-col items-end gap-1 shrink-0">
-            {syncResult && (
-              <p className={cn("text-xs font-medium", syncResult.type === "success" ? "text-green-700" : "text-red-600")}>
-                {syncResult.text}
-              </p>
-            )}
-            <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={syncDrive} disabled={syncing}>
-              {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <CloudDownload className="w-3 h-3" />}
-              {syncing ? "Syncing…" : "Sync Drive Now"}
-            </Button>
-          </div>
-        </div>
-        {driveSyncStatus !== null && (
-          <div className="flex items-center gap-4 text-xs text-muted-foreground border-t pt-2">
-            <span>
-              <span className="font-semibold text-foreground">{driveSyncStatus.driveIngestedCount}</span> file{driveSyncStatus.driveIngestedCount !== 1 ? "s" : ""} auto-imported from Drive
-            </span>
-            {driveSyncStatus.lastSyncAt ? (
-              <span>Last synced {new Date(driveSyncStatus.lastSyncAt).toLocaleString()}</span>
-            ) : (
-              <span className="italic">Never synced</span>
-            )}
-          </div>
-        )}
-      </div>
-
       {groups.length === 0 && (
-        <Card><CardContent className="py-12 text-center"><p className="text-muted-foreground">No evidence items yet. Upload files via the client portal or drop them in Google Drive and sync.</p></CardContent></Card>
+        <Card><CardContent className="py-12 text-center"><p className="text-muted-foreground">No evidence items yet. Have the client upload files via the portal.</p></CardContent></Card>
       )}
-
-      {/* Drive Sync History */}
-      <div className="rounded-lg border bg-white">
-        <button
-          type="button"
-          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors"
-          onClick={() => setShowIngestLog((v) => !v)}
-        >
-          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-            <History className="w-4 h-4 text-blue-600" />
-            <span>Drive Sync History</span>
-            <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-normal">
-              {ingestLog.length} entry{ingestLog.length !== 1 ? "ies" : "y"}
-            </span>
-          </div>
-          {showIngestLog ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
-        </button>
-        {showIngestLog && (
-          <div className="border-t">
-            {ingestLog.length === 0 ? (
-              <p className="px-4 py-3 text-sm text-muted-foreground italic">No files have been auto-ingested yet.</p>
-            ) : (
-              <div className="divide-y max-h-80 overflow-y-auto">
-                {ingestLog.map((entry) => (
-                  <div key={entry.id} className="px-4 py-2.5 text-xs hover:bg-gray-50">
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{entry.fileName}</p>
-                        <p className="text-muted-foreground truncate">{entry.criteriaId}</p>
-                      </div>
-                      <div className="shrink-0 flex items-center gap-2">
-                        <span className={cn(
-                          "px-1.5 py-0.5 rounded font-medium",
-                          entry.extractionStatus === "completed" ? "bg-green-50 text-green-700" :
-                          entry.extractionStatus === "error" ? "bg-red-100 text-red-700" :
-                          entry.extractionStatus === "failed" ? "bg-red-50 text-red-700" :
-                          "bg-gray-50 text-gray-500"
-                        )}>
-                          {entry.extractionStatus === "completed" ? "Extracted" :
-                           entry.extractionStatus === "error" ? "Ingest error" :
-                           entry.extractionStatus === "failed" ? "Extract failed" :
-                           entry.extractionStatus}
-                        </span>
-                        <span className="text-muted-foreground whitespace-nowrap">
-                          {new Date(entry.ingestedAt).toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-                    {entry.extractionStatus === "error" && entry.errorMessage && (
-                      <details className="mt-1.5">
-                        <summary className="cursor-pointer text-red-600 font-medium hover:text-red-800 select-none">
-                          Error details
-                        </summary>
-                        <p className="mt-1 font-mono bg-red-50 border border-red-200 rounded px-2 py-1.5 text-red-800 whitespace-pre-wrap break-all">
-                          {entry.errorMessage}
-                        </p>
-                      </details>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Drive File Browser */}
-      <div className="rounded-lg border bg-white">
-        <button
-          type="button"
-          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors"
-          onClick={() => setShowDriveBrowser((v) => !v)}
-        >
-          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-            <HardDriveDownload className="w-4 h-4 text-[#1E2D6B]" />
-            <span>Drive File Browser</span>
-            {driveSyncStatus !== null && driveSyncStatus.foldersConfigured > 0 && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-normal">
-                {driveSyncStatus.foldersConfigured} folder{driveSyncStatus.foldersConfigured !== 1 ? "s" : ""} connected
-              </span>
-            )}
-          </div>
-          {showDriveBrowser ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
-        </button>
-        {showDriveBrowser && (
-          <div className="border-t p-4">
-            <DriveFileBrowser fetchFn={staffDriveFetchFn} createFolderFn={staffCreateFolderFn} />
-          </div>
-        )}
-      </div>
 
       {groups.map((group: any) => (
         <div key={group.criteriaId}>
@@ -684,11 +377,6 @@ function EvidenceTab({ userId }: { userId: string }) {
                         <p className="font-medium text-sm">{item.title}</p>
                         <StatusBadge status={item.status} />
                         <Badge variant="outline" className="text-xs">{item.evidenceType}</Badge>
-                        {item.source === "drive_ingest" && (
-                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded font-medium bg-blue-50 text-blue-700">
-                            <CloudDownload className="w-2.5 h-2.5" /> Drive
-                          </span>
-                        )}
                         {item.extractionStatus && (
                           <span className={cn("text-xs px-1.5 py-0.5 rounded font-medium",
                             item.extractionStatus === "completed" ? "bg-green-50 text-green-700" :
@@ -707,13 +395,6 @@ function EvidenceTab({ userId }: { userId: string }) {
                       {item.description && <p className="text-xs text-muted-foreground mt-1">{item.description}</p>}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      {item.driveFileUrl && (
-                        <a href={item.driveFileUrl} target="_blank" rel="noopener noreferrer">
-                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5">
-                            <ExternalLink className="w-3 h-3" /> Drive
-                          </Button>
-                        </a>
-                      )}
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Regenerate AI summary"
                         onClick={() => regenerateAI(item.id)} disabled={saving[item.id]}>
                         <RefreshCw className={cn("w-3 h-3", saving[item.id] && "animate-spin")} />
@@ -1007,11 +688,6 @@ function PetitionWorkspaceTab({ userId }: { userId: string }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  {ex.driveDraftUrl && (
-                    <a href={ex.driveDraftUrl} target="_blank" rel="noopener noreferrer">
-                      <Button size="sm" variant="outline" className="h-7 text-xs"><ExternalLink className="w-3 h-3 mr-1" />Drive</Button>
-                    </a>
-                  )}
                   <Button size="sm" variant="outline" className="h-7 text-xs"
                     onClick={() => doAction(`gen-${ex.id}`, `/internal/petition/criteria/${ex.id}/generate`)}
                     disabled={busy[`gen-${ex.id}`] || ex.status === "generating" || ex.status === "approved"}>
@@ -1059,11 +735,6 @@ function PetitionWorkspaceTab({ userId }: { userId: string }) {
                     <StatusBadge status={letter.status} />
                   </div>
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    {letter.driveDraftUrl && (
-                      <a href={letter.driveDraftUrl} target="_blank" rel="noopener noreferrer">
-                        <Button size="sm" variant="outline" className="h-7 text-xs"><ExternalLink className="w-3 h-3 mr-1" />Drive</Button>
-                      </a>
-                    )}
                     <Button size="sm" variant="outline" className="h-7 text-xs"
                       onClick={() => doAction(`reco-gen-${letter.id}`, `/internal/petition/reco-letters/${letter.id}/generate`)}
                       disabled={busy[`reco-gen-${letter.id}`] || letter.status === "generating" || letter.status === "approved"}>
@@ -1107,7 +778,6 @@ function PetitionWorkspaceTab({ userId }: { userId: string }) {
               label: "Exhibit Index",
               status: pkg?.exhibitIndexStatus ?? "not_started",
               locked: !allApproved,
-              draftUrl: pkg?.exhibitIndexDriveDraftUrl,
               genPath: `/internal/petition/package/${setup.id}/generate-index`,
               approvePath: `/internal/petition/package/${setup.id}/approve-index`,
             },
@@ -1116,7 +786,6 @@ function PetitionWorkspaceTab({ userId }: { userId: string }) {
               label: "Cover Letter",
               status: pkg?.coverLetterStatus ?? "not_started",
               locked: !indexApproved,
-              draftUrl: pkg?.coverLetterDriveDraftUrl,
               genPath: `/internal/petition/package/${setup.id}/generate-cover`,
               approvePath: `/internal/petition/package/${setup.id}/approve-cover`,
             },
@@ -1129,11 +798,6 @@ function PetitionWorkspaceTab({ userId }: { userId: string }) {
                   <StatusBadge status={step.status} />
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {step.draftUrl && (
-                    <a href={step.draftUrl} target="_blank" rel="noopener noreferrer">
-                      <Button size="sm" variant="outline" className="h-7 text-xs"><ExternalLink className="w-3 h-3" /></Button>
-                    </a>
-                  )}
                   <Button size="sm" variant="outline" className="h-7 text-xs"
                     disabled={step.locked || busy[`gen-${step.key}`] || step.status === "generating"}
                     onClick={() => doAction(`gen-${step.key}`, step.genPath)}>
@@ -1300,11 +964,6 @@ function DocumentsTab({ userId }: { userId: string }) {
               <p className="text-xs text-muted-foreground mt-0.5">{new Date(doc.createdAt).toLocaleDateString()}</p>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              {doc.driveDraftUrl && (
-                <a href={doc.driveDraftUrl} target="_blank" rel="noopener noreferrer">
-                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0"><ExternalLink className="w-3 h-3" /></Button>
-                </a>
-              )}
               {!doc.publishedToClient && doc.status !== "pending" && (
                 <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => togglePublish(doc.id, true)} disabled={busy[doc.id]}>Publish</Button>
               )}

@@ -56,7 +56,6 @@ router.get(
       criteriaName: e.criteriaName,
       criteriaCode: e.criteriaCode,
       exhibitNumber: e.exhibitNumber,
-      driveUrl: e.drivePublishedUrl ?? null,
       publishedToClient: e.publishedToClient,
     }));
 
@@ -76,7 +75,6 @@ router.get(
       recommenderName: r.recommenderName,
       recommenderTitle: r.recommenderTitle,
       recommenderOrg: r.recommenderOrg,
-      driveUrl: r.drivePublishedUrl ?? null,
       publishedToClient: r.publishedToClient,
     }));
 
@@ -89,14 +87,8 @@ router.get(
 
     const packageDocs = pkg
       ? {
-          exhibitIndex:
-            pkg.exhibitIndexDrivePublishedUrl
-              ? { driveUrl: pkg.exhibitIndexDrivePublishedUrl }
-              : null,
-          coverLetter:
-            pkg.coverLetterDrivePublishedUrl
-              ? { driveUrl: pkg.coverLetterDrivePublishedUrl }
-              : null,
+          exhibitIndex: pkg.exhibitIndexStatus === "approved" ? {} : null,
+          coverLetter: pkg.coverLetterStatus === "approved" ? {} : null,
           publishedAt: pkg.packagePublishedAt ?? null,
         }
       : null;

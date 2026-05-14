@@ -120,13 +120,6 @@ export default function InternalEvidenceDetail() {
             )}
 
             <div className="grid grid-cols-2 gap-3">
-              {item.driveFileUrl && (
-                <a href={item.driveFileUrl} target="_blank" rel="noopener noreferrer">
-                  <Button variant="outline" className="w-full">
-                    <ExternalLink className="w-4 h-4 mr-2" /> View in Drive
-                  </Button>
-                </a>
-              )}
               <Button variant="outline" onClick={regenerateAI} disabled={saving}>
                 <RefreshCw className={cn("w-4 h-4 mr-2", saving && "animate-spin")} /> Regenerate AI Summary
               </Button>

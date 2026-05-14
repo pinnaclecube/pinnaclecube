@@ -5,7 +5,7 @@ import type { Evidence } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Upload, X, FileText, AlertCircle, CloudDownload, RefreshCw, HardDriveDownload } from "lucide-react";
+import { Plus, Search, Upload, X, FileText, AlertCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
@@ -13,10 +13,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { DriveFileBrowser } from "@/components/evidence/DriveFileBrowser";
 import { useProductAccess } from "@/hooks/useProductAccess";
 
 const TOKEN_KEY = "pinnacle_token";
@@ -25,7 +24,6 @@ function getToken() { return localStorage.getItem(TOKEN_KEY); }
 interface EvidenceItem extends Evidence {
   primaryCriteriaId?: string | null;
   fileName?: string | null;
-  source?: string | null;
 }
 
 interface CriterionOption {
@@ -33,7 +31,6 @@ interface CriterionOption {
   display_name: string;
   folder_name: string;
   item_count: number;
-  drive_folder_url?: string | null;
   legal_standard?: string;
   visa_path?: string;
 }
@@ -63,173 +60,12 @@ function useEvidenceCriteria() {
   return { criteria, requiresIntake, loading, refetchCriteria };
 }
 
-interface DriveSyncInfo {
-  lastDriveSyncAt: string | null;
-  unreadDriveNotifications: number;
-}
-
-function useDriveSync() {
-  const [syncInfo, setSyncInfo] = useState<DriveSyncInfo | null>(null);
-
-  useEffect(() => {
-    fetch("/api/evidence/drive-sync", {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && setSyncInfo(d))
-      .catch(() => {});
-  }, []);
-
-  const clearBadge = useCallback(() => {
-    setSyncInfo((prev) => prev ? { ...prev, unreadDriveNotifications: 0 } : prev);
-  }, []);
-
-  return { syncInfo, clearBadge };
-}
-
-function formatRelativeTime(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
 export default function EvidenceVault() {
   const { data: evidenceList, isLoading, refetch } = useListEvidence();
-  const { criteria, requiresIntake, loading: criteriaLoading, refetchCriteria } = useEvidenceCriteria();
-  const { syncInfo: driveSync, clearBadge } = useDriveSync();
+  const { criteria, requiresIntake, loading: criteriaLoading } = useEvidenceCriteria();
   const { hasEvidenceVault } = useProductAccess();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"evidence" | "drive">("evidence");
-  const driveToastShown = useRef(false);
-
-  const hasDriveFolders = criteria.some((c) => c.drive_folder_url);
-
-  // ── Drive provisioning polling ─────────────────────────────────────────────
-  // When the user has an Evidence Vault subscription but no criteria folders
-  // are connected yet, poll every 5 s (up to 60 s) so the tab self-updates
-  // the moment auto-provisioning completes in the background.
-  //
-  // Split into three effects so the polling interval is NEVER torn down and
-  // restarted mid-flight just because criteriaLoading flips during a refetch.
-  const [isProvisioningDrive, setIsProvisioningDrive] = useState(false);
-  const [justProvisioned, setJustProvisioned] = useState(false);
-  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollCountRef = useRef(0);
-  // Becomes true once the first successful criteria load completes (avoids
-  // criteriaLoading being a dep of the interval-management effect).
-  const [criteriaReady, setCriteriaReady] = useState(false);
-
-  // Effect 1: detect when the first criteria fetch completes (regardless of
-  // list length) so Effect 2 never needs criteriaLoading as a dependency.
-  useEffect(() => {
-    if (!criteriaLoading && !criteriaReady) {
-      setCriteriaReady(true);
-    }
-  }, [criteriaLoading, criteriaReady]);
-
-  // Effect 2: manage the stable polling interval
-  // Deps intentionally exclude criteriaLoading so loading cycles during refetch
-  // do NOT tear down and restart the interval or reset the counter.
-  // Guard !requiresIntake ensures we never poll when intake is incomplete —
-  // auto-provisioning only runs after intake + visa path are set.
-  useEffect(() => {
-    if (!criteriaReady || !hasEvidenceVault || hasDriveFolders || requiresIntake) {
-      return;
-    }
-
-    setIsProvisioningDrive(true);
-    pollCountRef.current = 0;
-
-    // Kick off an immediate first check rather than waiting 5 s.
-    refetchCriteria();
-
-    pollIntervalRef.current = setInterval(() => {
-      pollCountRef.current += 1;
-      if (pollCountRef.current >= 12) {
-        clearInterval(pollIntervalRef.current!);
-        pollIntervalRef.current = null;
-        setIsProvisioningDrive(false);
-        return;
-      }
-      refetchCriteria();
-    }, 5000);
-
-    return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
-      }
-    };
-  }, [criteriaReady, hasEvidenceVault, hasDriveFolders, requiresIntake, refetchCriteria]);
-
-  // Effect 3: fire the success UI when hasDriveFolders transitions to true.
-  // Auto-dismiss the banner after 8 s so it is transient rather than permanent.
-  useEffect(() => {
-    if (hasDriveFolders && isProvisioningDrive) {
-      setIsProvisioningDrive(false);
-      setJustProvisioned(true);
-      toast({
-        title: "Your Drive folders are ready",
-        description: "Files you drop into these folders will sync automatically into your Evidence Engine.",
-      });
-      const t = setTimeout(() => setJustProvisioned(false), 8000);
-      return () => clearTimeout(t);
-    }
-    return undefined;
-  }, [hasDriveFolders, isProvisioningDrive, toast]);
-
-  const clientDriveFetchFn = useMemo(
-    () => () =>
-      fetch("/api/evidence/drive-files", {
-        headers: { Authorization: `Bearer ${getToken()}` },
-      }).then((r) => {
-        if (!r.ok) throw new Error("Failed to load Drive files");
-        return r.json();
-      }),
-    [],
-  );
-
-  const clientCreateFolderFn = useCallback(
-    async (opts: { name: string; parentDriveId: string }) => {
-      const res = await fetch("/api/drive/folders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-        body: JSON.stringify(opts),
-      });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d.error ?? "Failed to create folder");
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (driveToastShown.current) return;
-    if (driveSync && driveSync.unreadDriveNotifications > 0) {
-      driveToastShown.current = true;
-      const count = driveSync.unreadDriveNotifications;
-      toast({
-        title: "New evidence ingested",
-        description: `${count} new document${count > 1 ? "s" : ""} were automatically synced from your Drive.`,
-      });
-      fetch("/api/notifications/read-by-type", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${getToken()}`,
-        },
-        body: JSON.stringify({ type: "drive_ingest" }),
-      }).catch(() => {});
-      clearBadge();
-    }
-  }, [driveSync, toast, clearBadge]);
 
   // Form state
   const [criteriaId, setCriteriaId] = useState("");
@@ -321,17 +157,6 @@ export default function EvidenceVault() {
         <div>
           <h1 className="text-3xl font-bold text-foreground">Evidence Engine</h1>
           <p className="text-muted-foreground mt-2">Secure repository for your professional artifacts, mapped to USCIS criteria.</p>
-          {driveSync?.lastDriveSyncAt && (
-            <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
-              <RefreshCw className="w-3 h-3" />
-              <span>Last Drive sync: {formatRelativeTime(driveSync.lastDriveSyncAt)}</span>
-              {driveSync.unreadDriveNotifications > 0 && (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 border border-blue-200">
-                  {driveSync.unreadDriveNotifications} new
-                </span>
-              )}
-            </div>
-          )}
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -463,121 +288,69 @@ export default function EvidenceVault() {
 
       <AIOutputBanner variant="analysis" />
 
-      {/* Tab switcher — Drive Files tab always visible (auto-provisioned for all eligible users) */}
-      <div className="flex items-center gap-1 border-b mb-6">
-        <button
-          type="button"
-          onClick={() => setActiveTab("evidence")}
-          className={cn(
-            "px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px",
-            activeTab === "evidence"
-              ? "border-[#1E2D6B] text-[#1E2D6B]"
-              : "border-transparent text-muted-foreground hover:text-foreground",
-          )}
-        >
-          Evidence Records
-          {evidenceList && evidenceList.length > 0 && (
-            <span className="ml-2 text-xs font-normal text-muted-foreground">({evidenceList.length})</span>
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("drive")}
-          className={cn(
-            "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px",
-            activeTab === "drive"
-              ? "border-[#1E2D6B] text-[#1E2D6B]"
-              : "border-transparent text-muted-foreground hover:text-foreground",
-          )}
-        >
-          <HardDriveDownload className="w-3.5 h-3.5" />
-          Drive Files
-          {isProvisioningDrive && (
-            <span className="inline-flex items-center justify-center w-2 h-2 rounded-full bg-[#1E2D6B] animate-pulse ml-0.5" />
-          )}
-        </button>
+      <div className="flex flex-col md:flex-row gap-4 mb-6 mt-6">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input placeholder="Search evidence…" className="pl-9" />
+        </div>
       </div>
 
-      {activeTab === "drive" ? (
-        <DriveFileBrowser
-          key={hasDriveFolders ? "folders-ready" : "no-folders"}
-          fetchFn={clientDriveFetchFn}
-          createFolderFn={clientCreateFolderFn}
-          isProvisioning={isProvisioningDrive}
-          justProvisioned={justProvisioned}
-        />
+      {isLoading ? (
+        <div className="space-y-4">
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      ) : !evidenceList || evidenceList.length === 0 ? (
+        <Card className="text-center py-16">
+          <CardContent>
+            <div className="w-16 h-16 rounded-full bg-gray-50 flex items-center justify-center mx-auto mb-4">
+              <Upload className="w-8 h-8 text-muted-foreground" />
+            </div>
+            <h3 className="text-xl font-bold mb-2">No evidence uploaded yet</h3>
+            <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+              Begin by uploading artifacts that substantiate your achievements — publications, awards, letters, and more.
+            </p>
+            <Button onClick={() => setOpen(true)} className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
+              <Upload className="w-4 h-4 mr-2" /> Upload Your First Document
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
-        <>
-          <div className="flex flex-col md:flex-row gap-4 mb-6">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input placeholder="Search evidence…" className="pl-9" />
-            </div>
-          </div>
-
-          {isLoading ? (
-            <div className="space-y-4">
-              <Skeleton className="h-24 w-full" />
-              <Skeleton className="h-24 w-full" />
-              <Skeleton className="h-24 w-full" />
-            </div>
-          ) : !evidenceList || evidenceList.length === 0 ? (
-            <Card className="text-center py-16">
-              <CardContent>
-                <div className="w-16 h-16 rounded-full bg-gray-50 flex items-center justify-center mx-auto mb-4">
-                  <Upload className="w-8 h-8 text-muted-foreground" />
-                </div>
-                <h3 className="text-xl font-bold mb-2">No evidence uploaded yet</h3>
-                <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                  Begin by uploading artifacts that substantiate your achievements — publications, awards, letters, and more.
-                </p>
-                <Button onClick={() => setOpen(true)} className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
-                  <Upload className="w-4 h-4 mr-2" /> Upload Your First Document
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-4">
-              {(evidenceList as EvidenceItem[]).map((evidence) => (
-                <Link key={evidence.id} href={`/evidence/${evidence.id}`}>
-                  <Card className="hover:border-[#1E2D6B]/50 transition-colors cursor-pointer">
-                    <CardContent className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                      <div className="flex items-start gap-3 flex-1 min-w-0">
-                        <div className="w-9 h-9 rounded-lg bg-[#1E2D6B]/8 flex items-center justify-center shrink-0">
-                          <FileText className="w-4 h-4 text-[#1E2D6B]" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-3 mb-1 flex-wrap">
-                            <h3 className="font-bold text-foreground truncate">{evidence.title}</h3>
-                            <Badge variant="secondary" className={getStatusColor(evidence.status)}>
-                              {evidence.status.charAt(0).toUpperCase() + evidence.status.slice(1)}
-                            </Badge>
-                            {evidence.primaryCriteriaId && (
-                              <Badge variant="outline" className="text-xs font-mono">{evidence.primaryCriteriaId}</Badge>
-                            )}
-                            {evidence.source === "drive_ingest" && (
-                              <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 border border-blue-100">
-                                <CloudDownload className="w-2.5 h-2.5" /> From Drive
-                              </span>
-                            )}
-                          </div>
-                          {evidence.description && (
-                            <p className="text-sm text-muted-foreground line-clamp-1">{evidence.description}</p>
-                          )}
-                          <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                            {evidence.fileName && <span className="truncate max-w-[200px]">{evidence.fileName}</span>}
-                            {evidence.dateAchieved && <span>• {new Date(evidence.dateAchieved).toLocaleDateString()}</span>}
-                          </div>
-                        </div>
+        <div className="space-y-4">
+          {(evidenceList as EvidenceItem[]).map((evidence) => (
+            <Link key={evidence.id} href={`/evidence/${evidence.id}`}>
+              <Card className="hover:border-[#1E2D6B]/50 transition-colors cursor-pointer">
+                <CardContent className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <div className="w-9 h-9 rounded-lg bg-[#1E2D6B]/8 flex items-center justify-center shrink-0">
+                      <FileText className="w-4 h-4 text-[#1E2D6B]" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-3 mb-1 flex-wrap">
+                        <h3 className="font-bold text-foreground truncate">{evidence.title}</h3>
+                        <Badge variant="secondary" className={getStatusColor(evidence.status)}>
+                          {evidence.status.charAt(0).toUpperCase() + evidence.status.slice(1)}
+                        </Badge>
+                        {evidence.primaryCriteriaId && (
+                          <Badge variant="outline" className="text-xs font-mono">{evidence.primaryCriteriaId}</Badge>
+                        )}
                       </div>
-                      <Button variant="ghost" size="sm" className="shrink-0">View Details</Button>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          )}
-        </>
+                      {evidence.description && (
+                        <p className="text-sm text-muted-foreground line-clamp-1">{evidence.description}</p>
+                      )}
+                      <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                        {evidence.fileName && <span className="truncate max-w-[200px]">{evidence.fileName}</span>}
+                        {evidence.dateAchieved && <span>• {new Date(evidence.dateAchieved).toLocaleDateString()}</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" className="shrink-0">View Details</Button>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+        </div>
       )}
     </AppLayout>
   );

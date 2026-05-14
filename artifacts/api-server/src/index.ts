@@ -1,8 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { startDriveIngestPoller } from "./services/driveIngestService";
 import { startPendingGrantsCleanup } from "./services/pendingGrantsCleanup";
-import { reconcileDriveFolders } from "./services/driveFolderReconciliation";
 
 const rawPort = process.env["PORT"];
 
@@ -25,7 +23,5 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
-  reconcileDriveFolders();
-  startDriveIngestPoller();
   startPendingGrantsCleanup();
 });

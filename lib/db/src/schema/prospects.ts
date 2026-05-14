@@ -9,7 +9,6 @@ export const prospectsTable = pgTable("prospects", {
   phone: text("phone"),
   currentRole: text("current_role"),
   linkedinUrl: text("linkedin_url"),
-  driveFileId: text("drive_file_id"),
   sourceType: text("source_type"),
   internalNotes: text("internal_notes"),
   ownerStaffUser: text("owner_staff_user"),

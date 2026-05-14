@@ -7,19 +7,15 @@
  */
 
 import { Router } from "express";
-import { eq, and, sql, max } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import multer from "multer";
 import { db } from "@workspace/db";
 import {
   evidenceTable,
-  clientDriveFoldersTable,
   readinessIntakeTable,
-  visaCriteriaTable,
   profilesTable,
-  notificationsTable,
 } from "@workspace/db";
 import { requireClientAuth } from "../middlewares/clientAuth";
-import { uploadEvidenceFile, getDriveClient, listFolderFiles, listFolderContents } from "../services/googleDrive";
 import { extractText, generateAISummary, getAI } from "../services/evidenceProcessing";
 import { getCriteriaForVisaPath, AI_DISCLAIMER, type VisaPathKey } from "@workspace/shared";
 
@@ -77,18 +73,6 @@ router.get("/evidence/criteria", requireClientAuth, async (req: any, res) => {
     counts.map((c) => [c.primaryCriteriaId, c.count]),
   );
 
-  const driveFolders = await db
-    .select({
-      criteriaId: clientDriveFoldersTable.criteriaId,
-      driveFolderUrl: clientDriveFoldersTable.driveFolderUrl,
-    })
-    .from(clientDriveFoldersTable)
-    .where(eq(clientDriveFoldersTable.profileId, userId));
-
-  const driveMap = Object.fromEntries(
-    driveFolders.map((f) => [f.criteriaId, f.driveFolderUrl]),
-  );
-
   const enriched = criteria.map((c) => ({
     criteria_id: c.id,
     display_name: c.displayName,
@@ -97,130 +81,9 @@ router.get("/evidence/criteria", requireClientAuth, async (req: any, res) => {
     visa_path: c.visaPath,
     display_order: c.displayOrder,
     item_count: countMap[c.id] ?? 0,
-    drive_folder_url: driveMap[c.id] ?? null,
   }));
 
   res.json({ criteria: enriched, requiresIntake: false });
-});
-
-// ─── GET /api/evidence/drive-sync ─────────────────────────────────────────────
-
-router.get("/evidence/drive-sync", requireClientAuth, async (req: any, res) => {
-  const userId: number = req.clientUser.id;
-
-  const [syncRow] = await db
-    .select({ lastSyncAt: max(clientDriveFoldersTable.lastDriveSyncAt) })
-    .from(clientDriveFoldersTable)
-    .where(eq(clientDriveFoldersTable.profileId, userId));
-
-  const [unreadRow] = await db
-    .select({ count: sql<number>`cast(count(*) as int)` })
-    .from(notificationsTable)
-    .where(
-      and(
-        eq(notificationsTable.profileId, userId),
-        eq(notificationsTable.userType, "client"),
-        eq(notificationsTable.notificationType, "drive_ingest"),
-        eq(notificationsTable.status, "unread"),
-      ),
-    );
-
-  res.json({
-    lastDriveSyncAt: syncRow?.lastSyncAt ?? null,
-    unreadDriveNotifications: unreadRow?.count ?? 0,
-  });
-});
-
-
-// ─── GET /api/evidence/drive-files ────────────────────────────────────────────
-// Returns the full Drive folder tree for all connected criterion folders.
-// Up to 2 levels deep: criterion folder → optional sub-folders → files.
-
-router.get("/evidence/drive-files", requireClientAuth, async (req: any, res) => {
-  const userId: number = req.clientUser.id;
-
-  const folders = await db
-    .select({
-      criteriaId: clientDriveFoldersTable.criteriaId,
-      folderName: clientDriveFoldersTable.folderName,
-      driveFolderId: clientDriveFoldersTable.driveFolderId,
-      driveFolderUrl: clientDriveFoldersTable.driveFolderUrl,
-    })
-    .from(clientDriveFoldersTable)
-    .where(eq(clientDriveFoldersTable.profileId, userId));
-
-  if (folders.length === 0) {
-    res.json({ criteria: [] });
-    return;
-  }
-
-  const drive = getDriveClient();
-
-  const results = await Promise.all(
-    folders.map(async (folder) => {
-      const base = {
-        criteriaId: folder.criteriaId,
-        criteriaName: folder.folderName,
-        folderName: folder.folderName,
-        driveFolderId: folder.driveFolderId,
-        driveFolderUrl: folder.driveFolderUrl,
-      };
-
-      // Run existence check and listing in parallel to avoid extra round-trip latency
-      const [metaResult, itemsResult] = await Promise.allSettled([
-        drive.files.get({ fileId: folder.driveFolderId, fields: "id,trashed", supportsAllDrives: true }),
-        listFolderContents(drive, folder.driveFolderId),
-      ]);
-
-      const folderMeta = metaResult.status === "fulfilled" ? metaResult.value.data : null;
-      const notFound = !folderMeta || folderMeta.trashed === true;
-
-      if (notFound) {
-        // Auto-purge: silently remove the stale DB record and exclude from response
-        await db
-          .delete(clientDriveFoldersTable)
-          .where(and(eq(clientDriveFoldersTable.profileId, userId), eq(clientDriveFoldersTable.criteriaId, folder.criteriaId)));
-        return null;
-      }
-
-      if (itemsResult.status === "rejected") return { ...base, files: [], subfolders: [], error: "Could not access this Drive folder" };
-
-      const items = itemsResult.value;
-      const files = items.filter((i) => !i.isFolder);
-      const subfolderItems = items.filter((i) => i.isFolder);
-
-      const subfolders = await Promise.all(
-        subfolderItems.map(async (sf) => {
-          try {
-            const sfItems = await listFolderContents(drive, sf.id);
-            return { id: sf.id, name: sf.name, files: sfItems.filter((i) => !i.isFolder).map(({ isFolder: _, ...f }) => f) };
-          } catch {
-            return { id: sf.id, name: sf.name, files: [], error: "Could not access subfolder" };
-          }
-        }),
-      );
-
-      return { ...base, files: files.map(({ isFolder: _, ...f }) => f), subfolders };
-    }),
-  );
-
-  const criteria = results.filter((r) => r !== null);
-  res.set("Cache-Control", "no-store");
-  res.json({ criteria });
-});
-
-// ─── DELETE /api/evidence/drive-connection/:criteriaId ─────────────────────────
-// Removes a stale / user-deleted Drive folder connection from the client's account.
-
-router.delete("/evidence/drive-connection/:criteriaId", requireClientAuth, async (req: any, res) => {
-  const userId: number = req.clientUser.id;
-  const { criteriaId } = req.params;
-
-  await db
-    .delete(clientDriveFoldersTable)
-    .where(and(eq(clientDriveFoldersTable.profileId, userId), eq(clientDriveFoldersTable.criteriaId, criteriaId)));
-
-  res.json({ ok: true });
 });
 
 // ─── GET /api/evidence/coverage ───────────────────────────────────────────────
@@ -259,25 +122,12 @@ router.get("/evidence/coverage", requireClientAuth, async (req: any, res) => {
     counts.map((c) => [c.primaryCriteriaId, c.count]),
   );
 
-  const driveFolders = await db
-    .select({
-      criteriaId: clientDriveFoldersTable.criteriaId,
-      driveFolderUrl: clientDriveFoldersTable.driveFolderUrl,
-    })
-    .from(clientDriveFoldersTable)
-    .where(eq(clientDriveFoldersTable.profileId, userId));
-
-  const driveMap = Object.fromEntries(
-    driveFolders.map((f) => [f.criteriaId, f.driveFolderUrl]),
-  );
-
   const coverage = criteria.map((c) => {
     const itemCount = countMap[c.id] ?? 0;
     return {
       criteria_id: c.id,
       display_name: c.displayName,
       item_count: itemCount,
-      drive_folder_url: driveMap[c.id] ?? null,
       has_evidence: itemCount > 0,
     };
   });
@@ -393,7 +243,6 @@ Be direct and specific. Format with clear sections. Do not include legal advice.
 
 // ─── POST /api/evidence/upload ────────────────────────────────────────────────
 // Accepts one OR many files (field name "files") plus shared metadata.
-// Creates one evidence record per file; all uploaded to the criteria Drive folder.
 
 router.post(
   "/evidence/upload",
@@ -403,20 +252,12 @@ router.post(
     const userId: number = req.clientUser.id;
 
     const [intake] = await db
-      .select({
-        visaPath: readinessIntakeTable.visaPath,
-        driveFoldersCreated: readinessIntakeTable.driveFoldersCreated,
-      })
+      .select({ visaPath: readinessIntakeTable.visaPath })
       .from(readinessIntakeTable)
       .where(eq(readinessIntakeTable.profileId, userId))
       .limit(1);
 
     if (!intake) {
-      res.status(400).json({ error: "Complete your readiness intake first", requiresIntake: true });
-      return;
-    }
-
-    if (!intake.driveFoldersCreated) {
       res.status(400).json({ error: "Complete your readiness intake first", requiresIntake: true });
       return;
     }
@@ -453,19 +294,6 @@ router.post(
       return;
     }
 
-    // Resolve shared Drive folder for this criterion
-    const [folderRow] = await db
-      .select({ driveFolderId: clientDriveFoldersTable.driveFolderId })
-      .from(clientDriveFoldersTable)
-      .where(
-        and(
-          eq(clientDriveFoldersTable.profileId, userId),
-          eq(clientDriveFoldersTable.criteriaId, criteria_id),
-        ),
-      )
-      .limit(1);
-    const sharedDriveFolderId = folderRow?.driveFolderId ?? null;
-
     // Fetch client profession once for AI summaries
     const [profileRow] = await db
       .select({ profession: profilesTable.profession })
@@ -481,25 +309,6 @@ router.post(
       // Derive title from filename (strip extension)
       const titleFromFile = file.originalname.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ").trim() || file.originalname;
 
-      let driveFileId: string | null = null;
-      let driveFileUrl: string | null = null;
-      let uploadedFileName: string | null = null;
-
-      try {
-        const uploaded = await uploadEvidenceFile(
-          userId,
-          criteria_id,
-          file.buffer,
-          file.originalname,
-          file.mimetype,
-        );
-        driveFileId = uploaded.driveFileId;
-        driveFileUrl = uploaded.driveFileUrl;
-        uploadedFileName = uploaded.fileName;
-      } catch {
-        // Drive not configured — evidence record still created
-      }
-
       const [evidenceItem] = await db
         .insert(evidenceTable)
         .values({
@@ -510,10 +319,7 @@ router.post(
           evidenceType: "document",
           status: "draft",
           extractionStatus: "pending",
-          driveFolderId: sharedDriveFolderId,
-          driveFileId,
-          driveFileUrl,
-          fileName: uploadedFileName ?? file.originalname,
+          fileName: file.originalname,
           additionalCriteriaIds: [],
         })
         .returning();
@@ -558,18 +364,6 @@ router.get("/evidence", requireClientAuth, async (req: any, res) => {
     .from(evidenceTable)
     .where(eq(evidenceTable.profileId, userId))
     .orderBy(evidenceTable.primaryCriteriaId, evidenceTable.createdAt);
-
-  const driveFolders = await db
-    .select({
-      criteriaId: clientDriveFoldersTable.criteriaId,
-      driveFolderUrl: clientDriveFoldersTable.driveFolderUrl,
-    })
-    .from(clientDriveFoldersTable)
-    .where(eq(clientDriveFoldersTable.profileId, userId));
-
-  const driveMap = Object.fromEntries(
-    driveFolders.map((f) => [f.criteriaId, f.driveFolderUrl]),
-  );
 
   res.json(items);
 });
@@ -657,86 +451,19 @@ router.delete("/evidence/:id", requireClientAuth, async (req: any, res) => {
     return;
   }
 
-  const [deleted] = await db
-    .delete(evidenceTable)
+  const [existing] = await db
+    .select({ id: evidenceTable.id })
+    .from(evidenceTable)
     .where(and(eq(evidenceTable.id, id), eq(evidenceTable.profileId, userId)))
-    .returning({ id: evidenceTable.id });
+    .limit(1);
 
-  if (!deleted) {
+  if (!existing) {
     res.status(404).json({ error: "Evidence item not found" });
     return;
   }
 
-  // Drive file intentionally NOT deleted — staff may still need it
-  res.json({ success: true, deleted_id: id });
+  await db.delete(evidenceTable).where(eq(evidenceTable.id, id));
+  res.json({ ok: true });
 });
-
-// ─── POST /api/evidence/:id/regenerate-summary ────────────────────────────────
-
-router.post(
-  "/evidence/:id/regenerate-summary",
-  requireClientAuth,
-  async (req: any, res) => {
-    const userId: number = req.clientUser.id;
-    const id = parseInt(req.params.id, 10);
-    if (isNaN(id)) {
-      res.status(400).json({ error: "Invalid evidence ID" });
-      return;
-    }
-
-    const [item] = await db
-      .select()
-      .from(evidenceTable)
-      .where(and(eq(evidenceTable.id, id), eq(evidenceTable.profileId, userId)))
-      .limit(1);
-
-    if (!item) {
-      res.status(404).json({ error: "Evidence item not found" });
-      return;
-    }
-
-    if (!item.extractedText) {
-      res.status(400).json({
-        error: "No extracted text available. Re-upload the document to extract text.",
-      });
-      return;
-    }
-
-    if (!item.primaryCriteriaId) {
-      res.status(400).json({ error: "Evidence has no criteria association" });
-      return;
-    }
-
-    const [criteriaRow] = await db
-      .select({ legalStandard: visaCriteriaTable.legalStandard })
-      .from(visaCriteriaTable)
-      .where(eq(visaCriteriaTable.id, item.primaryCriteriaId))
-      .limit(1);
-
-    const [profile] = await db
-      .select({ profession: profilesTable.profession })
-      .from(profilesTable)
-      .where(eq(profilesTable.id, userId))
-      .limit(1);
-
-    const legalStandard = criteriaRow?.legalStandard ?? "";
-    const clientField = profile?.profession ?? "technology";
-
-    const aiSummary = await generateAISummary(item.extractedText, legalStandard, clientField);
-
-    if (!aiSummary) {
-      res.status(503).json({ error: "AI not available or no text to summarize" });
-      return;
-    }
-
-    const [updated] = await db
-      .update(evidenceTable)
-      .set({ aiSummary, aiSummaryIgnored: false })
-      .where(eq(evidenceTable.id, id))
-      .returning();
-
-    res.json({ item: updated });
-  },
-);
 
 export default router;

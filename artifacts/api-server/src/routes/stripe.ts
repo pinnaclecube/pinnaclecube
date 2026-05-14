@@ -5,7 +5,6 @@ import { db, purchasesTable, clientUserProductsTable, profilesTable, pendingAcce
 import { eq } from "drizzle-orm";
 import { sendEmail, purchaseConfirmationEmail, prospectAccountCreatedEmail, paymentReceivedStaffAlertEmail } from "../services/emailService";
 import { hashPassword } from "../services/auth";
-import { provisionClientDriveFromProspect, autoProvisionDrive } from "../services/googleDrive";
 
 const STAFF_EMAIL = "support@pinnaclecube.com";
 
@@ -332,19 +331,6 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
             });
           }
 
-          // ── Provision Drive workspace in background ──────────────────────
-          if (resolvedProfileId) {
-            setImmediate(() => {
-              provisionClientDriveFromProspect(resolvedProfileId!, prospectEmail, {
-                driveFileId: existingProspect.driveFileId,
-                resumeFileName: existingProspect.resumeFileName,
-                fullName: existingProspect.fullName,
-              }).catch((err: unknown) => {
-                const msg = err instanceof Error ? err.message : String(err);
-                console.error("[stripe/webhook] Drive provision failed for profile", resolvedProfileId, ":", msg);
-              });
-            });
-          }
         } catch (err) {
           console.error("[stripe/webhook] Auto-profile creation error:", err);
         }
@@ -416,22 +402,6 @@ router.post("/stripe/webhook", async (req, res): Promise<void> => {
             ).catch(() => {});
           }
 
-          // Auto-provision Google Drive workspace for Evidence Engine and Elite Blueprint purchases
-          if (product === "evidence_vault" || product === "elite_blueprint") {
-            setImmediate(async () => {
-              try {
-                const [intake] = await db
-                  .select({ visaPath: readinessIntakeTable.visaPath })
-                  .from(readinessIntakeTable)
-                  .where(eq(readinessIntakeTable.profileId, profile.id))
-                  .limit(1);
-                await autoProvisionDrive(profile.id, customerEmail, intake?.visaPath ?? null);
-              } catch (err: unknown) {
-                const msg = err instanceof Error ? err.message : String(err);
-                console.error(`[stripe/webhook] Drive auto-provision failed for profile ${profile.id}:`, msg);
-              }
-            });
-          }
         } else {
           // No profile yet — store a pending grant. Applied when the user registers.
           await db

@@ -6,7 +6,7 @@
  */
 
 import { Router, type IRouter, type Request, type Response } from "express";
-import { eq, desc, and, inArray, sql } from "drizzle-orm";
+import { eq, desc, and, inArray } from "drizzle-orm";
 import {
   db,
   profilesTable,
@@ -17,9 +17,6 @@ import {
   clientActivityLogTable,
   readinessIntakeTable,
   resumeUploadsTable,
-  clientDriveRootsTable,
-  clientDriveFoldersTable,
-  driveIngestLogsTable,
   courseProgressTable,
   coursesTable,
   lessonsTable,
@@ -28,8 +25,6 @@ import {
   notificationsTable,
 } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
-import { createClientRootFolders, createCriteriaEvidenceFolders, getDriveClient, listFolderContents } from "../services/googleDrive";
-import { ingestClientFolders } from "../services/driveIngestService";
 import { sendEmail, actionItemEmail, passwordResetEmail } from "../services/emailService";
 import { z } from "zod/v4";
 import bcrypt from "bcrypt";
@@ -38,8 +33,9 @@ const router: IRouter = Router();
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
-function parseId(val: string): number | null {
-  const n = parseInt(val, 10);
+function parseId(val: string | string[]): number | null {
+  const s = Array.isArray(val) ? val[0] : val;
+  const n = parseInt(s ?? "", 10);
   return isNaN(n) ? null : n;
 }
 
@@ -57,7 +53,6 @@ router.get(
         visaTarget: profilesTable.visaTarget,
         accessLevel: profilesTable.accessLevel,
         profession: profilesTable.profession,
-        driveSyncStatus: profilesTable.driveSyncStatus,
         createdAt: profilesTable.createdAt,
       })
       .from(profilesTable)
@@ -81,81 +76,12 @@ router.get(
 
     const [intake] = await db.select().from(readinessIntakeTable).where(eq(readinessIntakeTable.profileId, id)).limit(1);
     const [resume] = await db.select().from(resumeUploadsTable).where(eq(resumeUploadsTable.profileId, id)).orderBy(desc(resumeUploadsTable.createdAt)).limit(1);
-    const [driveRoot] = await db.select().from(clientDriveRootsTable).where(eq(clientDriveRootsTable.profileId, id)).limit(1);
 
     res.json({
       profile: { ...profile, passwordHash: undefined },
       intake: intake ?? null,
       resume: resume ?? null,
-      driveRoot: driveRoot ?? null,
     });
-  },
-);
-
-// ─── Provision Drive workspace ─────────────────────────────────────────────────
-
-router.post(
-  "/admin/profiles/:id/provision-drive",
-  requireStaffAuth,
-  async (req: Request, res: Response): Promise<void> => {
-    const id = parseId(req.params.id);
-    if (!id) { res.status(400).json({ error: "Invalid profile ID" }); return; }
-
-    const [profile] = await db
-      .select({ id: profilesTable.id, email: profilesTable.email, visaTarget: profilesTable.visaTarget })
-      .from(profilesTable).where(eq(profilesTable.id, id)).limit(1);
-    if (!profile) { res.status(404).json({ error: "Profile not found" }); return; }
-
-    const [intake] = await db
-      .select({ id: readinessIntakeTable.id, visaPath: readinessIntakeTable.visaPath })
-      .from(readinessIntakeTable).where(eq(readinessIntakeTable.profileId, id)).limit(1);
-
-    // Resolve visa path: prefer intake value, fall back to profile's visaTarget
-    const rawVisaPath = (intake?.visaPath ?? profile.visaTarget ?? "eb1a") as string;
-    const visaPathMap: Record<string, string> = {
-      eb1a: "eb1a", "EB-1A": "eb1a", "EB1A": "eb1a",
-      niw: "niw", "EB-2 NIW": "niw", "NIW": "niw",
-      o1a: "o1a", "O-1A": "o1a", "O1A": "o1a",
-    };
-    const visaPath = (visaPathMap[rawVisaPath] ?? "eb1a") as "eb1a" | "niw" | "o1a";
-
-    const [existingRoot] = await db
-      .select({ id: clientDriveRootsTable.id })
-      .from(clientDriveRootsTable).where(eq(clientDriveRootsTable.profileId, id)).limit(1);
-
-    try {
-      // Step 1: Root folders (idempotent — findOrCreate handles duplicates)
-      await createClientRootFolders(id, profile.email);
-
-      // Step 2: Per-criterion evidence subfolders inside Evidence/
-      const criteriaFolders = await createCriteriaEvidenceFolders(id, visaPath);
-
-      if (intake) {
-        await db.update(readinessIntakeTable)
-          .set({ driveFoldersCreated: true, driveFoldersCreatedAt: new Date() })
-          .where(eq(readinessIntakeTable.profileId, id));
-      }
-
-      await db.insert(clientActivityLogTable).values({
-        profileId: id,
-        eventType: "drive_provisioned",
-        eventData: {
-          message: `Staff provisioned Google Drive workspace (${visaPath.toUpperCase()}).`,
-          criteriaFoldersCreated: criteriaFolders.length,
-          wasNewRoot: !existingRoot,
-        },
-      });
-
-      res.json({
-        success: true,
-        message: `Google Drive workspace fully provisioned — root folders + ${criteriaFolders.length} criteria evidence folders created.`,
-        criteriaFoldersCreated: criteriaFolders.length,
-        visaPath,
-      });
-    } catch (err: any) {
-      console.error(`[provision-drive] Failed for profile ${id}:`, err);
-      res.status(500).json({ error: "Drive provisioning failed", detail: err?.message ?? "Unknown error" });
-    }
   },
 );
 
@@ -483,7 +409,7 @@ router.get(
 
 const GenerateDocBody = z.object({
   docSubtype: z.string().min(1),
-  staffContextInput: z.record(z.unknown()).optional(),
+  staffContextInput: z.record(z.string(), z.unknown()).optional(),
   caseSetupId: z.number().optional(),
 });
 
@@ -541,254 +467,6 @@ router.patch(
 
     if (!updated) { res.status(404).json({ error: "Document not found" }); return; }
     res.json({ success: true, document: updated });
-  },
-);
-
-// ─── Drive sync failures (admin dashboard) ─────────────────────────────────────
-
-router.get(
-  "/admin/drive-sync-failures",
-  requireStaffAuth,
-  async (_req: Request, res: Response): Promise<void> => {
-    const failed = await db
-      .select({
-        id: profilesTable.id,
-        name: profilesTable.name,
-        email: profilesTable.email,
-        visaTarget: profilesTable.visaTarget,
-        accessLevel: profilesTable.accessLevel,
-        driveSyncStatus: profilesTable.driveSyncStatus,
-        createdAt: profilesTable.createdAt,
-      })
-      .from(profilesTable)
-      .where(sql`${profilesTable.driveSyncStatus} = 'failed'`);
-
-    res.json({ failed, total: failed.length });
-  },
-);
-
-// ─── Drive Sync ────────────────────────────────────────────────────────────────
-
-router.get(
-  "/admin/profiles/:id/drive-sync-status",
-  requireStaffAuth,
-  async (req: Request, res: Response): Promise<void> => {
-    const id = parseId(req.params.id);
-    if (!id) { res.status(400).json({ error: "Invalid profile ID" }); return; }
-
-    const folders = await db
-      .select({
-        criteriaId: clientDriveFoldersTable.criteriaId,
-        folderName: clientDriveFoldersTable.folderName,
-        driveFolderId: clientDriveFoldersTable.driveFolderId,
-        driveFolderUrl: clientDriveFoldersTable.driveFolderUrl,
-        lastDriveSyncAt: clientDriveFoldersTable.lastDriveSyncAt,
-      })
-      .from(clientDriveFoldersTable)
-      .where(eq(clientDriveFoldersTable.profileId, id));
-
-    const driveIngestedCount = await db
-      .select({ count: sql<number>`cast(count(*) as int)` })
-      .from(evidenceTable)
-      .where(
-        and(
-          eq(evidenceTable.profileId, id),
-          eq(evidenceTable.source, "drive_ingest"),
-        ),
-      );
-
-    const lastSyncAt = folders.reduce<Date | null>((latest, f) => {
-      if (!f.lastDriveSyncAt) return latest;
-      if (!latest || f.lastDriveSyncAt > latest) return f.lastDriveSyncAt;
-      return latest;
-    }, null);
-
-    res.json({
-      foldersConfigured: folders.length,
-      driveIngestedCount: driveIngestedCount[0]?.count ?? 0,
-      lastSyncAt: lastSyncAt?.toISOString() ?? null,
-      folders,
-    });
-  },
-);
-
-router.post(
-  "/admin/profiles/:id/sync-drive",
-  requireStaffAuth,
-  async (req: Request, res: Response): Promise<void> => {
-    const id = parseId(req.params.id);
-    if (!id) { res.status(400).json({ error: "Invalid profile ID" }); return; }
-
-    const [profile] = await db
-      .select({ id: profilesTable.id })
-      .from(profilesTable)
-      .where(eq(profilesTable.id, id))
-      .limit(1);
-    if (!profile) { res.status(404).json({ error: "Profile not found" }); return; }
-
-    try {
-      const results = await ingestClientFolders(id);
-
-      const totalIngested = results.reduce((s, r) => s + r.ingested, 0);
-      const totalSkipped = results.reduce((s, r) => s + r.skipped, 0);
-      const totalErrors = results.reduce((s, r) => s + r.errors, 0);
-
-      if (totalIngested > 0) {
-        await db.insert(clientActivityLogTable).values({
-          profileId: id,
-          eventType: "drive_sync",
-          eventData: {
-            message: `Staff triggered Drive sync — ${totalIngested} new file(s) ingested.`,
-            foldersScanned: results.length,
-            totalIngested,
-            totalSkipped,
-            totalErrors,
-          },
-        });
-      }
-
-      const lastSyncAt = new Date().toISOString();
-      res.json({
-        success: true,
-        // Spec-aligned fields
-        newItems: totalIngested,
-        totalDriveItems: totalIngested + totalSkipped,
-        lastSyncAt,
-        // Detailed breakdown
-        foldersScanned: results.length,
-        totalIngested,
-        totalSkipped,
-        totalErrors,
-        results,
-      });
-    } catch (err: any) {
-      console.error(`[sync-drive] Failed for profile ${id}:`, err);
-      res.status(500).json({ error: "Drive sync failed", detail: err?.message ?? "Unknown error" });
-    }
-  },
-);
-
-// ─── Drive ingest log ──────────────────────────────────────────────────────────
-
-router.get(
-  "/admin/profiles/:id/drive-ingest-log",
-  requireStaffAuth,
-  async (req: Request, res: Response): Promise<void> => {
-    const id = parseId(req.params.id);
-    if (!id) { res.status(400).json({ error: "Invalid profile ID" }); return; }
-
-    const rawLimit = parseInt(req.query.limit as string ?? "100", 10);
-    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 500) : 100;
-
-    const [profile] = await db.select({ id: profilesTable.id }).from(profilesTable).where(eq(profilesTable.id, id)).limit(1);
-    if (!profile) { res.status(404).json({ error: "Profile not found" }); return; }
-
-    const entries = await db
-      .select()
-      .from(driveIngestLogsTable)
-      .where(eq(driveIngestLogsTable.profileId, id))
-      .orderBy(desc(driveIngestLogsTable.ingestedAt))
-      .limit(limit);
-
-    res.json({ entries, total: entries.length });
-  },
-);
-
-// ─── Drive file browser ────────────────────────────────────────────────────────
-// Returns the full Drive folder tree for a client profile (up to 2 levels deep).
-
-router.get(
-  "/admin/profiles/:id/drive-files",
-  requireStaffAuth,
-  async (req: Request, res: Response): Promise<void> => {
-    const id = parseId(req.params.id);
-    if (!id) { res.status(400).json({ error: "Invalid profile ID" }); return; }
-
-    const folders = await db
-      .select({
-        criteriaId: clientDriveFoldersTable.criteriaId,
-        folderName: clientDriveFoldersTable.folderName,
-        driveFolderId: clientDriveFoldersTable.driveFolderId,
-        driveFolderUrl: clientDriveFoldersTable.driveFolderUrl,
-      })
-      .from(clientDriveFoldersTable)
-      .where(eq(clientDriveFoldersTable.profileId, id));
-
-    if (folders.length === 0) {
-      res.json({ criteria: [] });
-      return;
-    }
-
-    const drive = getDriveClient();
-
-    const results = await Promise.all(
-      folders.map(async (folder) => {
-        const base = {
-          criteriaId: folder.criteriaId,
-          criteriaName: folder.folderName,
-          folderName: folder.folderName,
-          driveFolderId: folder.driveFolderId,
-          driveFolderUrl: folder.driveFolderUrl,
-        };
-
-        const [metaResult, itemsResult] = await Promise.allSettled([
-          drive.files.get({ fileId: folder.driveFolderId, fields: "id,trashed", supportsAllDrives: true }),
-          listFolderContents(drive, folder.driveFolderId),
-        ]);
-
-        const folderMeta = metaResult.status === "fulfilled" ? metaResult.value.data : null;
-        const notFound = !folderMeta || folderMeta.trashed === true;
-
-        if (notFound) {
-          // Auto-purge: silently remove the stale DB record and exclude from response
-          await db
-            .delete(clientDriveFoldersTable)
-            .where(and(eq(clientDriveFoldersTable.profileId, id), eq(clientDriveFoldersTable.criteriaId, folder.criteriaId)));
-          return null;
-        }
-
-        if (itemsResult.status === "rejected") return { ...base, files: [], subfolders: [], error: "Could not access this Drive folder" };
-
-        const items = itemsResult.value;
-        const files = items.filter((i) => !i.isFolder);
-        const subfolderItems = items.filter((i) => i.isFolder);
-
-        const subfolders = await Promise.all(
-          subfolderItems.map(async (sf) => {
-            try {
-              const sfItems = await listFolderContents(drive, sf.id);
-              return { id: sf.id, name: sf.name, files: sfItems.filter((i) => !i.isFolder).map(({ isFolder: _, ...f }) => f) };
-            } catch {
-              return { id: sf.id, name: sf.name, files: [], error: "Could not access subfolder" };
-            }
-          }),
-        );
-
-        return { ...base, files: files.map(({ isFolder: _, ...f }) => f), subfolders };
-      }),
-    );
-
-    const criteria = results.filter((r) => r !== null);
-    res.set("Cache-Control", "no-store");
-    res.json({ criteria });
-  },
-);
-
-// ─── DELETE /api/admin/drive-connection/:criteriaId/:profileId ─────────────────
-
-router.delete(
-  "/admin/drive-connection/:criteriaId/:profileId",
-  requireStaffAuth,
-  async (req: Request, res: Response): Promise<void> => {
-    const profileId = parseId(req.params.profileId);
-    if (!profileId) { res.status(400).json({ error: "Invalid profile ID" }); return; }
-    const { criteriaId } = req.params;
-
-    await db
-      .delete(clientDriveFoldersTable)
-      .where(and(eq(clientDriveFoldersTable.profileId, profileId), eq(clientDriveFoldersTable.criteriaId, criteriaId)));
-
-    res.json({ ok: true });
   },
 );
 

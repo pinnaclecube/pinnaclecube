@@ -5,8 +5,6 @@ import { z } from "zod/v4";
 export const resumeUploadsTable = pgTable("resume_uploads", {
   id: serial("id").primaryKey(),
   profileId: integer("profile_id").notNull(),
-  driveFileId: text("drive_file_id"),
-  driveFileUrl: text("drive_file_url"),
   fileName: text("file_name"),
   uploadDate: timestamp("upload_date", { withTimezone: true }).defaultNow(),
   extractionStatus: text("extraction_status").notNull().default("pending"),
@@ -44,8 +42,6 @@ export const readinessIntakeTable = pgTable("readiness_intake", {
   resumeUploadId: integer("resume_upload_id"),
   readinessCompleted: boolean("readiness_completed").default(false),
   readinessCompletedAt: timestamp("readiness_completed_at", { withTimezone: true }),
-  driveFoldersCreated: boolean("drive_folders_created").default(false),
-  driveFoldersCreatedAt: timestamp("drive_folders_created_at", { withTimezone: true }),
   status: text("status").notNull().default("draft"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

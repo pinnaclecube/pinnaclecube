@@ -15,10 +15,7 @@ export const evidenceTable = pgTable("evidence", {
   status: text("status").notNull().default("draft"),
   sourceUrl: text("source_url"),
   dateAchieved: date("date_achieved"),
-  // Drive integration fields
-  driveFolderId: text("drive_folder_id"),
-  driveFileId: text("drive_file_id"),
-  driveFileUrl: text("drive_file_url"),
+  // File info
   fileName: text("file_name"),
   // Extraction and AI
   extractionStatus: text("extraction_status").notNull().default("pending"),
@@ -28,8 +25,6 @@ export const evidenceTable = pgTable("evidence", {
   aiSummaryIgnored: boolean("ai_summary_ignored").default(false),
   // Additional criteria cross-referencing (array of text criteria IDs)
   additionalCriteriaIds: jsonb("additional_criteria_ids").default([]),
-  // Ingestion source: 'web_upload' | 'drive_ingest'
-  source: text("source").notNull().default("web_upload"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

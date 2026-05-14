@@ -2,7 +2,7 @@
  * evidenceProcessing.ts — Pinnacle³
  *
  * Shared helpers for text extraction and AI summary generation.
- * Used by both the upload route and the Drive ingest poller.
+ * Used by the evidence upload route.
  */
 
 import Anthropic from "@anthropic-ai/sdk";

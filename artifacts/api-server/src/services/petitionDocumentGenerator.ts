@@ -3,7 +3,7 @@
  *
  * Generates petition documents (criteria exhibits, recommendation letters,
  * exhibit index, cover letter) using Claude Sonnet and converts them to
- * PDF via legalPdfTemplate. Optionally uploads to Google Drive.
+ * PDF via legalPdfTemplate.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -28,13 +28,6 @@ import {
   finalizePdf,
   type DocumentMetadata,
 } from "./legalPdfTemplate";
-import {
-  uploadPetitionDraftFile,
-  buildCriteriaExhibitName,
-  buildRecoLetterName,
-  buildExhibitIndexName,
-  buildCoverLetterName,
-} from "./googleDrive";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -116,24 +109,6 @@ export async function buildClientContext(profileId: number): Promise<ClientConte
     awards: intake?.awards ?? "",
     education: intake?.education ?? "",
   };
-}
-
-// ─── Drive upload (graceful no-op if not configured) ─────────────────────────
-
-async function tryUploadDraft(
-  profileId: number,
-  subtype: "criteria_exhibit" | "recommendation_letter" | "exhibit_index" | "cover_letter",
-  buffer: Buffer,
-  fileName: string,
-): Promise<{ driveFileId: string | null; driveUrl: string | null }> {
-  try {
-    const uploaded = await uploadPetitionDraftFile(profileId, subtype, buffer, fileName);
-    return { driveFileId: uploaded.driveFileId, driveUrl: uploaded.driveFileUrl };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`[petitionGenerator] Drive upload skipped: ${msg}`);
-    return { driveFileId: null, driveUrl: null };
-  }
 }
 
 // ─── Parse JSON from Claude response ─────────────────────────────────────────
@@ -273,33 +248,13 @@ Return a JSON object with exactly these keys:
   addBodyText(doc, parsed.conclusion);
   const pdfBuffer = await finalizePdf(doc);
 
-  // Upload to Drive
-  const fileName = buildCriteriaExhibitName(
-    parseInt(exhibit.exhibitNumber, 10) || 1,
-    exhibit.criteriaCode,
-    clientCtx.lastName,
-    (exhibit.regenerationCount ?? 0) + 1,
-  );
-  const { driveFileId, driveUrl } = await tryUploadDraft(
-    exhibit.profileId,
-    "criteria_exhibit",
-    pdfBuffer,
-    fileName,
-  );
-
   // Update DB
   await db
     .update(petitionCriteriaExhibitsTable)
-    .set({
-      status: "draft",
-      driveDraftFileId: driveFileId,
-      driveDraftUrl: driveUrl,
-    })
+    .set({ status: "draft" })
     .where(eq(petitionCriteriaExhibitsTable.id, criteriaExhibitId));
 
-  console.info(
-    `[petitionGen] Criteria exhibit ${criteriaExhibitId} (${exhibit.criteriaCode}) → draft. Drive: ${driveUrl ?? "not uploaded"}`,
-  );
+  console.info(`[petitionGen] Criteria exhibit ${criteriaExhibitId} (${exhibit.criteriaCode}) → draft.`);
 }
 
 // ─── 2. generateRecoLetter ────────────────────────────────────────────────────
@@ -378,24 +333,12 @@ Write the full letter text, ready for the recommender to review and sign. Includ
   addBodyText(doc, letterText);
   const pdfBuffer = await finalizePdf(doc);
 
-  // Upload to Drive
-  const recommenderLastName = reco.recommenderName.split(" ").pop() ?? reco.recommenderName;
-  const fileName = buildRecoLetterName(recommenderLastName, clientCtx.lastName);
-  const { driveFileId, driveUrl } = await tryUploadDraft(
-    reco.profileId,
-    "recommendation_letter",
-    pdfBuffer,
-    fileName,
-  );
-
   await db
     .update(petitionRecoLettersTable)
-    .set({ status: "draft", driveDraftFileId: driveFileId, driveDraftUrl: driveUrl })
+    .set({ status: "draft" })
     .where(eq(petitionRecoLettersTable.id, recoLetterId));
 
-  console.info(
-    `[petitionGen] Reco letter ${recoLetterId} (${reco.recommenderName}) → draft. Drive: ${driveUrl ?? "not uploaded"}`,
-  );
+  console.info(`[petitionGen] Reco letter ${recoLetterId} (${reco.recommenderName}) → draft.`);
 }
 
 // ─── 3. generateExhibitIndex ──────────────────────────────────────────────────
@@ -484,25 +427,12 @@ Write a professional formal table of contents in plain text format, as it would 
   addBodyText(doc, indexText);
   const pdfBuffer = await finalizePdf(doc);
 
-  const fileName = buildExhibitIndexName(clientCtx.lastName);
-  const { driveFileId, driveUrl } = await tryUploadDraft(
-    pkg.profileId,
-    "exhibit_index",
-    pdfBuffer,
-    fileName,
-  );
-
   await db
     .update(petitionPackageTable)
-    .set({
-      exhibitIndexStatus: "draft",
-      exhibitIndexDriveDraftUrl: driveUrl,
-    })
+    .set({ exhibitIndexStatus: "draft" })
     .where(eq(petitionPackageTable.caseSetupId, caseSetupId));
 
-  console.info(
-    `[petitionGen] Exhibit index for caseSetup ${caseSetupId} → draft. Drive: ${driveUrl ?? "not uploaded"}`,
-  );
+  console.info(`[petitionGen] Exhibit index for caseSetup ${caseSetupId} → draft.`);
 }
 
 // ─── 4. generateCoverLetter ───────────────────────────────────────────────────
@@ -610,23 +540,10 @@ Write the complete letter in formal petition style. Reference exhibit tab number
   addBodyText(doc, letterText);
   const pdfBuffer = await finalizePdf(doc);
 
-  const fileName = buildCoverLetterName(clientCtx.lastName, clientCtx.visaPath);
-  const { driveFileId, driveUrl } = await tryUploadDraft(
-    pkg.profileId,
-    "cover_letter",
-    pdfBuffer,
-    fileName,
-  );
-
   await db
     .update(petitionPackageTable)
-    .set({
-      coverLetterStatus: "draft",
-      coverLetterDriveDraftUrl: driveUrl,
-    })
+    .set({ coverLetterStatus: "draft" })
     .where(eq(petitionPackageTable.caseSetupId, caseSetupId));
 
-  console.info(
-    `[petitionGen] Cover letter for caseSetup ${caseSetupId} → draft. Drive: ${driveUrl ?? "not uploaded"}`,
-  );
+  console.info(`[petitionGen] Cover letter for caseSetup ${caseSetupId} → draft.`);
 }

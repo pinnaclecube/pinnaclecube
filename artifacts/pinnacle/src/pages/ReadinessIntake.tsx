@@ -43,7 +43,7 @@ export default function ReadinessIntake() {
 
   // Resume upload state
   const [resumeFile, setResumeFile] = useState<File | null>(null);
-  const [resumeUploaded, setResumeUploaded] = useState<{ fileName: string; driveFileUrl: string } | null>(null);
+  const [resumeUploaded, setResumeUploaded] = useState<{ fileName: string } | null>(null);
   const [resumeUploading, setResumeUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -91,7 +91,7 @@ export default function ReadinessIntake() {
             }));
           }
           if (data.resume) {
-            setResumeUploaded({ fileName: data.resume.fileName, driveFileUrl: data.resume.driveFileUrl });
+            setResumeUploaded({ fileName: data.resume.fileName });
           }
         }
       } catch {
@@ -146,9 +146,9 @@ export default function ReadinessIntake() {
         throw new Error(data.error ?? "Upload failed");
       }
       const data = await res.json();
-      setResumeUploaded({ fileName: data.resume.fileName, driveFileUrl: data.resume.driveFileUrl });
+      setResumeUploaded({ fileName: data.resume.fileName });
       setResumeFile(null);
-      toast({ title: "Resume uploaded to your secure Drive workspace" });
+      toast({ title: "Resume uploaded successfully" });
     } catch (err) {
       toast({
         title: "Upload failed",
@@ -530,23 +530,13 @@ export default function ReadinessIntake() {
                           <p className="text-xs text-green-700 mt-0.5 font-mono">{resumeUploaded.fileName}</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <a
-                          href={resumeUploaded.driveFileUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-[#1E2D6B] hover:underline font-medium"
-                        >
-                          View in Drive
-                        </a>
-                        <button
-                          onClick={() => { setResumeUploaded(null); setResumeFile(null); }}
-                          className="text-gray-400 hover:text-gray-600"
-                          title="Replace file"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => { setResumeUploaded(null); setResumeFile(null); }}
+                        className="text-gray-400 hover:text-gray-600"
+                        title="Replace file"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
                   ) : (
                     <div>
@@ -581,7 +571,7 @@ export default function ReadinessIntake() {
                             disabled={resumeUploading}
                             className="w-full bg-[#1E2D6B] hover:bg-[#3D4FA8]"
                           >
-                            {resumeUploading ? "Uploading to Drive…" : "Upload to My Workspace"}
+                            {resumeUploading ? "Uploading…" : "Upload to My Workspace"}
                           </Button>
                         </div>
                       ) : (

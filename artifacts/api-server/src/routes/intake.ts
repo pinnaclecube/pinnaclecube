@@ -2,9 +2,8 @@ import { Router } from "express";
 import { eq } from "drizzle-orm";
 import multer from "multer";
 import Anthropic from "@anthropic-ai/sdk";
-import { db, readinessIntakeTable, profilesTable, resumeUploadsTable, clientDriveFoldersTable } from "@workspace/db";
+import { db, readinessIntakeTable, profilesTable, resumeUploadsTable } from "@workspace/db";
 import { requireClientAuth } from "../middlewares/clientAuth";
-import { autoProvisionDrive, uploadResumeFile } from "../services/googleDrive";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -81,33 +80,11 @@ router.post("/intake", requireClientAuth, async (req: any, res): Promise<void> =
       .returning();
     res.status(201).json({ intake: created });
   }
-
-  // Auto-provision Drive folders for ALL clients who save a visa path (not just Evidence Engine subscribers)
-  const newVisaPath = updateData.visaPath as string | undefined;
-  if (newVisaPath && newVisaPath !== "unsure") {
-    const clientEmail = req.clientUser.email as string;
-    setImmediate(async () => {
-      try {
-        // Skip if criteria folders are already set up
-        const [existingFolder] = await db
-          .select({ id: clientDriveFoldersTable.id })
-          .from(clientDriveFoldersTable)
-          .where(eq(clientDriveFoldersTable.profileId, profileId))
-          .limit(1);
-        if (existingFolder) return;
-
-        await autoProvisionDrive(profileId, clientEmail, newVisaPath);
-      } catch (err: unknown) {
-        req.log?.error({ err, profileId }, "[intake/POST] Drive auto-provision failed");
-      }
-    });
-  }
 });
 
 // ─── POST /api/intake/complete ────────────────────────────────────────────────
 router.post("/intake/complete", requireClientAuth, async (req: any, res): Promise<void> => {
   const profileId = req.clientUser.id;
-  const profile = req.clientUser;
 
   const [intake] = await db.select()
     .from(readinessIntakeTable)
@@ -124,18 +101,6 @@ router.post("/intake/complete", requireClientAuth, async (req: any, res): Promis
     .set({ readinessCompleted: true, readinessCompletedAt: new Date(), status: "completed" })
     .where(eq(readinessIntakeTable.profileId, profileId));
 
-  // Auto-provision Drive for ALL clients on intake completion — provision root + criteria folders
-  // (driveFoldersCreated is set to true by createCriteriaEvidenceFolders)
-  if (!intake.driveFoldersCreated) {
-    setImmediate(async () => {
-      try {
-        await autoProvisionDrive(profileId, profile.email, intake.visaPath ?? null);
-      } catch (err) {
-        req.log?.error({ err, profileId }, "[intake/complete] Drive provision failed");
-      }
-    });
-  }
-
   if (intake.visaPath) {
     await db
       .update(profilesTable)
@@ -143,7 +108,7 @@ router.post("/intake/complete", requireClientAuth, async (req: any, res): Promis
       .where(eq(profilesTable.id, profileId));
   }
 
-  res.json({ success: true, message: "Intake completed. Your workspace is being prepared." });
+  res.json({ success: true, message: "Intake completed successfully." });
 });
 
 // ─── POST /api/intake/resume ──────────────────────────────────────────────────
@@ -159,46 +124,30 @@ router.post(
       return;
     }
 
-    const { originalname, buffer, mimetype } = req.file;
+    const { originalname } = req.file;
 
-    // Get client's last name for file naming
-    const lastName = req.clientUser.lastName ?? req.clientUser.name?.split(" ").slice(-1)[0] ?? "Client";
+    const [resumeRow] = await db
+      .insert(resumeUploadsTable)
+      .values({
+        profileId,
+        fileName: originalname,
+        extractionStatus: "pending",
+      })
+      .returning();
 
-    try {
-      // Upload to Google Drive resume folder
-      const uploaded = await uploadResumeFile(profileId, buffer, originalname, mimetype, lastName);
+    // Link to intake record
+    await db
+      .update(readinessIntakeTable)
+      .set({ resumeUploadId: resumeRow.id })
+      .where(eq(readinessIntakeTable.profileId, profileId));
 
-      // Insert into resume_uploads table
-      const [resumeRow] = await db
-        .insert(resumeUploadsTable)
-        .values({
-          profileId,
-          driveFileId: uploaded.driveFileId,
-          driveFileUrl: uploaded.driveFileUrl,
-          fileName: uploaded.fileName,
-          extractionStatus: "pending",
-        })
-        .returning();
-
-      // Link to intake record
-      await db
-        .update(readinessIntakeTable)
-        .set({ resumeUploadId: resumeRow.id })
-        .where(eq(readinessIntakeTable.profileId, profileId));
-
-      res.json({
-        success: true,
-        resume: {
-          id: resumeRow.id,
-          fileName: resumeRow.fileName,
-          driveFileUrl: resumeRow.driveFileUrl,
-        },
-      });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Upload failed";
-      console.error("[intake/resume] Upload error:", err);
-      res.status(500).json({ error: msg });
-    }
+    res.json({
+      success: true,
+      resume: {
+        id: resumeRow.id,
+        fileName: resumeRow.fileName,
+      },
+    });
   },
 );
 

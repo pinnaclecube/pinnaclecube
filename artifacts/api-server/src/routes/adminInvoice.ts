@@ -10,7 +10,6 @@ import { eq, and, desc } from "drizzle-orm";
 import { db, prospectsTable, purchasesTable, profilesTable } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { sendEmail, invoiceEmail, prospectInviteEmail, prospectAccountCreatedEmail } from "../services/emailService";
-import { provisionClientDriveFromProspect } from "../services/googleDrive";
 import Stripe from "stripe";
 import PDFDocument from "pdfkit";
 import bcrypt from "bcrypt";
@@ -517,20 +516,6 @@ router.post(
       registrationStatus: alreadyInvited ? prospect.registrationStatus : "invited",
       ...(linkedProfileId ? { linkedProfileId } : {}),
     }).where(eq(prospectsTable.id, id)).returning();
-
-    // ── Provision Drive workspace in background ──────────────────────────────
-    if (linkedProfileId) {
-      setImmediate(() => {
-        provisionClientDriveFromProspect(linkedProfileId!, prospectEmail, {
-          driveFileId: prospect.driveFileId,
-          resumeFileName: prospect.resumeFileName,
-          fullName: prospect.fullName,
-        }).catch((err: unknown) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.error("[convert] Drive provision failed for profile", linkedProfileId, ":", msg);
-        });
-      });
-    }
 
     res.json({ success: true, prospect: updated, message: "Prospect converted and case created" });
   },

@@ -17,7 +17,6 @@ import {
   activityTable,
   clientActivityLogTable,
   visaCriteriaTable,
-  profilesTable,
 } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import {
@@ -26,7 +25,6 @@ import {
   generateExhibitIndex,
   generateCoverLetter,
 } from "../services/petitionDocumentGenerator";
-import { createClientRootFolders, createPetitionFolders, publishPetitionFile } from "../services/googleDrive";
 import { z } from "zod/v4";
 
 const router: IRouter = Router();
@@ -40,23 +38,6 @@ function getExhibitNumber(index: number, style: string): string {
     return romans[index] ?? String(index + 1);
   }
   return String(index + 1);
-}
-
-async function tryCreatePetitionFolders(userId: number, clientEmail: string): Promise<void> {
-  try {
-    await createClientRootFolders(userId, clientEmail);
-    console.info(`[petitionAdmin] Drive root folders created for user ${userId}`);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`[petitionAdmin] Drive root folder creation skipped: ${msg}`);
-  }
-  try {
-    await createPetitionFolders(userId);
-    console.info(`[petitionAdmin] Drive petition folders created for user ${userId}`);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`[petitionAdmin] Drive petition folder creation skipped: ${msg}`);
-  }
 }
 
 async function notifyClient(
@@ -102,18 +83,6 @@ router.post(
     }
 
     const { userId, visaPath, selectedCriteria, exhibitNumberingStyle } = parsed.data;
-
-    // Fetch client profile for Drive folder creation
-    const [clientProfile] = await db
-      .select({ email: profilesTable.email })
-      .from(profilesTable)
-      .where(eq(profilesTable.id, userId))
-      .limit(1);
-
-    if (!clientProfile) {
-      res.status(400).json({ error: `No profile found for userId ${userId}` });
-      return;
-    }
 
     // Fetch visa criteria details for selected IDs
     const criteriaDetails = await db
@@ -161,11 +130,6 @@ router.post(
         coverLetterStatus: "not_started",
       })
       .returning();
-
-    // Fire-and-forget: create petition Drive folders
-    setImmediate(() => {
-      tryCreatePetitionFolders(userId, clientProfile.email).catch(() => {});
-    });
 
     res.status(201).json({ setup, exhibits, package: pkg });
   },
@@ -474,33 +438,10 @@ router.post(
       return;
     }
 
-    let publishedUrl: string | null = null;
-    if (exhibit.driveDraftFileId) {
-      try {
-        const published = await publishPetitionFile(
-          exhibit.driveDraftFileId,
-          exhibit.profileId,
-          "criteria_exhibit",
-        );
-        publishedUrl = published.webViewLink;
-        await db
-          .update(petitionCriteriaExhibitsTable)
-          .set({ drivePublishedFileId: published.id, drivePublishedUrl: publishedUrl, publishedToClient: true })
-          .where(eq(petitionCriteriaExhibitsTable.id, id));
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn("[petitionAdmin] Drive publish skipped:", msg);
-        await db
-          .update(petitionCriteriaExhibitsTable)
-          .set({ publishedToClient: true })
-          .where(eq(petitionCriteriaExhibitsTable.id, id));
-      }
-    } else {
-      await db
-        .update(petitionCriteriaExhibitsTable)
-        .set({ publishedToClient: true })
-        .where(eq(petitionCriteriaExhibitsTable.id, id));
-    }
+    await db
+      .update(petitionCriteriaExhibitsTable)
+      .set({ publishedToClient: true })
+      .where(eq(petitionCriteriaExhibitsTable.id, id));
 
     await notifyClient(
       exhibit.profileId,
@@ -509,7 +450,7 @@ router.post(
       { exhibitId: id },
     );
 
-    res.json({ success: true, publishedUrl });
+    res.json({ success: true });
   },
 );
 
@@ -672,33 +613,10 @@ router.post(
       return;
     }
 
-    let publishedUrl: string | null = null;
-    if (reco.driveDraftFileId) {
-      try {
-        const published = await publishPetitionFile(
-          reco.driveDraftFileId,
-          reco.profileId,
-          "recommendation_letter",
-        );
-        publishedUrl = published.webViewLink;
-        await db
-          .update(petitionRecoLettersTable)
-          .set({ drivePublishedFileId: published.id, drivePublishedUrl: publishedUrl, publishedToClient: true })
-          .where(eq(petitionRecoLettersTable.id, id));
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn("[petitionAdmin] Drive publish skipped:", msg);
-        await db
-          .update(petitionRecoLettersTable)
-          .set({ publishedToClient: true })
-          .where(eq(petitionRecoLettersTable.id, id));
-      }
-    } else {
-      await db
-        .update(petitionRecoLettersTable)
-        .set({ publishedToClient: true })
-        .where(eq(petitionRecoLettersTable.id, id));
-    }
+    await db
+      .update(petitionRecoLettersTable)
+      .set({ publishedToClient: true })
+      .where(eq(petitionRecoLettersTable.id, id));
 
     await notifyClient(
       reco.profileId,
@@ -707,7 +625,7 @@ router.post(
       { recoLetterId: id },
     );
 
-    res.json({ success: true, publishedUrl });
+    res.json({ success: true });
   },
 );
 
@@ -1000,52 +918,20 @@ router.post(
     // Publish exhibits
     for (const exhibit of exhibits) {
       if (exhibit.publishedToClient) { publishedCount++; continue; }
-      let publishedUrl: string | null = null;
-      if (exhibit.driveDraftFileId) {
-        try {
-          const pub = await publishPetitionFile(exhibit.driveDraftFileId, exhibit.profileId, "criteria_exhibit");
-          publishedUrl = pub.webViewLink;
-          await db
-            .update(petitionCriteriaExhibitsTable)
-            .set({ publishedToClient: true, drivePublishedFileId: pub.id, drivePublishedUrl: publishedUrl })
-            .where(eq(petitionCriteriaExhibitsTable.id, exhibit.id));
-        } catch {
-          await db
-            .update(petitionCriteriaExhibitsTable)
-            .set({ publishedToClient: true })
-            .where(eq(petitionCriteriaExhibitsTable.id, exhibit.id));
-        }
-      } else {
-        await db
-          .update(petitionCriteriaExhibitsTable)
-          .set({ publishedToClient: true })
-          .where(eq(petitionCriteriaExhibitsTable.id, exhibit.id));
-      }
+      await db
+        .update(petitionCriteriaExhibitsTable)
+        .set({ publishedToClient: true })
+        .where(eq(petitionCriteriaExhibitsTable.id, exhibit.id));
       publishedCount++;
     }
 
     // Publish reco letters
     for (const reco of recos) {
       if (reco.publishedToClient) { publishedCount++; continue; }
-      if (reco.driveDraftFileId) {
-        try {
-          const pub = await publishPetitionFile(reco.driveDraftFileId, reco.profileId, "recommendation_letter");
-          await db
-            .update(petitionRecoLettersTable)
-            .set({ publishedToClient: true, drivePublishedFileId: pub.id, drivePublishedUrl: pub.webViewLink })
-            .where(eq(petitionRecoLettersTable.id, reco.id));
-        } catch {
-          await db
-            .update(petitionRecoLettersTable)
-            .set({ publishedToClient: true })
-            .where(eq(petitionRecoLettersTable.id, reco.id));
-        }
-      } else {
-        await db
-          .update(petitionRecoLettersTable)
-          .set({ publishedToClient: true })
-          .where(eq(petitionRecoLettersTable.id, reco.id));
-      }
+      await db
+        .update(petitionRecoLettersTable)
+        .set({ publishedToClient: true })
+        .where(eq(petitionRecoLettersTable.id, reco.id));
       publishedCount++;
     }
 

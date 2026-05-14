@@ -24,8 +24,6 @@ import boothRouter from "./booth";
 import adminBoothEventsRouter from "./adminBoothEvents";
 import adminRoadmapRouter from "./adminRoadmap";
 import adminInvoiceRouter from "./adminInvoice";
-import driveFoldersRouter from "./driveFolders";
-import adminDriveRouter from "./adminDrive";
 
 const router: IRouter = Router();
 
@@ -54,7 +52,5 @@ router.use(boothRouter);
 router.use(adminBoothEventsRouter);
 router.use(adminRoadmapRouter);
 router.use(adminInvoiceRouter);
-router.use(driveFoldersRouter);
-router.use(adminDriveRouter);
 
 export default router;
