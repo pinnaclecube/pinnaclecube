@@ -5,7 +5,7 @@ import {
   FileText, FileImage, File, FolderOpen, Folder,
   ExternalLink, Eye, RefreshCw, ChevronDown, ChevronRight,
   AlertTriangle, Loader2, HardDriveDownload, CheckCircle2,
-  FolderPlus, X, Check, Link2Off,
+  FolderPlus, X, Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DrivePreviewModal } from "./DrivePreviewModal";
@@ -35,17 +35,13 @@ export interface DriveCriteriaFolder {
   files: DriveFileItem[];
   subfolders: DriveSubfolder[];
   error?: string;
-  notFound?: boolean;
 }
 
 export type CreateFolderFn = (opts: { name: string; parentDriveId: string }) => Promise<void>;
 
-export type DisconnectFolderFn = (criteriaId: string) => Promise<void>;
-
 interface DriveFileBrowserProps {
   fetchFn: () => Promise<{ criteria: DriveCriteriaFolder[] }>;
   createFolderFn?: CreateFolderFn;
-  disconnectFolderFn?: DisconnectFolderFn;
   isProvisioning?: boolean;
   justProvisioned?: boolean;
 }
@@ -282,48 +278,37 @@ interface CriteriaFolderSectionProps {
   onPreview: (file: DriveFileItem) => void;
   onCreateFolder?: (name: string) => Promise<void>;
   onCreateSubfolderIn?: (parentDriveId: string, name: string) => Promise<void>;
-  onDisconnect?: () => Promise<void>;
 }
 
-function CriteriaFolderSection({ folder, onPreview, onCreateFolder, onCreateSubfolderIn, onDisconnect }: CriteriaFolderSectionProps) {
+function CriteriaFolderSection({ folder, onPreview, onCreateFolder, onCreateSubfolderIn }: CriteriaFolderSectionProps) {
   const [open, setOpen] = useState(true);
   const [showNewFolder, setShowNewFolder] = useState(false);
-  const [disconnecting, setDisconnecting] = useState(false);
   const totalFiles = folder.files.length + folder.subfolders.reduce((s, sf) => s + sf.files.length, 0);
 
-  const handleDisconnect = async () => {
-    if (!onDisconnect) return;
-    setDisconnecting(true);
-    try { await onDisconnect(); } finally { setDisconnecting(false); }
-  };
-
   return (
-    <div className={cn("rounded-lg border bg-white overflow-hidden", folder.notFound && "border-amber-200")}>
+    <div className="rounded-lg border bg-white overflow-hidden">
       <div className="flex items-center gap-0">
         <button
           type="button"
           className="flex-1 flex items-center gap-2.5 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
           onClick={() => setOpen((v) => !v)}
         >
-          {folder.notFound ? (
-            <Link2Off className="w-4 h-4 text-amber-500 shrink-0" />
-          ) : open ? (
+          {open ? (
             <FolderOpen className="w-4 h-4 text-[#1E2D6B] shrink-0" />
           ) : (
             <Folder className="w-4 h-4 text-[#1E2D6B] shrink-0" />
           )}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className={cn("font-semibold text-sm truncate", folder.notFound ? "text-amber-700" : "text-[#1E2D6B]")}>{folder.criteriaName}</span>
+              <span className="font-semibold text-sm text-[#1E2D6B] truncate">{folder.criteriaName}</span>
               <span className="font-mono text-xs text-muted-foreground">{folder.criteriaId}</span>
-              {folder.notFound && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Not found in Drive</span>}
             </div>
           </div>
-          {!folder.notFound && <Badge variant="secondary" className="shrink-0 text-xs">{totalFiles} file{totalFiles !== 1 ? "s" : ""}</Badge>}
+          <Badge variant="secondary" className="shrink-0 text-xs">{totalFiles} file{totalFiles !== 1 ? "s" : ""}</Badge>
           {open ? <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
         </button>
 
-        {open && onCreateFolder && !showNewFolder && !folder.notFound && (
+        {open && onCreateFolder && !showNewFolder && (
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setShowNewFolder(true); }}
@@ -334,7 +319,7 @@ function CriteriaFolderSection({ folder, onPreview, onCreateFolder, onCreateSubf
           </button>
         )}
 
-        {folder.driveFolderUrl && !folder.notFound && (
+        {folder.driveFolderUrl && (
           <a
             href={folder.driveFolderUrl}
             target="_blank"
@@ -350,28 +335,7 @@ function CriteriaFolderSection({ folder, onPreview, onCreateFolder, onCreateSubf
 
       {open && (
         <div className="border-t divide-y divide-gray-100">
-          {folder.notFound && (
-            <div className="flex items-start gap-3 px-4 py-3 bg-amber-50">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-amber-800">Folder not found in Google Drive</p>
-                <p className="text-xs text-amber-700 mt-0.5">This folder may have been deleted or moved. You can disconnect it to remove it from this list.</p>
-              </div>
-              {onDisconnect && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-100"
-                  onClick={handleDisconnect}
-                  disabled={disconnecting}
-                >
-                  {disconnecting ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Link2Off className="w-3 h-3 mr-1" />}
-                  Disconnect
-                </Button>
-              )}
-            </div>
-          )}
-          {!folder.notFound && folder.error && (
+          {folder.error && (
             <div className="flex items-center gap-2 px-4 py-3 text-xs text-red-700 bg-red-50">
               <AlertTriangle className="w-4 h-4 shrink-0" />
               <span>{folder.error}</span>
@@ -384,7 +348,7 @@ function CriteriaFolderSection({ folder, onPreview, onCreateFolder, onCreateSubf
             </div>
           )}
 
-          {!folder.notFound && !folder.error && folder.files.length === 0 && folder.subfolders.length === 0 && !showNewFolder && (
+          {!folder.error && folder.files.length === 0 && folder.subfolders.length === 0 && !showNewFolder && (
             <p className="px-4 py-3 text-xs text-muted-foreground italic">This folder is empty.</p>
           )}
 
@@ -424,7 +388,6 @@ const POLL_INTERVAL_MS = 30_000;
 export function DriveFileBrowser({
   fetchFn,
   createFolderFn,
-  disconnectFolderFn,
   isProvisioning = false,
   justProvisioned = false,
 }: DriveFileBrowserProps) {
@@ -591,18 +554,13 @@ export function DriveFileBrowser({
             folder={folder}
             onPreview={setPreviewFile}
             onCreateFolder={
-              createFolderFn && !folder.notFound
+              createFolderFn
                 ? (name) => createFolderFn({ name, parentDriveId: folder.driveFolderId }).then(refresh)
                 : undefined
             }
             onCreateSubfolderIn={
-              createFolderFn && !folder.notFound
+              createFolderFn
                 ? (parentDriveId, name) => createFolderFn({ name, parentDriveId }).then(refresh)
-                : undefined
-            }
-            onDisconnect={
-              disconnectFolderFn
-                ? () => disconnectFolderFn(folder.criteriaId).then(load)
                 : undefined
             }
           />

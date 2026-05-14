@@ -256,7 +256,7 @@ router.get("/evidence/drive-files", requireClientAuth, async (req: any, res) => 
 
   const drive = getDriveClient();
 
-  const criteria = await Promise.all(
+  const results = await Promise.all(
     folders.map(async (folder) => {
       const base = {
         criteriaId: folder.criteriaId,
@@ -275,7 +275,14 @@ router.get("/evidence/drive-files", requireClientAuth, async (req: any, res) => 
       const folderMeta = metaResult.status === "fulfilled" ? metaResult.value.data : null;
       const notFound = !folderMeta || folderMeta.trashed === true;
 
-      if (notFound) return { ...base, files: [], subfolders: [], notFound: true };
+      if (notFound) {
+        // Auto-purge: silently remove the stale DB record and exclude from response
+        await db
+          .delete(clientDriveFoldersTable)
+          .where(and(eq(clientDriveFoldersTable.profileId, userId), eq(clientDriveFoldersTable.criteriaId, folder.criteriaId)));
+        return null;
+      }
+
       if (itemsResult.status === "rejected") return { ...base, files: [], subfolders: [], error: "Could not access this Drive folder" };
 
       const items = itemsResult.value;
@@ -297,6 +304,7 @@ router.get("/evidence/drive-files", requireClientAuth, async (req: any, res) => 
     }),
   );
 
+  const criteria = results.filter((r) => r !== null);
   res.json({ criteria });
 });
 
