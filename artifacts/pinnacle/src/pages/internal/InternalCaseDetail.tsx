@@ -17,8 +17,9 @@ import {
   RefreshCw, ExternalLink, Loader2, CheckCircle, Clock, Zap, Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FolderBrowser } from "@/components/case/FolderBrowser";
 
-const TABS = ["Overview", "Evidence", "Excellence Lab", "Petition Workspace", "Documents"] as const;
+const TABS = ["Overview", "Evidence", "Excellence Lab", "Petition Workspace", "Documents", "Drive Folders"] as const;
 type Tab = typeof TABS[number];
 
 function staffFetch(path: string, opts: RequestInit = {}) {
@@ -1009,6 +1010,40 @@ function DocumentsTab({ userId }: { userId: string }) {
   );
 }
 
+// ─── Tab 6: Drive Folders ────────────────────────────────────────────────────────
+
+function DriveFoldersTab({ userId }: { userId: string }) {
+  const [caseId, setCaseId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    staffFetch(`/internal/petition/setup/${userId}`)
+      .then((r) => r.json())
+      .then((d: any) => {
+        const id = d.cases?.[0]?.setup?.id;
+        if (id) setCaseId(id);
+        else setError("No case setup found for this client.");
+      })
+      .catch(() => setError("Failed to load case info."))
+      .finally(() => setLoading(false));
+  }, [userId]);
+
+  if (loading) return <div className="h-40 bg-gray-200 rounded animate-pulse" />;
+  if (error) return <p className="text-sm text-muted-foreground">{error}</p>;
+  if (caseId === null) return null;
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        Create subfolders and upload documents directly into the client's Drive case folders.
+        Files are immediately synced to Google Drive.
+      </p>
+      <FolderBrowser caseId={caseId} fetchFn={staffFetch} />
+    </div>
+  );
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────────────
 
 export default function InternalCaseDetail() {
@@ -1088,6 +1123,7 @@ export default function InternalCaseDetail() {
         {activeTab === "Excellence Lab" && <ExcellenceLabTab userId={user_id} />}
         {activeTab === "Petition Workspace" && <PetitionWorkspaceTab userId={user_id} />}
         {activeTab === "Documents" && <DocumentsTab userId={user_id} />}
+        {activeTab === "Drive Folders" && <DriveFoldersTab userId={user_id} />}
       </main>
     </div>
   );

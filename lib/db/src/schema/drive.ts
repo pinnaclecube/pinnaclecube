@@ -19,6 +19,7 @@ export const folderTypeEnum = pgEnum("folder_type", [
   "demographics",
   "exhibits",
   "criteria",
+  "custom",
 ]);
 
 export const visaCategoryEnum = pgEnum("visa_category", [

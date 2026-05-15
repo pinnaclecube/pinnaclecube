@@ -47,6 +47,7 @@ import EliteBlueprint from "@/pages/blueprint";
 import Courses from "@/pages/courses";
 import CourseDetail from "@/pages/course-detail";
 import ProfilePage from "@/pages/profile";
+import MyFiles from "@/pages/my-files";
 import ReadinessIntake from "@/pages/ReadinessIntake";
 
 import ExcellenceLabCheckout from "@/pages/checkout/ExcellenceLabCheckout";
@@ -176,6 +177,9 @@ function Router() {
       </Route>
       <Route path="/profile">
         <ProtectedRoute><ProfilePage /></ProtectedRoute>
+      </Route>
+      <Route path="/my-files">
+        <ProtectedRoute><MyFiles /></ProtectedRoute>
       </Route>
 
       {/* Internal staff routes */}
