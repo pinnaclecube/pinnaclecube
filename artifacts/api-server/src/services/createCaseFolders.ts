@@ -9,7 +9,7 @@
  * records before re-running.
  */
 
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import {
   db,
   casePetitionSetupTable,
@@ -22,6 +22,7 @@ import {
   getCriteriaFolders,
 } from "../config/driveFolderConfig";
 import { createDriveFolder } from "./driveService";
+import { registerDriveWatch } from "./driveWatchService";
 import { logger } from "../lib/logger";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -155,9 +156,32 @@ export async function createCaseFolders(caseId: number): Promise<void> {
     .set({ driveSyncStatus: "pending", driveSyncError: null })
     .where(eq(casePetitionSetupTable.id, caseId));
 
+  // After folders are created, register a Drive push-notification watch.
+  // Failures here are non-fatal — folder creation is considered successful
+  // regardless of whether watch registration succeeds.
+  async function tryRegisterWatch(): Promise<void> {
+    try {
+      const [rootFolder] = await db
+        .select()
+        .from(caseFoldersTable)
+        .where(and(eq(caseFoldersTable.caseId, caseId), eq(caseFoldersTable.folderType, "root")))
+        .limit(1);
+
+      if (!rootFolder) {
+        logger.warn({ caseId }, "[createCaseFolders] root folder not found — skipping watch registration");
+        return;
+      }
+
+      await registerDriveWatch(caseId, rootFolder.driveId);
+    } catch (watchErr) {
+      logger.warn({ caseId, err: watchErr }, "[createCaseFolders] watch registration failed (non-fatal)");
+    }
+  }
+
   try {
     await doCreateFolders(caseId);
     logger.info({ caseId }, "[createCaseFolders] completed successfully");
+    await tryRegisterWatch();
   } catch (firstErr) {
     const firstMsg = firstErr instanceof Error ? firstErr.message : String(firstErr);
     logger.warn({ caseId, err: firstMsg }, "[createCaseFolders] first attempt failed — retrying once");
@@ -167,6 +191,7 @@ export async function createCaseFolders(caseId: number): Promise<void> {
       await db.delete(caseFoldersTable).where(eq(caseFoldersTable.caseId, caseId));
       await doCreateFolders(caseId);
       logger.info({ caseId }, "[createCaseFolders] completed successfully on retry");
+      await tryRegisterWatch();
     } catch (retryErr) {
       const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
       logger.error({ caseId, err: retryMsg }, "[createCaseFolders] retry failed — marking as failed");

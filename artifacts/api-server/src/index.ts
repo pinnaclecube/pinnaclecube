@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startPendingGrantsCleanup } from "./services/pendingGrantsCleanup";
+import { startDriveChannelRenewal } from "./services/driveWatchService";
 
 const rawPort = process.env["PORT"];
 
@@ -24,4 +25,5 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
   startPendingGrantsCleanup();
+  startDriveChannelRenewal();
 });

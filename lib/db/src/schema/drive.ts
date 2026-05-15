@@ -27,6 +27,8 @@ export const visaCategoryEnum = pgEnum("visa_category", [
   "O1A",
 ]);
 
+export const addedBySourceEnum = pgEnum("added_by_source", ["app", "drive"]);
+
 // ─── case_folders ─────────────────────────────────────────────────────────────
 
 export const caseFoldersTable = pgTable("case_folders", {
@@ -45,6 +47,36 @@ export const caseFoldersTable = pgTable("case_folders", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
+// ─── case_folder_items ────────────────────────────────────────────────────────
+
+export const caseFolderItemsTable = pgTable("case_folder_items", {
+  id: serial("id").primaryKey(),
+  caseFolderId: integer("case_folder_id")
+    .notNull()
+    .references(() => caseFoldersTable.id, { onDelete: "cascade" }),
+  driveId: text("drive_id").notNull().unique(),
+  name: text("name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  driveUrl: text("drive_url").notNull(),
+  addedBySource: addedBySourceEnum("added_by_source").notNull().default("drive"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ─── drive_watch_channels ─────────────────────────────────────────────────────
+
+export const driveWatchChannelsTable = pgTable("drive_watch_channels", {
+  id: serial("id").primaryKey(),
+  caseId: integer("case_id")
+    .notNull()
+    .references(() => casePetitionSetupTable.id, { onDelete: "cascade" }),
+  channelId: text("channel_id").notNull().unique(),
+  resourceId: text("resource_id").notNull(),
+  driveFolderId: text("drive_folder_id").notNull(),
+  channelToken: text("channel_token").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ─── Zod schemas & types ──────────────────────────────────────────────────────
 
 export const insertCaseFolderSchema = createInsertSchema(caseFoldersTable).omit({
@@ -53,5 +85,13 @@ export const insertCaseFolderSchema = createInsertSchema(caseFoldersTable).omit(
   updatedAt: true,
 });
 
+export const insertCaseFolderItemSchema = createInsertSchema(caseFolderItemsTable).omit({
+  id: true,
+  createdAt: true,
+});
+
 export type InsertCaseFolder = z.infer<typeof insertCaseFolderSchema>;
 export type CaseFolder = typeof caseFoldersTable.$inferSelect;
+export type InsertCaseFolderItem = z.infer<typeof insertCaseFolderItemSchema>;
+export type CaseFolderItem = typeof caseFolderItemsTable.$inferSelect;
+export type DriveWatchChannel = typeof driveWatchChannelsTable.$inferSelect;

@@ -35,7 +35,8 @@ function buildDriveClient() {
 // at startup if the env var is missing (dev/test environments).
 let _drive: ReturnType<typeof google.drive> | null = null;
 
-function drive() {
+/** Returns the shared Drive v3 client, initializing it on first call. */
+export function getDriveClient() {
   if (!_drive) _drive = buildDriveClient();
   return _drive;
 }
@@ -49,6 +50,13 @@ export interface DriveFolder {
   driveUrl: string;
 }
 
+export interface DriveFileMetadata {
+  id: string;
+  name: string;
+  mimeType: string;
+  webViewLink: string;
+}
+
 /**
  * Creates a Google Drive folder with the given name inside `parentDriveId`.
  * Returns the new folder's Drive ID and web view URL.
@@ -59,7 +67,7 @@ export async function createDriveFolder(
 ): Promise<DriveFolder> {
   logger.info({ name, parentDriveId }, "[driveService] creating folder");
 
-  const res = await drive().files.create({
+  const res = await getDriveClient().files.create({
     requestBody: {
       name,
       mimeType: "application/vnd.google-apps.folder",
@@ -77,4 +85,23 @@ export async function createDriveFolder(
 
   logger.info({ name, driveId }, "[driveService] folder created");
   return { driveId, driveUrl };
+}
+
+/**
+ * Lists the non-folder direct children of a Drive folder.
+ * Returns files only (folders are excluded).
+ */
+export async function listDriveFolderFiles(
+  folderId: string,
+): Promise<DriveFileMetadata[]> {
+  const res = await getDriveClient().files.list({
+    q: `'${folderId}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'`,
+    fields: "files(id,name,mimeType,webViewLink)",
+    pageSize: 100,
+  });
+
+  return (res.data.files ?? []).filter(
+    (f): f is DriveFileMetadata =>
+      Boolean(f.id && f.name && f.mimeType && f.webViewLink),
+  ) as DriveFileMetadata[];
 }
