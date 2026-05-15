@@ -14,6 +14,7 @@ export interface ClientUser {
   accessLevel: string;
   disclaimerAccepted: boolean;
   disclaimerVersion: string | null;
+  mustChangePassword?: boolean | null;
   phone?: string | null;
   country?: string | null;
   city?: string | null;
@@ -49,7 +50,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<ClientUser | null>(null);
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   const [isLoading, setIsLoading] = useState(true);
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
+
+  // Enforce mandatory password reset: redirect to /set-password whenever the
+  // authenticated user still has mustChangePassword=true, regardless of which
+  // route they navigate to.
+  useEffect(() => {
+    if (!isLoading && user?.mustChangePassword === true && location !== "/set-password") {
+      navigate("/set-password");
+    }
+  }, [isLoading, user?.mustChangePassword, location, navigate]);
 
   useEffect(() => {
     setAuthTokenGetter(() => localStorage.getItem(TOKEN_KEY));

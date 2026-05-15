@@ -293,8 +293,17 @@ router.post("/auth/set-password", async (req, res) => {
   }
 
   const { new_password } = req.body as { new_password?: string };
-  if (!new_password || new_password.length < 8) {
-    res.status(400).json({ error: "Password must be at least 8 characters" });
+  if (!new_password) {
+    res.status(400).json({ error: "Password is required" });
+    return;
+  }
+  const strengthErrors: string[] = [];
+  if (new_password.length < 8) strengthErrors.push("at least 8 characters");
+  if (!/[A-Z]/.test(new_password)) strengthErrors.push("one uppercase letter");
+  if (!/[0-9]/.test(new_password)) strengthErrors.push("one number");
+  if (!/[^A-Za-z0-9]/.test(new_password)) strengthErrors.push("one special character");
+  if (strengthErrors.length > 0) {
+    res.status(400).json({ error: `Password must include ${strengthErrors.join(", ")}.` });
     return;
   }
 

@@ -26,5 +26,9 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     return <Redirect to="/login" />;
   }
 
+  if (user.mustChangePassword) {
+    return <Redirect to="/set-password" />;
+  }
+
   return <>{children}</>;
 }
