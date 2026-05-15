@@ -68,6 +68,34 @@ async function notifyClient(
   }
 }
 
+// ─── GET /internal/visa-criteria ──────────────────────────────────────────────
+// Returns all criteria rows for a given visaPath (e.g. "eb1a", "niw", "o1").
+// Used by the frontend Convert-to-Case modal to render the criteria checklist.
+
+router.get(
+  "/internal/visa-criteria",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const visaPath = typeof req.query.visaPath === "string" ? req.query.visaPath.trim() : "";
+    if (!visaPath) {
+      res.status(400).json({ error: "visaPath query param is required" });
+      return;
+    }
+    const criteria = await db
+      .select({
+        id: visaCriteriaTable.id,
+        criteriaCode: visaCriteriaTable.criteriaCode,
+        criteriaName: visaCriteriaTable.criteriaName,
+        displayOrder: visaCriteriaTable.displayOrder,
+        isCommon: visaCriteriaTable.isCommon,
+      })
+      .from(visaCriteriaTable)
+      .where(eq(visaCriteriaTable.visaPath, visaPath))
+      .orderBy(visaCriteriaTable.displayOrder);
+    res.json({ criteria });
+  },
+);
+
 // ─── POST /internal/petition/setup ────────────────────────────────────────────
 
 const SetupBody = z.object({

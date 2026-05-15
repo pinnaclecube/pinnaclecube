@@ -15,6 +15,29 @@ import { cn } from "@/lib/utils";
 
 const VISA_CATEGORIES = ["EB-1A", "EB-2 NIW", "O-1A"];
 
+const CONVERT_VISA_OPTIONS = ["EB-1A", "NIW", "O-1A"] as const;
+type ConvertVisa = typeof CONVERT_VISA_OPTIONS[number];
+
+const VISA_PATH_MAP: Record<ConvertVisa, string> = {
+  "EB-1A": "eb1a",
+  "NIW": "niw",
+  "O-1A": "o1",
+};
+
+function inferConvertVisa(raw?: string | null): ConvertVisa {
+  if (!raw) return "EB-1A";
+  const u = raw.toUpperCase().replace(/[\s\-]/g, "");
+  if (u.includes("NIW") || u.startsWith("EB2")) return "NIW";
+  if (u.includes("O1")) return "O-1A";
+  return "EB-1A";
+}
+
+const CONVERT_PRODUCTS = [
+  { key: "evidence_engine", label: "Evidence Engine" },
+  { key: "elite_blueprint", label: "Elite Blueprint" },
+  { key: "evidence_engine_elite_blueprint", label: "Evidence Engine + Elite Blueprint" },
+] as const;
+
 function staffFetch(path: string, opts: RequestInit = {}) {
   return fetch(`/api${path}`, {
     ...opts,
@@ -67,6 +90,16 @@ export default function InternalProspectDetail() {
 
   const [converting, setConverting] = useState(false);
   const [convertMsg, setConvertMsg] = useState<string | null>(null);
+
+  const [showConvertModal, setShowConvertModal] = useState(false);
+  const [convertProduct, setConvertProduct] = useState<string | null>(null);
+  const [convertVisa, setConvertVisa] = useState<ConvertVisa>("EB-1A");
+  const [allCriteria, setAllCriteria] = useState<Array<{ id: string; criteriaCode: string; criteriaName: string; displayOrder: number; isCommon: boolean }>>([]);
+  const [criteriaSelection, setCriteriaSelection] = useState<string[]>([]);
+  const [criteriaLoading, setCriteriaLoading] = useState(false);
+  const [convertStep, setConvertStep] = useState<"idle" | "step1" | "step2" | "done" | "step1_failed" | "step2_failed">("idle");
+  const [partialProfileId, setPartialProfileId] = useState<number | null>(null);
+
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [, navigate] = useLocation();
@@ -286,19 +319,103 @@ export default function InternalProspectDetail() {
     });
   };
 
-  const convertCase = async () => {
-    setConverting(true);
-    setConvertMsg(null);
+  const fetchCriteriaForVisa = async (visaPath: string) => {
+    setCriteriaLoading(true);
+    setAllCriteria([]);
+    setCriteriaSelection([]);
     try {
-      const r = await staffFetch(`/admin/prospects/${id}/convert`, { method: "POST" });
+      const r = await staffFetch(`/internal/visa-criteria?visaPath=${encodeURIComponent(visaPath)}`);
+      if (r.ok) {
+        const d = await r.json();
+        setAllCriteria(d.criteria ?? []);
+        setCriteriaSelection((d.criteria ?? []).map((c: { id: string }) => c.id));
+      }
+    } catch { /* ignore */ }
+    setCriteriaLoading(false);
+  };
+
+  const openConvertModal = () => {
+    const visa = inferConvertVisa(prospect?.roadmapVisaCategory);
+    setConvertVisa(visa);
+    setConvertProduct(null);
+    setConvertMsg(null);
+    setConvertStep("idle");
+    setPartialProfileId(null);
+    setShowConvertModal(true);
+    fetchCriteriaForVisa(VISA_PATH_MAP[visa]);
+  };
+
+  const handleVisaChange = (visa: ConvertVisa) => {
+    setConvertVisa(visa);
+    fetchCriteriaForVisa(VISA_PATH_MAP[visa]);
+  };
+
+  const toggleCriterion = (cid: string) => {
+    setCriteriaSelection((prev) =>
+      prev.includes(cid) ? prev.filter((x) => x !== cid) : [...prev, cid]
+    );
+  };
+
+  const runStep2 = async (profileId: number, visa: ConvertVisa, criteria: string[], product: string) => {
+    setConvertStep("step2");
+    try {
+      const r = await staffFetch("/internal/petition/setup", {
+        method: "POST",
+        body: JSON.stringify({
+          userId: profileId,
+          visaPath: VISA_PATH_MAP[visa],
+          selectedCriteria: criteria,
+          exhibitNumberingStyle: "numeric",
+          product,
+        }),
+      });
       const d = await r.json();
       if (r.ok) {
-        setConvertMsg("Prospect converted to case!");
+        setConvertStep("done");
+        setConvertMsg("Case setup complete — profile created, case provisioned, and Drive folders are being built in the background.");
         await load();
       } else {
-        setConvertMsg(d.error ?? "Conversion failed");
+        setConvertStep("step2_failed");
+        setConvertMsg(d.error ?? "Case setup failed");
       }
-    } catch { setConvertMsg("Conversion failed"); }
+    } catch {
+      setConvertStep("step2_failed");
+      setConvertMsg("Network error during case setup");
+    }
+  };
+
+  const handleConvertConfirm = async () => {
+    if (!convertProduct || !convertVisa || criteriaSelection.length === 0) return;
+    setConverting(true);
+    setConvertMsg(null);
+    setConvertStep("step1");
+
+    let profileId: number | null = null;
+    try {
+      const r1 = await staffFetch(`/admin/prospects/${id}/convert`, { method: "POST" });
+      const d1 = await r1.json();
+      if (!r1.ok) {
+        setConvertMsg(d1.error ?? "Profile creation failed");
+        setConvertStep("step1_failed");
+        setConverting(false);
+        return;
+      }
+      profileId = d1.prospect?.linkedProfileId ?? null;
+      if (!profileId) {
+        setConvertMsg("Conversion completed but profile ID was not returned — cannot proceed to case setup.");
+        setConvertStep("step1_failed");
+        setConverting(false);
+        return;
+      }
+      setPartialProfileId(profileId);
+    } catch {
+      setConvertMsg("Network error during profile creation");
+      setConvertStep("step1_failed");
+      setConverting(false);
+      return;
+    }
+
+    await runStep2(profileId, convertVisa, criteriaSelection, convertProduct);
     setConverting(false);
   };
 
@@ -409,14 +526,10 @@ export default function InternalProspectDetail() {
             ) : prospect.status !== "converted" && (
               <Button
                 size="sm"
-                onClick={convertCase}
-                disabled={converting}
+                onClick={openConvertModal}
                 className="bg-purple-700 hover:bg-purple-800 text-white"
               >
-                {converting
-                  ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Converting…</>
-                  : <><UserCheck className="w-3.5 h-3.5 mr-1.5" />Convert to Case</>
-                }
+                <UserCheck className="w-3.5 h-3.5 mr-1.5" />Convert to Case
               </Button>
             )}
           </div>
@@ -427,9 +540,30 @@ export default function InternalProspectDetail() {
             {inviteResult}
           </div>
         )}
-        {convertMsg && (
-          <div className={cn("mb-4 p-3 rounded text-sm border", convertMsg.includes("failed") || convertMsg.includes("Failed") ? "bg-red-50 border-red-200 text-red-800" : "bg-purple-50 border-purple-200 text-purple-800")}>
-            {convertMsg}
+        {convertMsg && !showConvertModal && (
+          <div className={cn(
+            "mb-4 p-3 rounded text-sm border",
+            convertStep === "done" ? "bg-purple-50 border-purple-200 text-purple-800"
+              : convertStep === "step2_failed" ? "bg-amber-50 border-amber-200 text-amber-900"
+              : "bg-red-50 border-red-200 text-red-800"
+          )}>
+            {convertStep === "step2_failed" && (
+              <p className="font-semibold mb-1">Partial conversion — profile created but case setup failed</p>
+            )}
+            <p>{convertMsg}</p>
+            {convertStep === "step2_failed" && partialProfileId && (
+              <button
+                onClick={() => {
+                  setConverting(true);
+                  runStep2(partialProfileId, convertVisa, criteriaSelection, convertProduct ?? "evidence_engine")
+                    .finally(() => setConverting(false));
+                }}
+                disabled={converting}
+                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-amber-700 text-white text-xs font-medium hover:bg-amber-800 disabled:opacity-50"
+              >
+                {converting ? <><Loader2 className="w-3 h-3 animate-spin" />Retrying…</> : "Retry case setup"}
+              </button>
+            )}
           </div>
         )}
 
@@ -1000,6 +1134,197 @@ export default function InternalProspectDetail() {
             >
               {deleting ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Deleting…</> : <><Trash2 className="w-3.5 h-3.5 mr-1.5" />Delete permanently</>}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Convert to Case Modal ── */}
+      <Dialog open={showConvertModal} onOpenChange={(open) => { if (!converting) setShowConvertModal(open); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Convert to Case — {prospect?.fullName}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-5 py-1">
+
+            {/* Progress indicator while running */}
+            {(convertStep === "step1" || convertStep === "step2") && (
+              <div className="flex items-center gap-3 bg-purple-50 border border-purple-200 rounded-lg px-4 py-3">
+                <Loader2 className="w-4 h-4 animate-spin text-purple-700 shrink-0" />
+                <p className="text-sm text-purple-900 font-medium">
+                  {convertStep === "step1" ? "Step 1 of 2 — Creating profile & sending credentials…" : "Step 2 of 2 — Provisioning case and Drive folders…"}
+                </p>
+              </div>
+            )}
+
+            {/* In-modal error/success */}
+            {convertMsg && (convertStep === "step1_failed" || convertStep === "step2_failed" || convertStep === "done") && (
+              <div className={cn(
+                "rounded-lg border px-4 py-3 text-sm",
+                convertStep === "done" ? "bg-purple-50 border-purple-200 text-purple-900"
+                  : convertStep === "step2_failed" ? "bg-amber-50 border-amber-200 text-amber-900"
+                  : "bg-red-50 border-red-200 text-red-800"
+              )}>
+                {convertStep === "step2_failed" && <p className="font-semibold mb-1">Profile created — case setup failed</p>}
+                <p>{convertMsg}</p>
+              </div>
+            )}
+
+            {/* ── Field 1: Product Enrollment ── */}
+            {convertStep === "idle" && (
+              <>
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Product Enrollment</p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {CONVERT_PRODUCTS.map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => setConvertProduct(key)}
+                        className={cn(
+                          "flex items-center gap-3 px-4 py-3 rounded-lg border text-sm font-medium text-left transition-colors",
+                          convertProduct === key
+                            ? "bg-purple-700 text-white border-purple-700"
+                            : "border-gray-200 text-gray-700 hover:border-purple-300 hover:bg-purple-50"
+                        )}
+                      >
+                        {convertProduct === key
+                          ? <Check className="w-4 h-4 shrink-0" />
+                          : <div className="w-4 h-4 rounded-full border-2 border-current shrink-0 opacity-40" />
+                        }
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ── Field 2: Visa Category ── */}
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Visa Category</p>
+                  <div className="flex gap-2">
+                    {CONVERT_VISA_OPTIONS.map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => handleVisaChange(v)}
+                        className={cn(
+                          "flex-1 px-3 py-2 rounded-lg border text-sm font-medium transition-colors",
+                          convertVisa === v
+                            ? "bg-[#1E2D6B] text-white border-[#1E2D6B]"
+                            : "border-gray-200 text-gray-600 hover:border-[#1E2D6B] hover:text-[#1E2D6B]"
+                        )}
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                  {prospect?.roadmapVisaCategory && (
+                    <p className="text-xs text-muted-foreground">
+                      Pre-filled from roadmap: <span className="font-medium">{prospect.roadmapVisaCategory}</span>
+                    </p>
+                  )}
+                </div>
+
+                {/* ── Field 3: Criteria ── */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Criteria</p>
+                    {allCriteria.length > 0 && (
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => setCriteriaSelection(allCriteria.map((c) => c.id))}
+                          className="text-xs text-[#1E2D6B] hover:underline"
+                        >Select all</button>
+                        <button
+                          onClick={() => setCriteriaSelection([])}
+                          className="text-xs text-muted-foreground hover:underline"
+                        >Clear</button>
+                      </div>
+                    )}
+                  </div>
+
+                  {criteriaLoading ? (
+                    <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" />Loading criteria…
+                    </div>
+                  ) : allCriteria.length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-2">No criteria found for this visa category.</p>
+                  ) : (
+                    <div className="border rounded-lg divide-y max-h-52 overflow-y-auto">
+                      {allCriteria.map((c) => (
+                        <label
+                          key={c.id}
+                          className="flex items-start gap-3 px-3 py-2.5 cursor-pointer hover:bg-gray-50 transition-colors"
+                        >
+                          <Checkbox
+                            checked={criteriaSelection.includes(c.id)}
+                            onCheckedChange={() => toggleCriterion(c.id)}
+                            className="mt-0.5 shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium leading-snug">{c.criteriaName}</p>
+                            <p className="text-xs text-muted-foreground">{c.id}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {criteriaSelection.length === 0 && allCriteria.length > 0 && (
+                    <p className="text-xs text-red-600">Select at least one criterion to proceed.</p>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            {convertStep === "idle" && (
+              <>
+                <Button variant="outline" onClick={() => setShowConvertModal(false)} disabled={converting}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleConvertConfirm}
+                  disabled={converting || !convertProduct || criteriaSelection.length === 0 || criteriaLoading}
+                  className="bg-purple-700 hover:bg-purple-800 text-white"
+                >
+                  {converting
+                    ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Running…</>
+                    : <><UserCheck className="w-3.5 h-3.5 mr-1.5" />Convert to Case</>
+                  }
+                </Button>
+              </>
+            )}
+            {(convertStep === "step1" || convertStep === "step2") && (
+              <Button variant="outline" disabled>Please wait…</Button>
+            )}
+            {convertStep === "step1_failed" && (
+              <>
+                <Button variant="outline" onClick={() => { setConvertStep("idle"); setConvertMsg(null); }}>Back</Button>
+                <Button onClick={handleConvertConfirm} disabled={converting} className="bg-purple-700 hover:bg-purple-800 text-white">
+                  {converting ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Retrying…</> : "Retry"}
+                </Button>
+              </>
+            )}
+            {convertStep === "step2_failed" && partialProfileId && (
+              <>
+                <Button variant="outline" onClick={() => setShowConvertModal(false)}>Close</Button>
+                <Button
+                  onClick={() => {
+                    setConverting(true);
+                    runStep2(partialProfileId, convertVisa, criteriaSelection, convertProduct ?? "evidence_engine")
+                      .finally(() => setConverting(false));
+                  }}
+                  disabled={converting}
+                  className="bg-amber-700 hover:bg-amber-800 text-white"
+                >
+                  {converting ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Retrying…</> : "Retry case setup"}
+                </Button>
+              </>
+            )}
+            {convertStep === "done" && (
+              <Button onClick={() => setShowConvertModal(false)} className="bg-purple-700 hover:bg-purple-800 text-white">
+                <Check className="w-3.5 h-3.5 mr-1.5" />Done
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
