@@ -572,6 +572,36 @@ export function prospectAccountCreatedEmail(
   };
 }
 
+// ─── Template 10: Case Activation ─────────────────────────────────────────────
+
+export function caseActivationEmail(
+  firstName: string,
+  productLabel: string,
+  visaCategory: string,
+): { subject: string; html: string; text: string } {
+  const loginUrl = `${APP_URL}/login`;
+  return {
+    subject: "Your Pinnacle³ case is ready — log in to get started",
+    html: layout(`
+      ${h1(`Your case is set up, ${firstName}!`)}
+      ${p("Great news — your Pinnacle³ case has been configured and is ready for you. Here's a summary of what's been set up:")}
+      <table cellpadding="0" cellspacing="0" style="background:#f0f4ff;border-left:4px solid #1E2D6B;border-radius:0 8px 8px 0;padding:20px 24px;margin:0 0 24px;width:100%;">
+        <tr><td>
+          <p style="margin:0 0 10px;font-size:12px;font-weight:600;color:#1E2D6B;text-transform:uppercase;letter-spacing:.5px;">Case Details</p>
+          <p style="margin:0 0 8px;font-size:14px;color:#374151;"><strong>Product:</strong> ${productLabel}</p>
+          <p style="margin:0;font-size:14px;color:#374151;"><strong>Visa Category:</strong> ${visaCategory}</p>
+        </td></tr>
+      </table>
+      ${p("Log in to your dashboard to review your case, upload evidence, and track progress. Your advisory team is already working on your petition strategy.")}
+      ${btn("Access your dashboard →", loginUrl)}
+      ${divider()}
+      ${p("Your login credentials were included in our previous email. If you haven't set your permanent password yet, you'll be prompted to do so on first sign-in.")}
+      ${p("Questions? Reply to this email or reach us at <a href=\"mailto:support@pinnaclecube.com\" style=\"color:#1E2D6B;\">support@pinnaclecube.com</a> — we're here to help.")}
+    `),
+    text: `Your case is set up, ${firstName}!\n\nYour Pinnacle³ case has been configured and is ready for you.\n\nCase Details:\nProduct: ${productLabel}\nVisa Category: ${visaCategory}\n\nLog in to your dashboard to review your case and track progress:\n${loginUrl}\n\nYour login credentials were included in our previous email. If you haven't set your password yet, you'll be prompted on first sign-in.\n\nQuestions? Contact us at support@pinnaclecube.com`,
+  };
+}
+
 // ─── Sender helper ─────────────────────────────────────────────────────────────
 
 export interface EmailAttachment {

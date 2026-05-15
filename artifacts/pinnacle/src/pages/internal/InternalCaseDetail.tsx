@@ -668,6 +668,41 @@ function PetitionWorkspaceTab({ userId }: { userId: string }) {
 
   return (
     <div className="space-y-8">
+      {/* Case setup metadata row */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {setup.product && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 border border-indigo-200 text-[#1E2D6B]">
+            {{
+              evidence_engine: "Evidence Engine",
+              elite_blueprint: "Elite Blueprint",
+              both: "Evidence Engine + Elite Blueprint",
+            }[setup.product as string] ?? setup.product}
+          </span>
+        )}
+        {setup.visaPath && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 border border-gray-200 text-gray-700">
+            {{ eb1a: "EB-1A", niw: "EB-2 NIW", o1: "O-1A" }[setup.visaPath as string] ?? setup.visaPath.toUpperCase()}
+          </span>
+        )}
+        {setup.caseActivationEmailStatus === "sent" && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-50 border border-green-200 text-green-700">
+            <CheckCircle className="w-3 h-3" />
+            Activation email sent{setup.caseActivationEmailSentAt ? ` · ${new Date(setup.caseActivationEmailSentAt).toLocaleDateString()}` : ""}
+          </span>
+        )}
+        {setup.caseActivationEmailStatus === "failed" && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 border border-red-200 text-red-700">
+            <AlertTriangle className="w-3 h-3" />
+            Activation email failed — check server logs
+          </span>
+        )}
+        {!setup.caseActivationEmailStatus && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-50 border border-gray-200 text-gray-500">
+            Activation email pending
+          </span>
+        )}
+      </div>
+
       {/* Criteria Exhibit Board */}
       <section>
         <div className="flex items-center justify-between mb-3">

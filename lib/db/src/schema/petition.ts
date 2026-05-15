@@ -18,6 +18,9 @@ export const casePetitionSetupTable = pgTable("case_petition_setup", {
   createdByStaff: text("created_by_staff").notNull(),
   driveSyncStatus: driveSyncStatusEnum("drive_sync_status"),
   driveSyncError: text("drive_sync_error"),
+  product: text("product"), // evidence_engine | elite_blueprint | both
+  caseActivationEmailSentAt: timestamp("case_activation_email_sent_at", { withTimezone: true }),
+  caseActivationEmailStatus: text("case_activation_email_status"), // sent | failed
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

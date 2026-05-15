@@ -23,6 +23,7 @@ import {
 } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { createCaseFolders } from "../services/createCaseFolders";
+import { sendEmail, caseActivationEmail } from "../services/emailService";
 import { logger } from "../lib/logger";
 import {
   generateCriteriaExhibit,
@@ -103,7 +104,20 @@ const SetupBody = z.object({
   visaPath: z.string(),
   selectedCriteria: z.array(z.string()),
   exhibitNumberingStyle: z.enum(["numeric", "alpha", "roman"]).default("numeric"),
+  product: z.enum(["evidence_engine", "elite_blueprint", "both"]).optional(),
 });
+
+const PRODUCT_LABELS: Record<string, string> = {
+  evidence_engine: "Evidence Engine",
+  elite_blueprint: "Elite Blueprint",
+  both: "Evidence Engine + Elite Blueprint",
+};
+
+const VISA_PATH_LABELS: Record<string, string> = {
+  eb1a: "EB-1A",
+  niw: "EB-2 NIW",
+  o1: "O-1A",
+};
 
 router.post(
   "/internal/petition/setup",
@@ -115,7 +129,7 @@ router.post(
       return;
     }
 
-    const { userId, visaPath, selectedCriteria, exhibitNumberingStyle } = parsed.data;
+    const { userId, visaPath, selectedCriteria, exhibitNumberingStyle, product } = parsed.data;
 
     // Fetch visa criteria details for selected IDs
     const criteriaDetails = await db
@@ -136,6 +150,7 @@ router.post(
         status: "setup",
         createdByStaff: "staff",
         driveSyncStatus: "pending",
+        ...(product ? { product } : {}),
       })
       .returning();
 
@@ -167,10 +182,48 @@ router.post(
 
     res.status(201).json({ setup, exhibits, package: pkg });
 
-    // Fire Drive folder creation asynchronously — does not block the response
+    // ── Async post-response work — does not block the 201 ─────────────────────
+
+    // Fire Drive folder creation
     createCaseFolders(setup.id).catch((err) =>
       logger.error({ caseId: setup.id, err }, "[petitionAdmin] createCaseFolders background error"),
     );
+
+    // Send case activation email to the client
+    void (async () => {
+      try {
+        const [clientProfile] = await db
+          .select({ name: profilesTable.name, firstName: profilesTable.firstName, email: profilesTable.email })
+          .from(profilesTable)
+          .where(eq(profilesTable.id, userId))
+          .limit(1);
+
+        if (!clientProfile) {
+          logger.warn({ caseId: setup.id, userId }, "[petitionAdmin] activation email: profile not found");
+          return;
+        }
+
+        const firstName = clientProfile.firstName ?? clientProfile.name.split(" ")[0] ?? clientProfile.name;
+        const productLabel = PRODUCT_LABELS[product ?? ""] ?? "Pinnacle³";
+        const visaLabel = VISA_PATH_LABELS[visaPath.toLowerCase()] ?? visaPath.toUpperCase();
+
+        await sendEmail(clientProfile.email, caseActivationEmail(firstName, productLabel, visaLabel));
+
+        await db
+          .update(casePetitionSetupTable)
+          .set({ caseActivationEmailSentAt: new Date(), caseActivationEmailStatus: "sent" })
+          .where(eq(casePetitionSetupTable.id, setup.id));
+
+        logger.info({ caseId: setup.id, to: clientProfile.email }, "[petitionAdmin] case activation email sent");
+      } catch (emailErr) {
+        logger.error({ caseId: setup.id, err: emailErr }, "[petitionAdmin] case activation email failed");
+        await db
+          .update(casePetitionSetupTable)
+          .set({ caseActivationEmailStatus: "failed" })
+          .where(eq(casePetitionSetupTable.id, setup.id))
+          .catch(() => {});
+      }
+    })();
   },
 );
 
