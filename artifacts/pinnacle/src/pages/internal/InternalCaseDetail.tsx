@@ -1039,7 +1039,7 @@ function DriveFoldersTab({ userId }: { userId: string }) {
         Create subfolders and upload documents directly into the client's Drive case folders.
         Files are immediately synced to Google Drive.
       </p>
-      <FolderBrowser caseId={caseId} fetchFn={staffFetch} />
+      <FolderBrowser caseId={caseId} fetchFn={staffFetch} isStaff />
     </div>
   );
 }

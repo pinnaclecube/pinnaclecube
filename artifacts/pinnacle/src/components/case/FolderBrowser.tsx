@@ -2,17 +2,30 @@
  * FolderBrowser.tsx — Pinnacle³
  *
  * Shared folder-and-file browser for Drive-backed case folders.
- * Accepts an authenticated fetch function so it works for both
- * client pages (Bearer JWT) and staff pages (X-Staff-Token).
+ *
+ * Features:
+ * - Two-panel layout: collapsible folder tree (left) + file list (right)
+ * - All reads hit the DB via the API — no live Drive calls per click
+ * - Real-time updates via SSE (drive_sync events from Drive webhook)
+ *   Uses fetch() + ReadableStream instead of EventSource so custom auth
+ *   headers (Bearer JWT / X-Staff-Token) are forwarded via fetchFn
+ * - Staff view: uploader label column, staff-only folder indicators + toggle
+ * - Client view: staff-only folders are filtered server-side
+ * - Drag-and-drop + click-to-upload
+ * - New Folder modal (staff can mark as staff-only at creation time)
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import {
-  Folder, FolderOpen, FolderPlus, Upload, File, ExternalLink,
-  Loader2, ChevronRight, ChevronDown, AlertCircle, X,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Folder, FolderOpen, FolderPlus, Upload, File, FileText,
+  ExternalLink, Loader2, ChevronRight, ChevronDown, AlertCircle,
+  X, ShieldCheck, RefreshCw, Lock, ImageIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +37,7 @@ interface CaseFolder {
   folderType: string;
   driveUrl: string;
   parentFolderId: number | null;
+  staffOnly: boolean;
   children?: CaseFolder[];
 }
 
@@ -35,12 +49,16 @@ interface CaseFolderItem {
   mimeType: string;
   driveUrl: string;
   addedBySource: "app" | "drive";
+  addedByLabel: string | null;
   createdAt: string;
 }
 
+type FetchFn = (path: string, opts?: RequestInit) => Promise<Response>;
+
 interface FolderBrowserProps {
   caseId: number;
-  fetchFn: (path: string, opts?: RequestInit) => Promise<Response>;
+  fetchFn: FetchFn;
+  isStaff?: boolean;
   readOnly?: boolean;
 }
 
@@ -54,29 +72,106 @@ function buildTree(folders: CaseFolder[], parentId: number | null = null): CaseF
 
 // ─── Folder icon by type ──────────────────────────────────────────────────────
 
-function folderIcon(type: string, open: boolean) {
+function FolderTypeIcon({ type, open }: { type: string; open: boolean }) {
   const cls = "w-4 h-4 shrink-0";
-  if (type === "root") return open
-    ? <FolderOpen className={cn(cls, "text-[#1E2D6B]")} />
-    : <Folder className={cn(cls, "text-[#1E2D6B]")} />;
-  if (type === "evidence") return open
-    ? <FolderOpen className={cn(cls, "text-amber-600")} />
-    : <Folder className={cn(cls, "text-amber-600")} />;
-  if (type === "criteria" || type === "custom") return open
-    ? <FolderOpen className={cn(cls, "text-indigo-500")} />
-    : <Folder className={cn(cls, "text-indigo-500")} />;
+  if (type === "root") {
+    return open
+      ? <FolderOpen className={cn(cls, "text-[#1E2D6B]")} />
+      : <Folder className={cn(cls, "text-[#1E2D6B]")} />;
+  }
+  if (type === "evidence") {
+    return open
+      ? <FolderOpen className={cn(cls, "text-amber-600")} />
+      : <Folder className={cn(cls, "text-amber-600")} />;
+  }
+  if (type === "criteria") {
+    return open
+      ? <FolderOpen className={cn(cls, "text-violet-500")} />
+      : <Folder className={cn(cls, "text-violet-500")} />;
+  }
+  if (type === "custom") {
+    return open
+      ? <FolderOpen className={cn(cls, "text-indigo-400")} />
+      : <Folder className={cn(cls, "text-indigo-400")} />;
+  }
   return open
-    ? <FolderOpen className={cn(cls, "text-gray-500")} />
-    : <Folder className={cn(cls, "text-gray-500")} />;
+    ? <FolderOpen className={cn(cls, "text-gray-400")} />
+    : <Folder className={cn(cls, "text-gray-400")} />;
 }
 
-// ─── File mime icon ───────────────────────────────────────────────────────────
+// ─── Mime icon ────────────────────────────────────────────────────────────────
 
-function mimeIcon(mimeType: string) {
-  return <File className="w-4 h-4 text-gray-400 shrink-0" />;
+function MimeIcon({ mimeType }: { mimeType: string }) {
+  const cls = "w-4 h-4 shrink-0";
+  if (mimeType === "application/pdf")
+    return <FileText className={cn(cls, "text-red-500")} />;
+  if (mimeType.startsWith("image/"))
+    return <ImageIcon className={cn(cls, "text-green-500")} />;
+  if (mimeType.includes("word") || mimeType.includes("document"))
+    return <FileText className={cn(cls, "text-blue-500")} />;
+  if (mimeType.includes("sheet") || mimeType.includes("excel"))
+    return <FileText className={cn(cls, "text-emerald-600")} />;
+  if (mimeType.includes("presentation") || mimeType.includes("powerpoint"))
+    return <FileText className={cn(cls, "text-orange-500")} />;
+  if (mimeType.startsWith("text/"))
+    return <FileText className={cn(cls, "text-gray-500")} />;
+  return <File className={cn(cls, "text-gray-400")} />;
 }
 
-// ─── Recursive folder tree node ───────────────────────────────────────────────
+// ─── SSE hook ─────────────────────────────────────────────────────────────────
+//
+// Opens an SSE connection via fetch() (not EventSource) so the existing
+// fetchFn — which already carries Bearer / X-Staff-Token headers — can be
+// reused without needing auth tokens in the URL query string.
+
+function useDriveSSE(caseId: number, fetchFn: FetchFn, onSync: () => void) {
+  const onSyncRef = useRef(onSync);
+  useEffect(() => { onSyncRef.current = onSync; }, [onSync]);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    let alive = true;
+
+    void (async () => {
+      try {
+        const res = await fetchFn(`/drive/events?caseId=${caseId}`, {
+          signal: ctrl.signal,
+        });
+        if (!res.ok || !res.body) return;
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let eventName = "";
+
+        while (alive) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (line.startsWith("event: ")) {
+              eventName = line.slice(7).trim();
+            } else if (line.startsWith("data: ")) {
+              if (eventName === "drive_sync") onSyncRef.current();
+              eventName = "";
+            }
+          }
+        }
+      } catch {
+        // Aborted on cleanup or network error — expected
+      }
+    })();
+
+    return () => {
+      alive = false;
+      ctrl.abort();
+    };
+  }, [caseId, fetchFn]);
+}
+
+// ─── Tree node ────────────────────────────────────────────────────────────────
 
 interface TreeNodeProps {
   node: CaseFolder;
@@ -85,36 +180,71 @@ interface TreeNodeProps {
   onSelect: (f: CaseFolder) => void;
   expandedIds: Set<number>;
   toggleExpanded: (id: number) => void;
+  isStaff: boolean;
+  onToggleStaffOnly: (f: CaseFolder) => void;
 }
 
-function TreeNode({ node, depth, selectedId, onSelect, expandedIds, toggleExpanded }: TreeNodeProps) {
+function TreeNode({
+  node, depth, selectedId, onSelect, expandedIds,
+  toggleExpanded, isStaff, onToggleStaffOnly,
+}: TreeNodeProps) {
   const isExpanded = expandedIds.has(node.id);
   const isSelected = selectedId === node.id;
   const hasChildren = (node.children?.length ?? 0) > 0;
 
   return (
     <div>
-      <button
-        onClick={() => {
-          onSelect(node);
-          if (hasChildren) toggleExpanded(node.id);
-        }}
+      <div
         className={cn(
-          "w-full flex items-center gap-1.5 px-2 py-1.5 text-left text-sm rounded-md transition-colors",
-          isSelected ? "bg-[#1E2D6B]/10 text-[#1E2D6B] font-medium" : "text-gray-700 hover:bg-gray-100",
+          "group flex items-center gap-1 pr-1 rounded-md transition-colors",
+          isSelected ? "bg-[#1E2D6B]/10" : "hover:bg-gray-100",
         )}
-        style={{ paddingLeft: `${8 + depth * 16}px` }}
       >
-        <span className="shrink-0 w-3.5">
-          {hasChildren ? (
-            isExpanded
-              ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-              : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
-          ) : null}
-        </span>
-        {folderIcon(node.folderType, isSelected || isExpanded)}
-        <span className="truncate">{node.name}</span>
-      </button>
+        <button
+          onClick={() => {
+            onSelect(node);
+            if (hasChildren) toggleExpanded(node.id);
+          }}
+          className={cn(
+            "flex-1 flex items-center gap-1.5 py-1.5 text-left text-sm min-w-0",
+            isSelected ? "text-[#1E2D6B] font-medium" : "text-gray-700",
+          )}
+          style={{ paddingLeft: `${8 + depth * 16}px` }}
+        >
+          <span className="shrink-0 w-3.5">
+            {hasChildren ? (
+              isExpanded
+                ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+                : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
+            ) : null}
+          </span>
+          <FolderTypeIcon type={node.folderType} open={isSelected || isExpanded} />
+          <span className="truncate">{node.name}</span>
+        </button>
+
+        {/* Staff-only lock icon (always visible when folder is locked) */}
+        {node.staffOnly && (
+          <span title="Staff-only — hidden from client" className="shrink-0 flex items-center">
+            <Lock className="w-3 h-3 text-amber-500" />
+          </span>
+        )}
+
+        {/* Staff: hover toggle button for non-root folders */}
+        {isStaff && node.folderType !== "root" && (
+          <button
+            onClick={() => onToggleStaffOnly(node)}
+            className={cn(
+              "opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded shrink-0",
+              node.staffOnly
+                ? "text-amber-500 hover:text-gray-400"
+                : "text-gray-300 hover:text-amber-500",
+            )}
+            title={node.staffOnly ? "Make visible to client" : "Make staff-only"}
+          >
+            <ShieldCheck className="w-3 h-3" />
+          </button>
+        )}
+      </div>
 
       {isExpanded && hasChildren && node.children?.map((child) => (
         <TreeNode
@@ -125,6 +255,8 @@ function TreeNode({ node, depth, selectedId, onSelect, expandedIds, toggleExpand
           onSelect={onSelect}
           expandedIds={expandedIds}
           toggleExpanded={toggleExpanded}
+          isStaff={isStaff}
+          onToggleStaffOnly={onToggleStaffOnly}
         />
       ))}
     </div>
@@ -133,7 +265,7 @@ function TreeNode({ node, depth, selectedId, onSelect, expandedIds, toggleExpand
 
 // ─── Main FolderBrowser ───────────────────────────────────────────────────────
 
-export function FolderBrowser({ caseId, fetchFn, readOnly = false }: FolderBrowserProps) {
+export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = false }: FolderBrowserProps) {
   const [folders, setFolders] = useState<CaseFolder[]>([]);
   const [tree, setTree] = useState<CaseFolder[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<CaseFolder | null>(null);
@@ -142,22 +274,29 @@ export function FolderBrowser({ caseId, fetchFn, readOnly = false }: FolderBrows
   const [loadingFolders, setLoadingFolders] = useState(true);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [folderError, setFolderError] = useState<string | null>(null);
+  const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
 
   // New folder modal
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [newFolderStaffOnly, setNewFolderStaffOnly] = useState(false);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [folderCreateError, setFolderCreateError] = useState<string | null>(null);
 
-  // Upload state
+  // Upload
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load folders
-  const loadFolders = useCallback(async () => {
-    setLoadingFolders(true);
+  // Keep a ref to selected folder so SSE handler can access it without stale closure
+  const selectedFolderRef = useRef<CaseFolder | null>(null);
+  useEffect(() => { selectedFolderRef.current = selectedFolder; }, [selectedFolder]);
+
+  // ─── Data loading ──────────────────────────────────────────────────────────
+
+  const loadFolders = useCallback(async (preserveSelection = false) => {
+    if (!preserveSelection) setLoadingFolders(true);
     setFolderError(null);
     try {
       const r = await fetchFn(`/cases/${caseId}/folders`);
@@ -165,11 +304,20 @@ export function FolderBrowser({ caseId, fetchFn, readOnly = false }: FolderBrows
       const data = await r.json() as { folders: CaseFolder[] };
       setFolders(data.folders);
       setTree(buildTree(data.folders));
-      // Auto-expand root
-      const root = data.folders.find((f) => f.parentFolderId === null);
-      if (root) {
-        setExpandedIds(new Set([root.id]));
-        setSelectedFolder(root);
+
+      if (!preserveSelection) {
+        const root = data.folders.find((f) => f.parentFolderId === null);
+        if (root) {
+          setExpandedIds(new Set([root.id]));
+          setSelectedFolder(root);
+        }
+      } else {
+        // Refresh selected folder data from new list (preserves selection after sync)
+        const prev = selectedFolderRef.current;
+        if (prev) {
+          const refreshed = data.folders.find((f) => f.id === prev.id);
+          if (refreshed) setSelectedFolder(refreshed);
+        }
       }
     } catch {
       setFolderError("Could not load folders. Please try again.");
@@ -180,7 +328,6 @@ export function FolderBrowser({ caseId, fetchFn, readOnly = false }: FolderBrows
 
   useEffect(() => { void loadFolders(); }, [loadFolders]);
 
-  // Load files for selected folder
   const loadFiles = useCallback(async (folder: CaseFolder) => {
     setLoadingFiles(true);
     setUploadError(null);
@@ -204,12 +351,24 @@ export function FolderBrowser({ caseId, fetchFn, readOnly = false }: FolderBrows
   const toggleExpanded = useCallback((id: number) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
   }, []);
 
-  // Create subfolder
+  // ─── SSE real-time refresh ─────────────────────────────────────────────────
+
+  const handleDriveSync = useCallback(() => {
+    setLastSyncAt(new Date());
+    void loadFolders(true);
+    const sel = selectedFolderRef.current;
+    if (sel) void loadFiles(sel);
+  }, [loadFolders, loadFiles]);
+
+  useDriveSSE(caseId, fetchFn, handleDriveSync);
+
+  // ─── Folder actions ────────────────────────────────────────────────────────
+
   const handleCreateFolder = async () => {
     if (!newFolderName.trim() || !selectedFolder) return;
     setCreatingFolder(true);
@@ -218,7 +377,11 @@ export function FolderBrowser({ caseId, fetchFn, readOnly = false }: FolderBrows
       const r = await fetchFn(`/cases/${caseId}/folders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ parentFolderId: selectedFolder.id, name: newFolderName.trim() }),
+        body: JSON.stringify({
+          parentFolderId: selectedFolder.id,
+          name: newFolderName.trim(),
+          staffOnly: isStaff ? newFolderStaffOnly : false,
+        }),
       });
       if (!r.ok) {
         const d = await r.json() as { error: string };
@@ -226,7 +389,8 @@ export function FolderBrowser({ caseId, fetchFn, readOnly = false }: FolderBrows
       }
       setShowNewFolderModal(false);
       setNewFolderName("");
-      await loadFolders();
+      setNewFolderStaffOnly(false);
+      await loadFolders(true);
     } catch (err) {
       setFolderCreateError(err instanceof Error ? err.message : "Failed to create folder");
     } finally {
@@ -234,7 +398,21 @@ export function FolderBrowser({ caseId, fetchFn, readOnly = false }: FolderBrows
     }
   };
 
-  // Upload file
+  const handleToggleStaffOnly = async (folder: CaseFolder) => {
+    try {
+      await fetchFn(`/cases/${caseId}/folders/${folder.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ staffOnly: !folder.staffOnly }),
+      });
+      await loadFolders(true);
+    } catch {
+      // Silently swallow — tree will reflect correct state after reload
+    }
+  };
+
+  // ─── Upload ────────────────────────────────────────────────────────────────
+
   const handleUpload = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0 || !selectedFolder) return;
     setUploading(true);
@@ -261,7 +439,6 @@ export function FolderBrowser({ caseId, fetchFn, readOnly = false }: FolderBrows
     }
   };
 
-  // Drag-and-drop handlers
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = () => setIsDragging(false);
   const handleDrop = (e: React.DragEvent) => {
@@ -270,7 +447,7 @@ export function FolderBrowser({ caseId, fetchFn, readOnly = false }: FolderBrows
     void handleUpload(e.dataTransfer.files);
   };
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  // ─── Loading / error states ────────────────────────────────────────────────
 
   if (loadingFolders) {
     return (
@@ -285,151 +462,273 @@ export function FolderBrowser({ caseId, fetchFn, readOnly = false }: FolderBrows
       <div className="flex items-center gap-2 text-red-600 p-4 bg-red-50 rounded-lg">
         <AlertCircle className="w-4 h-4 shrink-0" />
         <p className="text-sm">{folderError}</p>
-        <Button size="sm" variant="outline" onClick={loadFolders} className="ml-auto">Retry</Button>
+        <Button size="sm" variant="outline" onClick={() => void loadFolders()} className="ml-auto">
+          Retry
+        </Button>
       </div>
     );
   }
 
+  // ─── Render ────────────────────────────────────────────────────────────────
+
   return (
-    <div className="flex gap-0 border rounded-lg overflow-hidden bg-white min-h-[420px]">
-      {/* ── Left: Folder Tree ── */}
-      <div className="w-64 shrink-0 border-r bg-gray-50 flex flex-col">
-        <div className="px-3 py-2.5 border-b flex items-center justify-between">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Folders</span>
-          {!readOnly && selectedFolder && (
-            <button
-              onClick={() => { setNewFolderName(""); setFolderCreateError(null); setShowNewFolderModal(true); }}
-              className="text-[#1E2D6B] hover:text-[#3D4FA8] transition-colors"
-              title="New Folder"
-            >
-              <FolderPlus className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-        <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
-          {tree.map((node) => (
-            <TreeNode
-              key={node.id}
-              node={node}
-              depth={0}
-              selectedId={selectedFolder?.id ?? null}
-              onSelect={handleSelectFolder}
-              expandedIds={expandedIds}
-              toggleExpanded={toggleExpanded}
-            />
-          ))}
-        </div>
+    <div className="flex flex-col border rounded-lg overflow-hidden bg-white">
+
+      {/* Status bar */}
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b text-xs text-muted-foreground">
+        <RefreshCw className="w-3 h-3 shrink-0" />
+        <span>Real-time sync active</span>
+        {lastSyncAt && (
+          <span className="text-[#1E2D6B] font-medium">
+            · Updated {lastSyncAt.toLocaleTimeString()}
+          </span>
+        )}
+        {isStaff && (
+          <span className="ml-auto flex items-center gap-1 text-amber-600 font-medium">
+            <ShieldCheck className="w-3 h-3" />
+            Staff view
+          </span>
+        )}
       </div>
 
-      {/* ── Right: File List ── */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <div className="px-4 py-2.5 border-b flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
-            {selectedFolder && folderIcon(selectedFolder.folderType, true)}
-            <span className="text-sm font-medium truncate text-gray-800">
-              {selectedFolder?.name ?? "Select a folder"}
+      <div className="flex min-h-[420px]">
+
+        {/* ── Left: Folder tree ─────────────────────────────────────────── */}
+        <div className="w-64 shrink-0 border-r bg-gray-50 flex flex-col">
+          <div className="px-3 py-2.5 border-b flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              Folders
             </span>
-            {selectedFolder?.driveUrl && (
-              <a href={selectedFolder.driveUrl} target="_blank" rel="noopener noreferrer"
-                className="text-gray-400 hover:text-[#1E2D6B] transition-colors shrink-0">
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
+            {!readOnly && selectedFolder && (
+              <button
+                onClick={() => {
+                  setNewFolderName("");
+                  setNewFolderStaffOnly(false);
+                  setFolderCreateError(null);
+                  setShowNewFolderModal(true);
+                }}
+                className="text-[#1E2D6B] hover:text-[#3D4FA8] transition-colors"
+                title="New Folder"
+              >
+                <FolderPlus className="w-4 h-4" />
+              </button>
             )}
           </div>
-          {!readOnly && selectedFolder && (
-            <div className="flex gap-2 shrink-0">
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs gap-1.5"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-              >
-                {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-                Upload
-              </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={(e) => void handleUpload(e.target.files)}
+
+          <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
+            {tree.map((node) => (
+              <TreeNode
+                key={node.id}
+                node={node}
+                depth={0}
+                selectedId={selectedFolder?.id ?? null}
+                onSelect={handleSelectFolder}
+                expandedIds={expandedIds}
+                toggleExpanded={toggleExpanded}
+                isStaff={isStaff}
+                onToggleStaffOnly={handleToggleStaffOnly}
               />
+            ))}
+          </div>
+
+          {isStaff && (
+            <div className="px-3 py-2 border-t">
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3 text-amber-500 shrink-0" />
+                Hover a folder to toggle staff-only
+              </p>
             </div>
           )}
         </div>
 
-        {/* Upload error */}
-        {uploadError && (
-          <div className="mx-4 mt-3 flex items-center gap-2 text-red-600 text-xs bg-red-50 px-3 py-2 rounded-md">
-            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-            <span>{uploadError}</span>
-            <button onClick={() => setUploadError(null)} className="ml-auto"><X className="w-3 h-3" /></button>
-          </div>
-        )}
+        {/* ── Right: File list ──────────────────────────────────────────── */}
+        <div className="flex-1 flex flex-col min-w-0">
 
-        {/* Drag-drop zone + file list */}
-        <div
-          className={cn(
-            "flex-1 p-4 overflow-y-auto transition-colors",
-            isDragging && !readOnly ? "bg-[#1E2D6B]/5 ring-2 ring-inset ring-[#1E2D6B]/30" : "",
+          {/* File panel header */}
+          <div className="px-4 py-2.5 border-b flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              {selectedFolder && (
+                <FolderTypeIcon type={selectedFolder.folderType} open />
+              )}
+              <span className="text-sm font-medium truncate text-gray-800">
+                {selectedFolder?.name ?? "Select a folder"}
+              </span>
+              {selectedFolder?.staffOnly && (
+                <Badge
+                  variant="outline"
+                  className="text-xs h-4 px-1.5 border-amber-300 text-amber-700 bg-amber-50 shrink-0"
+                >
+                  Staff only
+                </Badge>
+              )}
+              {selectedFolder?.driveUrl && (
+                <a
+                  href={selectedFolder.driveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-gray-400 hover:text-[#1E2D6B] transition-colors shrink-0"
+                  title="Open in Google Drive"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              )}
+            </div>
+
+            {!readOnly && selectedFolder && (
+              <div className="flex gap-2 shrink-0">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1.5"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                >
+                  {uploading
+                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                    : <Upload className="w-3 h-3" />}
+                  Upload
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => void handleUpload(e.target.files)}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Upload error banner */}
+          {uploadError && (
+            <div className="mx-4 mt-3 flex items-center gap-2 text-red-600 text-xs bg-red-50 px-3 py-2 rounded-md">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{uploadError}</span>
+              <button onClick={() => setUploadError(null)} className="ml-auto">
+                <X className="w-3 h-3" />
+              </button>
+            </div>
           )}
-          onDragOver={!readOnly ? handleDragOver : undefined}
-          onDragLeave={!readOnly ? handleDragLeave : undefined}
-          onDrop={!readOnly ? handleDrop : undefined}
-        >
-          {!selectedFolder ? (
-            <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
-              <Folder className="w-10 h-10 mb-2 text-gray-200" />
-              <p className="text-sm">Select a folder to view its files</p>
-            </div>
-          ) : loadingFiles ? (
-            <div className="flex items-center justify-center h-32">
-              <Loader2 className="w-5 h-5 animate-spin text-[#1E2D6B]" />
-            </div>
-          ) : items.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground py-12">
-              {isDragging ? (
-                <>
-                  <Upload className="w-10 h-10 mb-2 text-[#1E2D6B]/50" />
-                  <p className="text-sm font-medium text-[#1E2D6B]">Drop files to upload</p>
-                </>
-              ) : (
-                <>
-                  <File className="w-10 h-10 mb-2 text-gray-200" />
-                  <p className="text-sm">No files yet</p>
-                  {!readOnly && <p className="text-xs mt-1">Upload files or drag &amp; drop them here</p>}
-                </>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {isDragging && !readOnly && (
-                <div className="flex items-center justify-center h-16 border-2 border-dashed border-[#1E2D6B]/30 rounded-lg mb-2 text-[#1E2D6B] text-sm font-medium gap-2">
-                  <Upload className="w-4 h-4" /> Drop to upload here
-                </div>
-              )}
-              {items.map((item) => (
-                <div key={item.id}
-                  className="flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-gray-50 group transition-colors">
-                  {mimeIcon(item.mimeType)}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{item.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {item.addedBySource === "drive" ? "Added via Drive" : "Uploaded in app"}
-                      {" · "}
-                      {new Date(item.createdAt).toLocaleDateString()}
-                    </p>
+
+          {/* Drop zone + file list */}
+          <div
+            className={cn(
+              "flex-1 overflow-y-auto transition-colors",
+              isDragging && !readOnly
+                ? "bg-[#1E2D6B]/5 ring-2 ring-inset ring-[#1E2D6B]/30"
+                : "",
+            )}
+            onDragOver={!readOnly ? handleDragOver : undefined}
+            onDragLeave={!readOnly ? handleDragLeave : undefined}
+            onDrop={!readOnly ? handleDrop : undefined}
+          >
+            {!selectedFolder ? (
+              <div className="flex flex-col items-center justify-center h-full p-8 text-center text-muted-foreground">
+                <Folder className="w-10 h-10 mb-2 text-gray-200" />
+                <p className="text-sm">Select a folder to view its files</p>
+              </div>
+
+            ) : loadingFiles ? (
+              <div className="flex items-center justify-center h-32">
+                <Loader2 className="w-5 h-5 animate-spin text-[#1E2D6B]" />
+              </div>
+
+            ) : items.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground py-12">
+                {isDragging ? (
+                  <>
+                    <Upload className="w-10 h-10 mb-2 text-[#1E2D6B]/50" />
+                    <p className="text-sm font-medium text-[#1E2D6B]">Drop files to upload</p>
+                  </>
+                ) : (
+                  <>
+                    <File className="w-10 h-10 mb-2 text-gray-200" />
+                    <p className="text-sm">No files in this folder</p>
+                    {!readOnly && (
+                      <p className="text-xs mt-1">Upload files or drag &amp; drop them here</p>
+                    )}
+                  </>
+                )}
+              </div>
+
+            ) : (
+              <div className="flex flex-col">
+
+                {/* Drop-while-dragging overlay strip */}
+                {isDragging && !readOnly && (
+                  <div className="flex items-center justify-center gap-2 h-10 bg-[#1E2D6B]/8 text-[#1E2D6B] text-sm font-medium border-b">
+                    <Upload className="w-4 h-4" />
+                    Drop to upload here
                   </div>
-                  <a href={item.driveUrl} target="_blank" rel="noopener noreferrer"
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-[#1E2D6B] shrink-0">
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-                </div>
-              ))}
-            </div>
-          )}
+                )}
+
+                {/* Column headers — staff only */}
+                {isStaff && (
+                  <div className="grid grid-cols-[20px_1fr_160px_96px_32px] gap-3 items-center px-4 py-2 bg-gray-50 border-b text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    <span />
+                    <span>Name</span>
+                    <span>Added by</span>
+                    <span>Date</span>
+                    <span />
+                  </div>
+                )}
+
+                {/* File rows */}
+                {items.map((item) => (
+                  isStaff ? (
+                    <div
+                      key={item.id}
+                      className="grid grid-cols-[20px_1fr_160px_96px_32px] gap-3 items-center px-4 py-2.5 border-b last:border-b-0 hover:bg-gray-50 group transition-colors"
+                    >
+                      <MimeIcon mimeType={item.mimeType} />
+                      <p className="text-sm font-medium truncate">{item.name}</p>
+                      <span className="text-xs text-muted-foreground truncate">
+                        {item.addedBySource === "drive"
+                          ? "Drive sync"
+                          : (item.addedByLabel ?? "App upload")}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(item.createdAt).toLocaleDateString()}
+                      </span>
+                      <a
+                        href={item.driveUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-[#1E2D6B]"
+                        title="Open in Drive"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    </div>
+                  ) : (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-2.5 px-4 py-2.5 border-b last:border-b-0 hover:bg-gray-50 group transition-colors"
+                    >
+                      <MimeIcon mimeType={item.mimeType} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{item.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.addedBySource === "drive" ? "Added via Drive" : "Uploaded in app"}
+                          {" · "}
+                          {new Date(item.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <a
+                        href={item.driveUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-[#1E2D6B] shrink-0"
+                        title="Open in Drive"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    </div>
+                  )
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -442,7 +741,8 @@ export function FolderBrowser({ caseId, fetchFn, readOnly = false }: FolderBrows
           <div className="py-2 space-y-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-                Creating inside: <span className="text-gray-800">{selectedFolder?.name}</span>
+                Creating inside:{" "}
+                <span className="text-gray-800">{selectedFolder?.name}</span>
               </label>
               <Input
                 placeholder="Folder name"
@@ -452,14 +752,33 @@ export function FolderBrowser({ caseId, fetchFn, readOnly = false }: FolderBrows
                 autoFocus
               />
             </div>
+
+            {isStaff && (
+              <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={newFolderStaffOnly}
+                  onChange={(e) => setNewFolderStaffOnly(e.target.checked)}
+                  className="rounded border-gray-300 accent-amber-500"
+                />
+                <span className="font-medium text-gray-700">Staff-only folder</span>
+                <span className="text-xs text-muted-foreground">(hidden from client)</span>
+              </label>
+            )}
+
             {folderCreateError && (
               <p className="text-xs text-red-600 flex items-center gap-1.5">
-                <AlertCircle className="w-3.5 h-3.5" />{folderCreateError}
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                {folderCreateError}
               </p>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNewFolderModal(false)} disabled={creatingFolder}>
+            <Button
+              variant="outline"
+              onClick={() => setShowNewFolderModal(false)}
+              disabled={creatingFolder}
+            >
               Cancel
             </Button>
             <Button
@@ -467,7 +786,9 @@ export function FolderBrowser({ caseId, fetchFn, readOnly = false }: FolderBrows
               disabled={!newFolderName.trim() || creatingFolder}
               className="bg-[#1E2D6B] hover:bg-[#3D4FA8]"
             >
-              {creatingFolder ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              {creatingFolder
+                ? <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                : null}
               Create Folder
             </Button>
           </DialogFooter>

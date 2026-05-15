@@ -4,11 +4,13 @@ import {
   serial,
   integer,
   text,
+  boolean,
   timestamp,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { casePetitionSetupTable } from "./petition";
+import { profilesTable } from "./profiles";
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +46,7 @@ export const caseFoldersTable = pgTable("case_folders", {
   driveUrl: text("drive_url").notNull(),
   visaCategory: visaCategoryEnum("visa_category").notNull(),
   criteriaIndex: integer("criteria_index"),
+  staffOnly: boolean("staff_only").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
@@ -60,6 +63,8 @@ export const caseFolderItemsTable = pgTable("case_folder_items", {
   mimeType: text("mime_type").notNull(),
   driveUrl: text("drive_url").notNull(),
   addedBySource: addedBySourceEnum("added_by_source").notNull().default("drive"),
+  addedByProfileId: integer("added_by_profile_id").references(() => profilesTable.id, { onDelete: "set null" }),
+  addedByLabel: text("added_by_label"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

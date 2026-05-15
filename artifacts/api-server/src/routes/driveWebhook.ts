@@ -2,18 +2,34 @@
  * driveWebhook.ts — Pinnacle³
  *
  * POST /drive/webhook  — receives Google Drive push notifications
- * GET  /drive/events   — SSE stream for real-time Drive sync updates (staff only)
+ * GET  /drive/events   — SSE stream for real-time Drive sync updates
+ *
+ * The SSE endpoint accepts both client (Bearer JWT) and staff (X-Staff-Token)
+ * auth so the FolderBrowser component can connect via fetch() with the same
+ * auth headers it uses for all other requests (EventSource is avoided because
+ * it cannot send custom headers).
  */
 
-import { Router, type IRouter, type Request, type Response } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { eq } from "drizzle-orm";
 import { db, driveWatchChannelsTable } from "@workspace/db";
 import { syncFolderContents } from "../services/driveWatchService";
 import { addSseClient, removeSseClient, emitToCase } from "../services/sseService";
+import { requireClientAuth } from "../middlewares/clientAuth";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+// ─── Combined auth for SSE ────────────────────────────────────────────────────
+
+function requireAnyAuth(req: Request, res: Response, next: NextFunction): void {
+  if (req.headers["x-staff-token"]) {
+    requireStaffAuth(req, res, next);
+  } else {
+    void requireClientAuth(req, res, next);
+  }
+}
 
 // ─── POST /drive/webhook ──────────────────────────────────────────────────────
 //
@@ -77,12 +93,13 @@ router.post("/drive/webhook", (req: Request, res: Response): void => {
 
 // ─── GET /drive/events ────────────────────────────────────────────────────────
 //
-// SSE stream — staff clients subscribe with ?caseId=N to receive real-time
-// drive_sync events without polling.
+// SSE stream — subscribe with ?caseId=N to receive real-time drive_sync events.
+// Accessible to both authenticated clients and staff. Uses fetch() + streaming
+// on the client side (not EventSource) so custom auth headers are forwarded.
 
 router.get(
   "/drive/events",
-  requireStaffAuth,
+  requireAnyAuth,
   (req: Request, res: Response): void => {
     const caseId = parseInt(req.query.caseId as string, 10);
     if (isNaN(caseId)) {
