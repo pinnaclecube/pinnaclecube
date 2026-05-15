@@ -156,32 +156,50 @@ export async function createCaseFolders(caseId: number): Promise<void> {
     .set({ driveSyncStatus: "pending", driveSyncError: null })
     .where(eq(casePetitionSetupTable.id, caseId));
 
-  // After folders are created, register a Drive push-notification watch.
+  // After folders are created, register Drive push-notification watches for
+  // every folder in the tree — not just the root. Google Drive push events
+  // fire only for the directly-watched folder, so each subfolder (criteria,
+  // resume, exhibits, …) needs its own channel to catch file drops.
   // Failures here are non-fatal — folder creation is considered successful
   // regardless of whether watch registration succeeds.
-  async function tryRegisterWatch(): Promise<void> {
+  async function tryRegisterAllWatches(): Promise<void> {
     try {
-      const [rootFolder] = await db
-        .select()
+      const allFolders = await db
+        .select({ id: caseFoldersTable.id, driveId: caseFoldersTable.driveId, folderType: caseFoldersTable.folderType })
         .from(caseFoldersTable)
-        .where(and(eq(caseFoldersTable.caseId, caseId), eq(caseFoldersTable.folderType, "root")))
-        .limit(1);
+        .where(eq(caseFoldersTable.caseId, caseId));
 
-      if (!rootFolder) {
-        logger.warn({ caseId }, "[createCaseFolders] root folder not found — skipping watch registration");
+      if (allFolders.length === 0) {
+        logger.warn({ caseId }, "[createCaseFolders] no folders found — skipping watch registration");
         return;
       }
 
-      await registerDriveWatch(caseId, rootFolder.driveId);
+      let registered = 0;
+      for (const folder of allFolders) {
+        try {
+          await registerDriveWatch(caseId, folder.driveId);
+          registered++;
+        } catch (folderErr) {
+          logger.warn(
+            { caseId, folderId: folder.id, folderType: folder.folderType, err: folderErr },
+            "[createCaseFolders] watch registration failed for folder (non-fatal)",
+          );
+        }
+      }
+
+      logger.info(
+        { caseId, registered, total: allFolders.length },
+        "[createCaseFolders] watch channels registered",
+      );
     } catch (watchErr) {
-      logger.warn({ caseId, err: watchErr }, "[createCaseFolders] watch registration failed (non-fatal)");
+      logger.warn({ caseId, err: watchErr }, "[createCaseFolders] watch registration pass failed (non-fatal)");
     }
   }
 
   try {
     await doCreateFolders(caseId);
     logger.info({ caseId }, "[createCaseFolders] completed successfully");
-    await tryRegisterWatch();
+    await tryRegisterAllWatches();
   } catch (firstErr) {
     const firstMsg = firstErr instanceof Error ? firstErr.message : String(firstErr);
     logger.warn({ caseId, err: firstMsg }, "[createCaseFolders] first attempt failed — retrying once");
@@ -191,7 +209,7 @@ export async function createCaseFolders(caseId: number): Promise<void> {
       await db.delete(caseFoldersTable).where(eq(caseFoldersTable.caseId, caseId));
       await doCreateFolders(caseId);
       logger.info({ caseId }, "[createCaseFolders] completed successfully on retry");
-      await tryRegisterWatch();
+      await tryRegisterAllWatches();
     } catch (retryErr) {
       const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
       logger.error({ caseId, err: retryMsg }, "[createCaseFolders] retry failed — marking as failed");

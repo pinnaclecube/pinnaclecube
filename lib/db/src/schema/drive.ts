@@ -30,7 +30,7 @@ export const visaCategoryEnum = pgEnum("visa_category", [
   "O1A",
 ]);
 
-export const addedBySourceEnum = pgEnum("added_by_source", ["app", "drive"]);
+export const addedBySourceEnum = pgEnum("added_by_source", ["app", "drive", "staff"]);
 
 // ─── case_folders ─────────────────────────────────────────────────────────────
 

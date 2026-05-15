@@ -346,7 +346,11 @@ router.post(
       return;
     }
 
-    // Capture uploader identity for audit trail
+    // Capture uploader identity for audit trail.
+    // source: "staff" when a staff member uploads on behalf of a client,
+    //         "app"   when the client uploads themselves.
+    const isStaffUpload = !!aug.staffUser && !aug.clientUser;
+    const addedBySource = isStaffUpload ? "staff" : "app";
     const addedByProfileId = aug.clientUser?.id ?? null;
     const addedByLabel = aug.clientUser?.name ?? (aug.staffUser ? "Staff" : null);
 
@@ -384,7 +388,7 @@ router.post(
         name: file.originalname,
         mimeType: file.mimetype,
         driveUrl,
-        addedBySource: "app",
+        addedBySource,
         addedByProfileId,
         addedByLabel,
       })

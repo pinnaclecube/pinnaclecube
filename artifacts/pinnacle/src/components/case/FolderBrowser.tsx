@@ -48,7 +48,7 @@ interface CaseFolderItem {
   name: string;
   mimeType: string;
   driveUrl: string;
-  addedBySource: "app" | "drive";
+  addedBySource: "app" | "drive" | "staff";
   addedByLabel: string | null;
   createdAt: string;
 }
@@ -682,10 +682,17 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
                     >
                       <MimeIcon mimeType={item.mimeType} />
                       <p className="text-sm font-medium truncate">{item.name}</p>
-                      <span className="text-xs text-muted-foreground truncate">
-                        {item.addedBySource === "drive"
-                          ? "Drive sync"
-                          : (item.addedByLabel ?? "App upload")}
+                      <span className="text-xs truncate">
+                        {item.addedBySource === "drive" ? (
+                          <span className="text-muted-foreground">Drive sync</span>
+                        ) : item.addedBySource === "staff" ? (
+                          <span className="inline-flex items-center gap-1 text-[#3D4FA8] font-medium">
+                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#3D4FA8]" />
+                            Staff upload
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">{item.addedByLabel ?? "App upload"}</span>
+                        )}
                       </span>
                       <span className="text-xs text-muted-foreground">
                         {new Date(item.createdAt).toLocaleDateString()}
@@ -709,7 +716,11 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{item.name}</p>
                         <p className="text-xs text-muted-foreground">
-                          {item.addedBySource === "drive" ? "Added via Drive" : "Uploaded in app"}
+                          {item.addedBySource === "drive"
+                            ? "Added via Drive"
+                            : item.addedBySource === "staff"
+                              ? "Added by your team"
+                              : "Uploaded by you"}
                           {" · "}
                           {new Date(item.createdAt).toLocaleDateString()}
                         </p>
