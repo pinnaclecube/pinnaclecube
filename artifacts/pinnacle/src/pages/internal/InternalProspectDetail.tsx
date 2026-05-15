@@ -35,7 +35,7 @@ function inferConvertVisa(raw?: string | null): ConvertVisa {
 const CONVERT_PRODUCTS = [
   { key: "evidence_engine", label: "Evidence Engine" },
   { key: "elite_blueprint", label: "Elite Blueprint" },
-  { key: "evidence_engine_elite_blueprint", label: "Evidence Engine + Elite Blueprint" },
+  { key: "both", label: "Evidence Engine + Elite Blueprint" },
 ] as const;
 
 function staffFetch(path: string, opts: RequestInit = {}) {
