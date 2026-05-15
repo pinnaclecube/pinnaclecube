@@ -180,6 +180,21 @@ router.post(
       })
       .returning();
 
+    // Write case-setup audit entry (synchronous — always recorded)
+    const staffUser = (req as any).staffUser as { id?: string; name?: string } | undefined;
+    await notifyClient(userId, "case_setup_audit", `Case #${setup.id} provisioned by staff (${staffUser?.name ?? "unknown"})`, {
+      caseId: setup.id,
+      profileId: userId,
+      product: product ?? null,
+      visaPath,
+      criteriaCount: selectedCriteria.length,
+      staffUserId: staffUser?.id ?? "unknown",
+      staffUserName: staffUser?.name ?? "unknown",
+      driveSyncStatus: "pending",
+      caseActivationEmailStatus: "pending",
+      timestamp: new Date().toISOString(),
+    });
+
     res.status(201).json({ setup, exhibits, package: pkg });
 
     // ── Async post-response work — does not block the 201 ─────────────────────

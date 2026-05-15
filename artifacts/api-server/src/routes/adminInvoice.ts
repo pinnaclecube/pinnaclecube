@@ -7,7 +7,7 @@
 
 import { Router, type IRouter, type Request, type Response } from "express";
 import { eq, and, desc } from "drizzle-orm";
-import { db, prospectsTable, purchasesTable, profilesTable } from "@workspace/db";
+import { db, prospectsTable, purchasesTable, profilesTable, activityTable } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { sendEmail, invoiceEmail, prospectInviteEmail, prospectAccountCreatedEmail } from "../services/emailService";
 import Stripe from "stripe";
@@ -470,6 +470,8 @@ router.post(
 
     // ── Auto-create a profile if one doesn't exist for this email ──────────────
     let linkedProfileId = prospect.linkedProfileId ?? null;
+    let profileCreated = false;
+    let credentialsEmailSent = false;
 
     const [existingProfile] = await db
       .select({ id: profilesTable.id })
@@ -502,10 +504,12 @@ router.post(
 
       if (newProfile) {
         linkedProfileId = newProfile.id;
+        profileCreated = true;
         sendEmail(
           prospectEmail,
           prospectAccountCreatedEmail(firstName, prospectEmail, tempPassword, "Pinnacle³"),
         ).catch(() => {});
+        credentialsEmailSent = true;
       }
     }
 
@@ -517,7 +521,26 @@ router.post(
       ...(linkedProfileId ? { linkedProfileId } : {}),
     }).where(eq(prospectsTable.id, id)).returning();
 
-    res.json({ success: true, prospect: updated, message: "Prospect converted and case created" });
+    // Write prospect-conversion audit entry
+    if (linkedProfileId) {
+      const staffUser = (req as any).staffUser as { id?: string; name?: string } | undefined;
+      await db.insert(activityTable).values({
+        profileId: linkedProfileId,
+        type: "prospect_conversion_audit",
+        description: `Prospect #${id} converted to case by staff (${staffUser?.name ?? "unknown"})`,
+        metadata: {
+          prospectId: id,
+          profileId: linkedProfileId,
+          profileCreated,
+          credentialsEmailSent,
+          staffUserId: staffUser?.id ?? "unknown",
+          staffUserName: staffUser?.name ?? "unknown",
+          timestamp: new Date().toISOString(),
+        },
+      }).catch(() => {});
+    }
+
+    res.json({ success: true, prospect: updated, message: "Prospect converted and case created", profileCreated, credentialsEmailSent });
   },
 );
 

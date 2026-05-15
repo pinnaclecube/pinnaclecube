@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Checkbox } from "@/components/ui/checkbox";
 import StaffNav from "@/components/layout/StaffNav";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
-import { ArrowLeft, BookOpen, Trophy, Briefcase, Mail, ExternalLink, Check, RefreshCw, Upload, FileText, Sparkles, Download, Send, ChevronDown, ChevronUp, Loader2, CreditCard, UserCheck, Copy, CheckCircle, Lock, X, Trash2 } from "lucide-react";
+import { ArrowLeft, BookOpen, Trophy, Briefcase, Mail, ExternalLink, Check, RefreshCw, Upload, FileText, Sparkles, Download, Send, ChevronDown, ChevronUp, Loader2, CreditCard, UserCheck, Copy, CheckCircle, AlertCircle, Lock, X, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const VISA_CATEGORIES = ["EB-1A", "EB-2 NIW", "O-1A"];
@@ -99,6 +99,11 @@ export default function InternalProspectDetail() {
   const [criteriaLoading, setCriteriaLoading] = useState(false);
   const [convertStep, setConvertStep] = useState<"idle" | "step1" | "step2" | "done" | "step1_failed" | "step2_failed">("idle");
   const [partialProfileId, setPartialProfileId] = useState<number | null>(null);
+  const [step1Meta, setStep1Meta] = useState<{ profileCreated: boolean; credentialsEmailSent: boolean } | null>(null);
+  const [step2Setup, setStep2Setup] = useState<any>(null);
+  const [driveStatus, setDriveStatus] = useState<string>("pending");
+  const [activationEmailStatus, setActivationEmailStatus] = useState<string | null>(null);
+  const drivePollerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -249,6 +254,42 @@ export default function InternalProspectDetail() {
 
   useEffect(() => { load(); }, [id]);
 
+  // Poll drive sync + activation email status while confirmation summary is shown
+  useEffect(() => {
+    if (convertStep !== "done" || !step2Setup?.profileId) return;
+    const profileId = step2Setup.profileId;
+    let active = true;
+
+    const poll = async () => {
+      if (!active) return;
+      try {
+        const r = await staffFetch(`/internal/petition/setup/${profileId}`);
+        if (!active || !r.ok) return;
+        const d = await r.json();
+        const ds: string = d.setup?.driveSyncStatus ?? "pending";
+        const es: string | null = d.setup?.caseActivationEmailStatus ?? null;
+        setDriveStatus(ds);
+        setActivationEmailStatus(es);
+      } catch { /* ignore */ }
+    };
+
+    poll();
+    const interval = setInterval(poll, 3000);
+    drivePollerRef.current = interval;
+    return () => {
+      active = false;
+      clearInterval(interval);
+      drivePollerRef.current = null;
+    };
+  }, [convertStep, step2Setup]);
+
+  // Stop polling once both async tasks settle
+  useEffect(() => {
+    if (driveStatus !== "pending" && activationEmailStatus !== null) {
+      if (drivePollerRef.current) { clearInterval(drivePollerRef.current); drivePollerRef.current = null; }
+    }
+  }, [driveStatus, activationEmailStatus]);
+
   const saveEdit = async () => {
     setSaving(true);
     try {
@@ -341,6 +382,11 @@ export default function InternalProspectDetail() {
     setConvertMsg(null);
     setConvertStep("idle");
     setPartialProfileId(null);
+    setStep1Meta(null);
+    setStep2Setup(null);
+    setDriveStatus("pending");
+    setActivationEmailStatus(null);
+    if (drivePollerRef.current) { clearInterval(drivePollerRef.current); drivePollerRef.current = null; }
     setShowConvertModal(true);
     fetchCriteriaForVisa(VISA_PATH_MAP[visa]);
   };
@@ -371,8 +417,10 @@ export default function InternalProspectDetail() {
       });
       const d = await r.json();
       if (r.ok) {
+        setStep2Setup(d.setup ?? null);
+        setDriveStatus(d.setup?.driveSyncStatus ?? "pending");
+        setActivationEmailStatus(d.setup?.caseActivationEmailStatus ?? null);
         setConvertStep("done");
-        setConvertMsg("Case setup complete — profile created, case provisioned, and Drive folders are being built in the background.");
         await load();
       } else {
         setConvertStep("step2_failed");
@@ -408,6 +456,10 @@ export default function InternalProspectDetail() {
         return;
       }
       setPartialProfileId(profileId);
+      setStep1Meta({
+        profileCreated: d1.profileCreated ?? false,
+        credentialsEmailSent: d1.credentialsEmailSent ?? false,
+      });
     } catch {
       setConvertMsg("Network error during profile creation");
       setConvertStep("step1_failed");
@@ -1142,7 +1194,9 @@ export default function InternalProspectDetail() {
       <Dialog open={showConvertModal} onOpenChange={(open) => { if (!converting) setShowConvertModal(open); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Convert to Case — {prospect?.fullName}</DialogTitle>
+            <DialogTitle>
+              {convertStep === "done" ? `Case Ready — ${prospect?.fullName}` : `Convert to Case — ${prospect?.fullName}`}
+            </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-5 py-1">
@@ -1157,16 +1211,111 @@ export default function InternalProspectDetail() {
               </div>
             )}
 
-            {/* In-modal error/success */}
-            {convertMsg && (convertStep === "step1_failed" || convertStep === "step2_failed" || convertStep === "done") && (
+            {/* In-modal error banners (failures only) */}
+            {convertMsg && (convertStep === "step1_failed" || convertStep === "step2_failed") && (
               <div className={cn(
                 "rounded-lg border px-4 py-3 text-sm",
-                convertStep === "done" ? "bg-purple-50 border-purple-200 text-purple-900"
-                  : convertStep === "step2_failed" ? "bg-amber-50 border-amber-200 text-amber-900"
+                convertStep === "step2_failed" ? "bg-amber-50 border-amber-200 text-amber-900"
                   : "bg-red-50 border-red-200 text-red-800"
               )}>
                 {convertStep === "step2_failed" && <p className="font-semibold mb-1">Profile created — case setup failed</p>}
                 <p>{convertMsg}</p>
+              </div>
+            )}
+
+            {/* ── Confirmation summary (shown after both steps succeed) ── */}
+            {convertStep === "done" && (
+              <div className="space-y-4">
+                {/* Success header */}
+                <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+                  <CheckCircle className="w-5 h-5 text-green-700 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold text-green-900">Case successfully set up</p>
+                    <p className="text-xs text-green-700 mt-0.5">Drive folders are provisioning in the background</p>
+                  </div>
+                </div>
+
+                {/* Client + account */}
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">Client</p>
+                    <p className="font-medium leading-tight">{prospect?.fullName}</p>
+                    <p className="text-xs text-muted-foreground">{prospect?.email}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">Account</p>
+                    <p className="font-medium">
+                      {step1Meta?.profileCreated ? "New account created" : "Existing account linked"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Product + visa */}
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">Product</p>
+                    <p className="font-medium">
+                      {CONVERT_PRODUCTS.find((p) => p.key === convertProduct)?.label ?? convertProduct}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">Visa Category</p>
+                    <p className="font-medium">{convertVisa}</p>
+                  </div>
+                </div>
+
+                {/* Criteria chips */}
+                <div className="text-sm">
+                  <p className="text-xs text-muted-foreground mb-1.5">
+                    Criteria Selected ({criteriaSelection.length})
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {allCriteria
+                      .filter((c) => criteriaSelection.includes(c.id))
+                      .map((c) => (
+                        <span
+                          key={c.id}
+                          className="px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-[#1E2D6B] rounded-full text-xs font-medium"
+                        >
+                          {c.criteriaName}
+                        </span>
+                      ))}
+                  </div>
+                </div>
+
+                {/* Async status checklist */}
+                <div className="border-t pt-3 space-y-2.5">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Credentials email</span>
+                    {step1Meta?.profileCreated ? (
+                      step1Meta.credentialsEmailSent
+                        ? <span className="flex items-center gap-1.5 text-green-700 font-medium"><CheckCircle className="w-3.5 h-3.5" />Sent</span>
+                        : <span className="flex items-center gap-1.5 text-red-600 font-medium"><AlertCircle className="w-3.5 h-3.5" />Failed</span>
+                    ) : (
+                      <span className="text-gray-400 text-xs">Skipped — account already existed</span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Drive folders</span>
+                    {driveStatus === "pending"
+                      ? <span className="flex items-center gap-1.5 text-blue-600 font-medium"><Loader2 className="w-3.5 h-3.5 animate-spin" />Provisioning…</span>
+                      : driveStatus === "synced"
+                      ? <span className="flex items-center gap-1.5 text-green-700 font-medium"><CheckCircle className="w-3.5 h-3.5" />Synced ✓</span>
+                      : <span className="flex items-center gap-1.5 text-red-600 font-medium"><AlertCircle className="w-3.5 h-3.5" />Failed ✗</span>
+                    }
+                  </div>
+
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Case activation email</span>
+                    {activationEmailStatus === null
+                      ? <span className="flex items-center gap-1.5 text-blue-600 font-medium"><Loader2 className="w-3.5 h-3.5 animate-spin" />Sending…</span>
+                      : activationEmailStatus === "sent"
+                      ? <span className="flex items-center gap-1.5 text-green-700 font-medium"><CheckCircle className="w-3.5 h-3.5" />Sent</span>
+                      : <span className="flex items-center gap-1.5 text-red-600 font-medium"><AlertCircle className="w-3.5 h-3.5" />Failed</span>
+                    }
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1321,9 +1470,21 @@ export default function InternalProspectDetail() {
               </>
             )}
             {convertStep === "done" && (
-              <Button onClick={() => setShowConvertModal(false)} className="bg-purple-700 hover:bg-purple-800 text-white">
-                <Check className="w-3.5 h-3.5 mr-1.5" />Done
-              </Button>
+              <>
+                <Button variant="outline" onClick={() => setShowConvertModal(false)}>
+                  Close
+                </Button>
+                {partialProfileId && (
+                  <Link href={`/internal/case/${partialProfileId}`}>
+                    <Button
+                      className="bg-[#1E2D6B] hover:bg-[#3D4FA8] text-white"
+                      onClick={() => setShowConvertModal(false)}
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 mr-1.5" />View Case
+                    </Button>
+                  </Link>
+                )}
+              </>
             )}
           </DialogFooter>
         </DialogContent>
