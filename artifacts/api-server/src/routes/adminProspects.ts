@@ -154,19 +154,19 @@ router.get(
 
 const UpdateProspectBody = z.object({
   fullName: z.string().optional(),
-  phone: z.string().optional(),
-  currentRole: z.string().optional(),
-  linkedinUrl: z.string().optional(),
-  fieldOfWork: z.string().optional(),
-  yearsOfExperience: z.string().optional(),
-  sourceType: z.string().optional(),
-  internalNotes: z.string().optional(),
+  phone: z.string().nullish(),
+  currentRole: z.string().nullish(),
+  linkedinUrl: z.string().nullish(),
+  fieldOfWork: z.string().nullish(),
+  yearsOfExperience: z.string().nullish(),
+  sourceType: z.string().nullish(),
+  internalNotes: z.string().nullish(),
   status: z.enum(["new", "in_contact", "qualified", "not_qualified", "converted"]).optional(),
-  publicationsSignal: z.boolean().optional(),
-  awardsSignal: z.boolean().optional(),
-  leadershipSignal: z.boolean().optional(),
-  ownerStaffUser: z.string().optional(),
-  summary: z.string().optional(),
+  publicationsSignal: z.boolean().nullish(),
+  awardsSignal: z.boolean().nullish(),
+  leadershipSignal: z.boolean().nullish(),
+  ownerStaffUser: z.string().nullish(),
+  summary: z.string().nullish(),
 });
 
 router.patch(
