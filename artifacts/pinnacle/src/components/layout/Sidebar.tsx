@@ -6,7 +6,8 @@ import {
   FolderLock, 
   FileCheck2, 
   Map, 
-  GraduationCap 
+  GraduationCap,
+  FolderArchive,
 } from "lucide-react";
 import { Logo } from "../ui/logo";
 
@@ -14,6 +15,7 @@ const navItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/where-you-stand", label: "Where You Stand", icon: Target },
   { href: "/evidence", label: "Evidence Engine", icon: FolderLock },
+  { href: "/my-files", label: "Case Files", icon: FolderArchive },
   { href: "/criteria", label: "Criteria Exhibit", icon: FileCheck2 },
   { href: "/blueprint", label: "Elite Blueprint", icon: Map },
   { href: "/courses", label: "Excellence Lab", icon: GraduationCap },

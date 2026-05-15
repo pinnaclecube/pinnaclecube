@@ -11,11 +11,13 @@
  *   headers (Bearer JWT / X-Staff-Token) are forwarded via fetchFn
  * - Staff view: uploader label column, staff-only folder indicators + toggle
  * - Client view: staff-only folders are filtered server-side
+ * - Breadcrumb path in right panel header
+ * - Source badges (App / Drive / Staff) on every file row
  * - Drag-and-drop + click-to-upload
  * - New Folder modal (staff can mark as staff-only at creation time)
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -68,6 +70,43 @@ function buildTree(folders: CaseFolder[], parentId: number | null = null): CaseF
   return folders
     .filter((f) => f.parentFolderId === parentId)
     .map((f) => ({ ...f, children: buildTree(folders, f.id) }));
+}
+
+// ─── Breadcrumb builder ────────────────────────────────────────────────────────
+
+function buildBreadcrumb(folders: CaseFolder[], folderId: number): CaseFolder[] {
+  const map = new Map(folders.map((f) => [f.id, f]));
+  const path: CaseFolder[] = [];
+  let current: CaseFolder | undefined = map.get(folderId);
+  while (current) {
+    path.unshift(current);
+    current = current.parentFolderId != null ? map.get(current.parentFolderId) : undefined;
+  }
+  return path;
+}
+
+// ─── Source badge ─────────────────────────────────────────────────────────────
+
+function SourceBadge({ source }: { source: "app" | "drive" | "staff" }) {
+  if (source === "drive") {
+    return (
+      <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-gray-100 text-gray-500 border border-gray-200 whitespace-nowrap leading-none">
+        Drive
+      </span>
+    );
+  }
+  if (source === "staff") {
+    return (
+      <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap leading-none">
+        Staff
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-indigo-50 text-[#3D4FA8] border border-indigo-200 whitespace-nowrap leading-none">
+      App
+    </span>
+  );
 }
 
 // ─── Folder icon by type ──────────────────────────────────────────────────────
@@ -269,6 +308,7 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
   const [folders, setFolders] = useState<CaseFolder[]>([]);
   const [tree, setTree] = useState<CaseFolder[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<CaseFolder | null>(null);
+  const [breadcrumb, setBreadcrumb] = useState<CaseFolder[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
   const [items, setItems] = useState<CaseFolderItem[]>([]);
   const [loadingFolders, setLoadingFolders] = useState(true);
@@ -293,6 +333,13 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
   const selectedFolderRef = useRef<CaseFolder | null>(null);
   useEffect(() => { selectedFolderRef.current = selectedFolder; }, [selectedFolder]);
 
+  // ─── Breadcrumb ────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!selectedFolder) { setBreadcrumb([]); return; }
+    setBreadcrumb(buildBreadcrumb(folders, selectedFolder.id));
+  }, [selectedFolder, folders]);
+
   // ─── Data loading ──────────────────────────────────────────────────────────
 
   const loadFolders = useCallback(async (preserveSelection = false) => {
@@ -312,7 +359,6 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
           setSelectedFolder(root);
         }
       } else {
-        // Refresh selected folder data from new list (preserves selection after sync)
         const prev = selectedFolderRef.current;
         if (prev) {
           const refreshed = data.folders.find((f) => f.id === prev.id);
@@ -366,6 +412,15 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
   }, [loadFolders, loadFiles]);
 
   useDriveSSE(caseId, fetchFn, handleDriveSync);
+
+  // ─── New Folder helpers ────────────────────────────────────────────────────
+
+  const openNewFolderModal = useCallback(() => {
+    setNewFolderName("");
+    setNewFolderStaffOnly(false);
+    setFolderCreateError(null);
+    setShowNewFolderModal(true);
+  }, []);
 
   // ─── Folder actions ────────────────────────────────────────────────────────
 
@@ -491,7 +546,7 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
         )}
       </div>
 
-      <div className="flex min-h-[420px]">
+      <div className="flex min-h-[560px]">
 
         {/* ── Left: Folder tree ─────────────────────────────────────────── */}
         <div className="w-64 shrink-0 border-r bg-gray-50 flex flex-col">
@@ -501,12 +556,7 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
             </span>
             {!readOnly && selectedFolder && (
               <button
-                onClick={() => {
-                  setNewFolderName("");
-                  setNewFolderStaffOnly(false);
-                  setFolderCreateError(null);
-                  setShowNewFolderModal(true);
-                }}
+                onClick={openNewFolderModal}
                 className="text-[#1E2D6B] hover:text-[#3D4FA8] transition-colors"
                 title="New Folder"
               >
@@ -545,58 +595,88 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
         <div className="flex-1 flex flex-col min-w-0">
 
           {/* File panel header */}
-          <div className="px-4 py-2.5 border-b flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 min-w-0">
-              {selectedFolder && (
-                <FolderTypeIcon type={selectedFolder.folderType} open />
-              )}
-              <span className="text-sm font-medium truncate text-gray-800">
-                {selectedFolder?.name ?? "Select a folder"}
-              </span>
-              {selectedFolder?.staffOnly && (
-                <Badge
-                  variant="outline"
-                  className="text-xs h-4 px-1.5 border-amber-300 text-amber-700 bg-amber-50 shrink-0"
-                >
-                  Staff only
-                </Badge>
-              )}
-              {selectedFolder?.driveUrl && (
-                <a
-                  href={selectedFolder.driveUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-gray-400 hover:text-[#1E2D6B] transition-colors shrink-0"
-                  title="Open in Google Drive"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              )}
-            </div>
-
-            {!readOnly && selectedFolder && (
-              <div className="flex gap-2 shrink-0">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs gap-1.5"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                >
-                  {uploading
-                    ? <Loader2 className="w-3 h-3 animate-spin" />
-                    : <Upload className="w-3 h-3" />}
-                  Upload
-                </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => void handleUpload(e.target.files)}
-                />
+          <div className="px-4 pt-2.5 pb-2 border-b bg-white">
+            {/* Breadcrumb — hidden for root-level selection */}
+            {breadcrumb.length > 1 && (
+              <div className="flex items-center gap-0.5 mb-1.5 text-xs text-muted-foreground overflow-x-auto whitespace-nowrap">
+                {breadcrumb.slice(0, -1).map((crumb, i) => (
+                  <Fragment key={crumb.id}>
+                    {i > 0 && <ChevronRight className="w-3 h-3 shrink-0 text-gray-300" />}
+                    <button
+                      className="hover:text-[#1E2D6B] transition-colors truncate max-w-[140px] px-0.5"
+                      onClick={() => handleSelectFolder(crumb)}
+                      title={crumb.name}
+                    >
+                      {crumb.name}
+                    </button>
+                  </Fragment>
+                ))}
+                <ChevronRight className="w-3 h-3 shrink-0 text-gray-300" />
               </div>
             )}
+
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                {selectedFolder && (
+                  <FolderTypeIcon type={selectedFolder.folderType} open />
+                )}
+                <span className="text-sm font-semibold truncate text-gray-900">
+                  {selectedFolder?.name ?? "Select a folder"}
+                </span>
+                {selectedFolder?.staffOnly && (
+                  <Badge
+                    variant="outline"
+                    className="text-xs h-4 px-1.5 border-amber-300 text-amber-700 bg-amber-50 shrink-0"
+                  >
+                    Staff only
+                  </Badge>
+                )}
+                {selectedFolder?.driveUrl && (
+                  <a
+                    href={selectedFolder.driveUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gray-400 hover:text-[#1E2D6B] transition-colors shrink-0"
+                    title="Open folder in Google Drive"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
+              </div>
+
+              {!readOnly && selectedFolder && (
+                <div className="flex gap-1.5 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1.5"
+                    onClick={openNewFolderModal}
+                  >
+                    <FolderPlus className="w-3 h-3" />
+                    New Folder
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1.5"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                  >
+                    {uploading
+                      ? <Loader2 className="w-3 h-3 animate-spin" />
+                      : <Upload className="w-3 h-3" />}
+                    Upload
+                  </Button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => void handleUpload(e.target.files)}
+                  />
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Upload error banner */}
@@ -634,7 +714,7 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
               </div>
 
             ) : items.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground py-12">
+              <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground py-16">
                 {isDragging ? (
                   <>
                     <Upload className="w-10 h-10 mb-2 text-[#1E2D6B]/50" />
@@ -642,10 +722,14 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
                   </>
                 ) : (
                   <>
-                    <File className="w-10 h-10 mb-2 text-gray-200" />
-                    <p className="text-sm">No files in this folder</p>
+                    <div className="w-14 h-14 rounded-full bg-gray-50 border border-gray-200 flex items-center justify-center mb-3">
+                      <File className="w-6 h-6 text-gray-300" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-600">No files yet</p>
                     {!readOnly && (
-                      <p className="text-xs mt-1">Upload files or drag &amp; drop them here</p>
+                      <p className="text-xs mt-1 text-gray-400">
+                        Click <span className="font-medium text-gray-500">Upload</span> or drag &amp; drop files here
+                      </p>
                     )}
                   </>
                 )}
@@ -664,36 +748,33 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
 
                 {/* Column headers — staff only */}
                 {isStaff && (
-                  <div className="grid grid-cols-[20px_1fr_160px_96px_32px] gap-3 items-center px-4 py-2 bg-gray-50 border-b text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <div className="grid grid-cols-[20px_1fr_180px_88px_36px] gap-3 items-center px-4 py-2 bg-gray-50 border-b text-xs font-semibold text-gray-500 uppercase tracking-wide">
                     <span />
                     <span>Name</span>
-                    <span>Added by</span>
+                    <span>Source</span>
                     <span>Date</span>
                     <span />
                   </div>
                 )}
 
                 {/* File rows */}
-                {items.map((item) => (
+                {items.map((item) =>
                   isStaff ? (
+                    /* ── Staff row ── */
                     <div
                       key={item.id}
-                      className="grid grid-cols-[20px_1fr_160px_96px_32px] gap-3 items-center px-4 py-2.5 border-b last:border-b-0 hover:bg-gray-50 group transition-colors"
+                      className="grid grid-cols-[20px_1fr_180px_88px_36px] gap-3 items-center px-4 py-2.5 border-b last:border-b-0 hover:bg-gray-50 transition-colors"
                     >
                       <MimeIcon mimeType={item.mimeType} />
-                      <p className="text-sm font-medium truncate">{item.name}</p>
-                      <span className="text-xs truncate">
-                        {item.addedBySource === "drive" ? (
-                          <span className="text-muted-foreground">Drive sync</span>
-                        ) : item.addedBySource === "staff" ? (
-                          <span className="inline-flex items-center gap-1 text-[#3D4FA8] font-medium">
-                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#3D4FA8]" />
-                            Staff upload
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">{item.addedByLabel ?? "App upload"}</span>
-                        )}
-                      </span>
+                      <p className="text-sm font-medium truncate" title={item.name}>{item.name}</p>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <SourceBadge source={item.addedBySource} />
+                        <span className="text-xs text-muted-foreground truncate">
+                          {item.addedBySource === "drive"
+                            ? "sync"
+                            : (item.addedByLabel ?? "")}
+                        </span>
+                      </div>
                       <span className="text-xs text-muted-foreground">
                         {new Date(item.createdAt).toLocaleDateString()}
                       </span>
@@ -701,42 +782,40 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
                         href={item.driveUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-[#1E2D6B]"
-                        title="Open in Drive"
+                        className="flex items-center justify-center text-gray-400 hover:text-[#1E2D6B] transition-colors"
+                        title="Open in Google Drive"
                       >
-                        <ExternalLink className="w-4 h-4" />
+                        <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </div>
                   ) : (
+                    /* ── Client row ── */
                     <div
                       key={item.id}
-                      className="flex items-center gap-2.5 px-4 py-2.5 border-b last:border-b-0 hover:bg-gray-50 group transition-colors"
+                      className="flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0 hover:bg-gray-50 transition-colors"
                     >
                       <MimeIcon mimeType={item.mimeType} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{item.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {item.addedBySource === "drive"
-                            ? "Added via Drive"
-                            : item.addedBySource === "staff"
-                              ? "Added by your team"
-                              : "Uploaded by you"}
-                          {" · "}
-                          {new Date(item.createdAt).toLocaleDateString()}
-                        </p>
+                        <p className="text-sm font-medium truncate" title={item.name}>{item.name}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <SourceBadge source={item.addedBySource} />
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(item.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
                       </div>
                       <a
                         href={item.driveUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-[#1E2D6B] shrink-0"
-                        title="Open in Drive"
+                        className="text-gray-400 hover:text-[#1E2D6B] transition-colors shrink-0"
+                        title="Open in Google Drive"
                       >
-                        <ExternalLink className="w-4 h-4" />
+                        <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </div>
                   )
-                ))}
+                )}
               </div>
             )}
           </div>
