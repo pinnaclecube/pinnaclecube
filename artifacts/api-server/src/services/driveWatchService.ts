@@ -7,8 +7,9 @@
  *   and persists the channel record in drive_watch_channels.
  * - syncFolderContents(driveFolderId) — fetches the current non-folder
  *   children of a Drive folder and upserts them into case_folder_items.
- * - startDriveChannelRenewal() — sets up a recurring job that renews
- *   channels expiring within the next 24 hours (runs every 6 hours).
+ * - startDriveChannelRenewal() — sets up a recurring job (every 24 h) that
+ *   renews channels expiring within the next 48 hours. Runs once immediately
+ *   on startup. Failed renewals are persisted to channel_renewal_failures.
  */
 
 import crypto from "crypto";
@@ -18,6 +19,7 @@ import {
   caseFoldersTable,
   caseFolderItemsTable,
   driveWatchChannelsTable,
+  channelRenewalFailuresTable,
 } from "@workspace/db";
 import { getDriveClient, listDriveFolderFiles } from "./driveService";
 import { logger } from "../lib/logger";
@@ -27,8 +29,11 @@ import { logger } from "../lib/logger";
 /** Drive channels last at most 7 days; we request the full lifetime. */
 const CHANNEL_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** Renewal job runs every 6 hours. */
-const RENEWAL_INTERVAL_MS = 6 * 60 * 60 * 1000;
+/** Renewal job runs every 24 hours. */
+const RENEWAL_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+/** Renew channels that expire within the next 48 hours. */
+const RENEWAL_LOOKAHEAD_MS = 48 * 60 * 60 * 1000;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -159,33 +164,55 @@ export async function syncFolderContents(driveFolderId: string): Promise<number>
 // ─── Channel renewal cron ─────────────────────────────────────────────────────
 
 async function renewExpiringSoonChannels(): Promise<void> {
-  const renewBefore = new Date(Date.now() + 24 * 60 * 60 * 1000); // expiring within 24 h
+  const renewBefore = new Date(Date.now() + RENEWAL_LOOKAHEAD_MS);
 
   const expiring = await db
     .select()
     .from(driveWatchChannelsTable)
     .where(lt(driveWatchChannelsTable.expiresAt, renewBefore));
 
-  if (expiring.length === 0) return;
+  if (expiring.length === 0) {
+    logger.info("[driveWatch] renewal check — no channels expiring within 48 h");
+    return;
+  }
 
   logger.info({ count: expiring.length }, "[driveWatch] renewing expiring channels");
 
   for (const ch of expiring) {
     try {
-      // Stop the old channel first (best-effort)
+      // Stop the old channel first (best-effort — non-fatal if already expired)
       await stopChannel(ch.channelId, ch.resourceId);
 
       // Register a fresh channel for the same folder
       await registerDriveWatch(ch.caseId, ch.driveFolderId);
 
-      // Remove the old record (new one was inserted by registerDriveWatch)
+      // Remove the old DB record (new one was inserted by registerDriveWatch)
       await db
         .delete(driveWatchChannelsTable)
         .where(eq(driveWatchChannelsTable.id, ch.id));
 
-      logger.info({ caseId: ch.caseId, oldChannelId: ch.channelId }, "[driveWatch] channel renewed");
+      logger.info(
+        { caseId: ch.caseId, oldChannelId: ch.channelId },
+        "[driveWatch] channel renewed successfully",
+      );
     } catch (err) {
-      logger.error({ channelId: ch.channelId, err }, "[driveWatch] channel renewal failed");
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(
+        { caseId: ch.caseId, channelId: ch.channelId, err: message },
+        "[driveWatch] channel renewal failed",
+      );
+
+      // Persist the failure so staff can audit it via the admin dashboard
+      try {
+        await db.insert(channelRenewalFailuresTable).values({
+          caseId: ch.caseId,
+          oldChannelId: ch.channelId,
+          driveFolderId: ch.driveFolderId,
+          errorMessage: message,
+        });
+      } catch (dbErr) {
+        logger.error({ caseId: ch.caseId, dbErr }, "[driveWatch] failed to persist renewal failure");
+      }
     }
   }
 }
@@ -193,6 +220,11 @@ async function renewExpiringSoonChannels(): Promise<void> {
 /**
  * Starts the Drive channel renewal background job.
  * Call once from the server entry point after the server begins listening.
+ *
+ * - Runs immediately on startup to catch any channels that expired during downtime.
+ * - Then repeats every 24 hours.
+ * - Channels expiring within 48 hours are renewed on each run.
+ * - Failed renewals are persisted to channel_renewal_failures for staff review.
  */
 export function startDriveChannelRenewal(): void {
   const run = async () => {
@@ -203,9 +235,17 @@ export function startDriveChannelRenewal(): void {
     }
   };
 
-  // Run immediately on startup (catches any that expired while server was down),
-  // then repeat every 6 hours.
+  const nextRun = new Date(Date.now() + RENEWAL_INTERVAL_MS);
+
   void run();
   setInterval(run, RENEWAL_INTERVAL_MS);
-  logger.info("[driveWatch] channel renewal job started");
+
+  logger.info(
+    {
+      intervalHours: RENEWAL_INTERVAL_MS / (60 * 60 * 1000),
+      lookaheadHours: RENEWAL_LOOKAHEAD_MS / (60 * 60 * 1000),
+      nextScheduledRun: nextRun.toISOString(),
+    },
+    "[driveWatch] channel renewal job started — running initial check now",
+  );
 }

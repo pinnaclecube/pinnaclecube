@@ -19,6 +19,7 @@ import {
   clientActivityLogTable,
   visaCriteriaTable,
   profilesTable,
+  channelRenewalFailuresTable,
 } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { createCaseFolders } from "../services/createCaseFolders";
@@ -961,6 +962,35 @@ router.post(
 
     console.info(`[staff] Full package published for caseSetup ${caseSetupId}: ${publishedCount} docs`);
     res.json({ success: true, publishedCount });
+  },
+);
+
+// ─── GET /internal/drive/channel-renewal-failures ────────────────────────────
+
+router.get(
+  "/internal/drive/channel-renewal-failures",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const failures = await db
+      .select({
+        id: channelRenewalFailuresTable.id,
+        caseId: channelRenewalFailuresTable.caseId,
+        clientName: profilesTable.name,
+        clientEmail: profilesTable.email,
+        oldChannelId: channelRenewalFailuresTable.oldChannelId,
+        driveFolderId: channelRenewalFailuresTable.driveFolderId,
+        errorMessage: channelRenewalFailuresTable.errorMessage,
+        failedAt: channelRenewalFailuresTable.failedAt,
+      })
+      .from(channelRenewalFailuresTable)
+      .innerJoin(
+        casePetitionSetupTable,
+        eq(casePetitionSetupTable.id, channelRenewalFailuresTable.caseId),
+      )
+      .innerJoin(profilesTable, eq(profilesTable.id, casePetitionSetupTable.profileId))
+      .orderBy(channelRenewalFailuresTable.failedAt);
+
+    res.json({ failures });
   },
 );
 

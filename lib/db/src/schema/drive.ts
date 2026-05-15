@@ -83,6 +83,26 @@ export const driveWatchChannelsTable = pgTable("drive_watch_channels", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ─── channel_renewal_failures ─────────────────────────────────────────────────
+
+/**
+ * Persists every failed Drive watch-channel renewal so staff can audit them.
+ * Records are written by driveWatchService and surfaced via
+ * GET /internal/drive/channel-renewal-failures.
+ */
+export const channelRenewalFailuresTable = pgTable("channel_renewal_failures", {
+  id: serial("id").primaryKey(),
+  caseId: integer("case_id")
+    .notNull()
+    .references(() => casePetitionSetupTable.id, { onDelete: "cascade" }),
+  oldChannelId: text("old_channel_id").notNull(),
+  driveFolderId: text("drive_folder_id").notNull(),
+  errorMessage: text("error_message").notNull(),
+  failedAt: timestamp("failed_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type ChannelRenewalFailure = typeof channelRenewalFailuresTable.$inferSelect;
+
 // ─── Zod schemas & types ──────────────────────────────────────────────────────
 
 export const insertCaseFolderSchema = createInsertSchema(caseFoldersTable).omit({
