@@ -19,6 +19,7 @@ import {
   clientActivityLogTable,
   visaCriteriaTable,
   profilesTable,
+  clientUserProductsTable,
   channelRenewalFailuresTable,
 } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
@@ -179,6 +180,45 @@ router.post(
         coverLetterStatus: "not_started",
       })
       .returning();
+
+    // ── Grant product access to the client profile ──────────────────────────────
+    // Maps the staff-selected product to the profile accessLevel and inserts
+    // clientUserProducts rows so the client can access their products on login.
+    const PRODUCT_ACCESS_MAP: Record<string, { level: string; products: string[] }> = {
+      evidence_engine: { level: "evidence_vault", products: ["evidence_engine"] },
+      elite_blueprint: { level: "elite_blueprint", products: ["elite_blueprint"] },
+      both: { level: "elite_blueprint", products: ["evidence_engine", "elite_blueprint"] },
+    };
+    if (product) {
+      const grant = PRODUCT_ACCESS_MAP[product];
+      if (grant) {
+        const [clientProfile] = await db
+          .select({ email: profilesTable.email })
+          .from(profilesTable)
+          .where(eq(profilesTable.id, userId))
+          .limit(1);
+        if (clientProfile) {
+          await db
+            .update(profilesTable)
+            .set({ accessLevel: grant.level })
+            .where(eq(profilesTable.id, userId));
+          for (const prod of grant.products) {
+            await db
+              .insert(clientUserProductsTable)
+              .values({
+                profileId: userId,
+                clientEmail: clientProfile.email,
+                product: prod,
+                status: "active",
+                offlinePayment: true,
+                grantedByStaffId: (req as any).staffUser?.id ?? "staff",
+                grantNotes: `Granted via staff case setup #${setup.id}`,
+              })
+              .onConflictDoNothing();
+          }
+        }
+      }
+    }
 
     // Write case-setup audit entry (synchronous — always recorded)
     const staffUser = (req as any).staffUser as { id?: string; name?: string } | undefined;
