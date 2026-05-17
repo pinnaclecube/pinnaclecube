@@ -18,8 +18,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FolderBrowser } from "@/components/case/FolderBrowser";
+import { PetitionAssessmentTab } from "./PetitionAssessmentTab";
 
-const TABS = ["Overview", "Evidence", "Excellence Lab", "Petition Workspace", "Documents", "Drive Folders"] as const;
+const TABS = ["Overview", "Evidence", "Excellence Lab", "Petition Workspace", "Petition Assessment", "Documents", "Drive Folders"] as const;
 type Tab = typeof TABS[number];
 
 function staffFetch(path: string, opts: RequestInit = {}) {
@@ -1157,6 +1158,7 @@ export default function InternalCaseDetail() {
         {activeTab === "Evidence" && <EvidenceTab userId={user_id} />}
         {activeTab === "Excellence Lab" && <ExcellenceLabTab userId={user_id} />}
         {activeTab === "Petition Workspace" && <PetitionWorkspaceTab userId={user_id} />}
+        {activeTab === "Petition Assessment" && <PetitionAssessmentTab userId={user_id} />}
         {activeTab === "Documents" && <DocumentsTab userId={user_id} />}
         {activeTab === "Drive Folders" && <DriveFoldersTab userId={user_id} />}
       </main>
