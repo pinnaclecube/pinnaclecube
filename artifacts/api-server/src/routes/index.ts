@@ -26,6 +26,7 @@ import adminRoadmapRouter from "./adminRoadmap";
 import adminInvoiceRouter from "./adminInvoice";
 import driveWebhookRouter from "./driveWebhook";
 import caseFoldersRouter from "./caseFolders";
+import caseExhibitsRouter from "./caseExhibits";
 
 const router: IRouter = Router();
 
@@ -56,5 +57,6 @@ router.use(adminRoadmapRouter);
 router.use(adminInvoiceRouter);
 router.use(driveWebhookRouter);
 router.use(caseFoldersRouter);
+router.use(caseExhibitsRouter);
 
 export default router;

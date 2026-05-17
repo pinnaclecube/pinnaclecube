@@ -1,0 +1,51 @@
+API Routes
+Add exhibit generation routes to the existing routes structure. Find where staff/petition routes are defined (likely petitionAdmin.ts or similar) and add the following endpoints. All routes require staff authentication.
+POST /api/cases/:caseSetupId/assess/criteria/:criteriaCode
+  → call assessCriteriaEvidence(caseSetupId, criteriaCode)
+  → return assessment record (awaited — this is synchronous from client perspective)
+
+POST /api/cases/:caseSetupId/assess/all
+  → call assessAllCriteria(caseSetupId) fire-and-forget
+  → return { message: 'Assessment started', caseSetupId } immediately
+
+PATCH /api/cases/:caseSetupId/assess/criteria/:criteriaCode/override
+  → body: { decision: 'proceed' | 'skip', note: string }
+  → update criteria_assessments: staffOverride=true, staffOverrideBy, staffOverrideAt,
+    staffOverrideNote, finalDecision
+  → return updated record
+
+POST /api/cases/:caseSetupId/exhibits/generate/criteria/:criteriaCode
+  → call generateCriteriaExhibits fire-and-forget
+  → return { message: 'Generation started', criteriaCode } immediately
+
+POST /api/cases/:caseSetupId/exhibits/generate/all
+  → call generateAllCriteriaExhibits fire-and-forget
+  → return { message: 'Full package generation started' } immediately
+
+POST /api/cases/:caseSetupId/exhibits/generate/cover-letter
+  → call generateCoverLetter fire-and-forget → return immediately
+
+POST /api/cases/:caseSetupId/exhibits/generate/personal-declaration
+  → call generatePersonalDeclaration fire-and-forget → return immediately
+
+POST /api/cases/:caseSetupId/exhibits/generate/field-brief
+  → call generateFieldBrief fire-and-forget → return immediately
+
+POST /api/cases/:caseSetupId/exhibits/generate/recommendation-templates
+  → call generateRecommendationTemplates fire-and-forget → return immediately
+
+GET /api/cases/:caseSetupId/exhibits/status
+  → return: all criteria_assessments for this case, all exhibit_documents grouped
+    by documentType, petition_package row, petition readiness percentage
+    (calculate: completed items / total expected items * 100)
+
+GET /api/cases/:caseSetupId/exhibits
+  → if staff: return all exhibit_documents for this case
+  → if client: return only where publishedToClient = true and case belongs to them
+
+PATCH /api/cases/:caseSetupId/exhibits/:exhibitId/publish
+  → set publishedToClient=true, publishedAt=now(), publishedBy=staffId
+
+PATCH /api/cases/:caseSetupId/exhibits/:exhibitId/unpublish
+  → set publishedToClient=false, clear publishedAt and publishedBy
+Confirm all routes registered, no TypeScript errors, server restarts cleanly.
