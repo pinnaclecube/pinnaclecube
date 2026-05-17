@@ -19,8 +19,9 @@ import {
 import { cn } from "@/lib/utils";
 import { FolderBrowser } from "@/components/case/FolderBrowser";
 import { PetitionAssessmentTab } from "./PetitionAssessmentTab";
+import { ExhibitsTab } from "./ExhibitsTab";
 
-const TABS = ["Overview", "Evidence", "Excellence Lab", "Petition Workspace", "Petition Assessment", "Documents", "Drive Folders"] as const;
+const TABS = ["Overview", "Evidence", "Excellence Lab", "Petition Workspace", "Petition Assessment", "Exhibits", "Documents", "Drive Folders"] as const;
 type Tab = typeof TABS[number];
 
 function staffFetch(path: string, opts: RequestInit = {}) {
@@ -1159,6 +1160,7 @@ export default function InternalCaseDetail() {
         {activeTab === "Excellence Lab" && <ExcellenceLabTab userId={user_id} />}
         {activeTab === "Petition Workspace" && <PetitionWorkspaceTab userId={user_id} />}
         {activeTab === "Petition Assessment" && <PetitionAssessmentTab userId={user_id} />}
+        {activeTab === "Exhibits" && <ExhibitsTab userId={user_id} profileData={profileData} />}
         {activeTab === "Documents" && <DocumentsTab userId={user_id} />}
         {activeTab === "Drive Folders" && <DriveFoldersTab userId={user_id} />}
       </main>
