@@ -1,0 +1,61 @@
+Assessment Service
+Create artifacts/api-server/src/services/criteriaAssessmentService.ts.
+Import and use:
+•	Anthropic from @anthropic-ai/sdk — same pattern as petitionDocumentGenerator.ts
+•	buildClientContext from ./petitionDocumentGenerator
+•	fetchCaseDocuments from ./driveDocumentFetcher
+•	EXHIBIT_GENERATION_CONFIG from ../lib/exhibitTemplateConfig
+•	db, criteriaAssessmentsTable, petitionCriteriaExhibitsTable from @workspace/db
+•	eq, and from drizzle-orm
+Export two functions:
+assessCriteriaEvidence(caseSetupId: number, criteriaCode: string): Promise<typeof criteriaAssessmentsTable.$inferSelect>
+1.	Load the case criteria row from petition_criteria_exhibits — get criteriaName, criteriaCode, profileId
+2.	Load client context via buildClientContext(profileId)
+3.	Determine visa category from client context — map to EB1A, NIW, or O1A
+4.	Load criteria config: EXHIBIT_GENERATION_CONFIG.visaCategories[visaCategory].criteria[criteriaName]
+5.	Call fetchCaseDocuments(caseSetupId) — filter to this criteria's documents plus Resume and Demographics
+6.	If criteria folder is in emptyCriteriaFolders — save assessment record with recommendation: 'INSUFFICIENT', confidenceScore: 0, proceedRecommendation: false, rfeRisk: 'HIGH', summary noting no documents found. Return without calling Claude.
+7.	Build Claude API call using @anthropic-ai/sdk:
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const response = await client.messages.create({
+  model: 'claude-opus-4-5-20251001',
+  max_tokens: 2000,
+  system: `${EXHIBIT_GENERATION_CONFIG.baseSystemPrompt}
+
+You are now acting as an AAO adjudicator reviewing a ${visaCategory} petition.
+Think critically — look for reasons to deny. Assess only what the evidence proves.
+Standard of proof: ${criteriaConfig.standardOfProof}
+Criterion: ${criteriaName}
+CFR: ${criteriaConfig.cfr}
+Regulatory requirement: ${criteriaConfig.requirement}
+Key elements USCIS will evaluate: ${criteriaConfig.keyElements.join(', ')}`,
+  messages: [{
+    role: 'user',
+    content: `Client: ${clientContext.fullName} | Visa: ${visaCategory} | Criterion: ${criteriaName}
+
+DOCUMENTS ANALYZED (${documents.length} files):
+${documents.map(d => `=== ${d.fileName} | Folder: ${d.folderName} ===\n${d.textContent}`).join('\n\n')}
+
+Return ONLY valid JSON — no markdown, no preamble:
+{
+  "recommendation": "STRONG" | "BORDERLINE" | "INSUFFICIENT",
+  "confidence_score": 0-100,
+  "summary": "2-3 sentence assessment",
+  "strengths": ["specific strength with document citation"],
+  "weaknesses": ["specific gap or weakness"],
+  "missing_evidence": ["what would strengthen this criterion"],
+  "adjudicator_concerns": ["likely USCIS objection or RFE basis"],
+  "proceed_recommendation": true | false,
+  "rfe_risk": "LOW" | "MEDIUM" | "HIGH"
+}`
+  }]
+});
+8.	Parse JSON response using the existing extractJson pattern from petitionDocumentGenerator.ts
+9.	Save full record to criteria_assessments table
+10.	If recommendation === 'INSUFFICIENT' or rfeRisk === 'HIGH' — log a staff alert (use whatever notification pattern exists in the codebase; if none exists, insert a record into an admin_notifications table or log to console with a TODO comment)
+11.	Return saved assessment record
+assessAllCriteria(caseSetupId: number): Promise<Array<...>>
+•	Load all rows from petition_criteria_exhibits for this caseSetupId
+•	Run assessCriteriaEvidence sequentially for each — await each call then await new Promise(r => setTimeout(r, 2000)) before the next
+•	Return array of all results
+Confirm file created and compiles without TypeScript errors.
