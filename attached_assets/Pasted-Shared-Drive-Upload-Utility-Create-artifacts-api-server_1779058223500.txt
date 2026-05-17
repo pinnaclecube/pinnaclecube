@@ -1,0 +1,79 @@
+Shared Drive Upload Utility
+Create artifacts/api-server/src/services/driveUploadService.ts.
+This extracts the Drive client pattern from caseFolders.ts into a reusable utility.
+import { getDriveClient } from '../routes/caseFolders'; // re-export getDriveClient or
+// copy the getDriveClient() pattern if it cannot be imported
+import { Readable } from 'stream';
+
+export interface DriveUploadResult {
+  driveFileId: string;
+  driveUrl: string;
+  fileName: string;
+}
+
+/**
+ * Uploads a PDF buffer to a specific Google Drive folder.
+ * Returns the Drive file ID and shareable URL.
+ */
+export async function uploadPdfToDrive(
+  pdfBuffer: Buffer,
+  fileName: string,
+  driveFolderId: string
+): Promise<DriveUploadResult> {
+  const drive = getDriveClient();
+  const response = await drive.files.create({
+    requestBody: {
+      name: fileName,
+      mimeType: 'application/pdf',
+      parents: [driveFolderId],
+    },
+    media: {
+      mimeType: 'application/pdf',
+      body: Readable.from(pdfBuffer),
+    },
+    fields: 'id, webViewLink',
+  });
+
+  const fileId = response.data.id!;
+  const webViewLink = response.data.webViewLink!;
+
+  // Set file permission to anyone with link can view
+  await drive.permissions.create({
+    fileId,
+    requestBody: { role: 'reader', type: 'anyone' },
+  });
+
+  return {
+    driveFileId: fileId,
+    driveUrl: webViewLink,
+    fileName,
+  };
+}
+
+/**
+ * Gets the Drive folder ID for a specific folder type within a case.
+ * folderType: 'exhibits' | 'root' | 'resume' | 'evidence' | 'demographics'
+ */
+export async function getCaseDriveFolderId(
+  caseSetupId: number,
+  folderType: string
+): Promise<string | null> {
+  const { db } = await import('@workspace/db');
+  const { caseFoldersTable } = await import('@workspace/db');
+  const { eq, and } = await import('drizzle-orm');
+
+  const folder = await db
+    .select()
+    .from(caseFoldersTable)
+    .where(
+      and(
+        eq(caseFoldersTable.caseSetupId, caseSetupId),
+        eq(caseFoldersTable.folderType, folderType)
+      )
+    )
+    .limit(1);
+
+  return folder[0]?.driveId ?? null;
+}
+If getDriveClient cannot be directly imported from caseFolders.ts, extract it into its own file services/driveClientService.ts and update the import in caseFolders.ts to use the new location. The goal is one shared Drive client factory used everywhere.
+Confirm the file is created and compiles without TypeScript errors.
