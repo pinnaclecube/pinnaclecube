@@ -1,0 +1,29 @@
+Exhibit Management UI
+Build the Exhibit Management panel in the staff portal.
+Route: Staff portal → Client Case view → new tab "Exhibits"
+Left column — Generation controls:
+•	"Generate Full Package" button → fires /generate/all then queues cover-letter, personal-declaration, field-brief in sequence with 5 second gaps
+•	Individual buttons: Cover Letter | Personal Declaration | Field Brief | Recommendation Templates
+•	Live job progress: each active job shows current step text + spinner. Completed items show green tick. Failed items show red X with error message.
+Right column — Document library: Grouped sections:
+•	Criteria Exhibits — one subsection per criteria letter (A, B, C...) Each subsection: Main Document row | Index Exhibit row | Sub-Exhibit rows (A2, A3...)
+•	Supporting Documents: Cover Letter | Personal Declaration | Field Brief
+•	Recommendation Templates: Expert | Collaborator | Industry Leader
+Each document row:
+•	File name + generated timestamp
+•	"Open in Drive" button → opens driveUrl in new tab
+•	Published status badge: "Visible to Client" (green) / "Staff Only" (grey)
+•	"Publish" / "Unpublish" toggle → PATCH publish/unpublish routes
+•	"Regenerate" button → re-runs the specific generation function for that document type
+Petition Completeness Checklist (bottom of page): Show percentage readiness bar at top of checklist. Checklist items with status icons:
+•	Criteria Exhibits: [X of Y complete]
+•	Cover Letter: [generated / not generated]
+•	Personal Declaration: [generated / not generated]
+•	Field of Significance Brief: [generated / not generated]
+•	Recommendation Letters: [N uploaded — minimum 3 for EB1A, 2 for NIW/O1A]
+•	Academic Credentials: [uploaded / not uploaded]
+•	Credential Evaluation: [uploaded / not uploaded — auto-flag if foreign degree detected]
+•	CV/Resume: [uploaded / not uploaded]
+•	Demographic Documents: [uploaded / not uploaded]
+Items not yet complete show an "Upload to Drive" button opening the relevant Drive subfolder.
+Use existing Pinnacle design system components.
