@@ -1,0 +1,97 @@
+Exhibit Generator Service
+Create artifacts/api-server/src/services/exhibitGeneratorService.ts.
+Import and use:
+•	Anthropic from @anthropic-ai/sdk
+•	buildClientContext from ./petitionDocumentGenerator
+•	fetchCaseDocuments from ./driveDocumentFetcher
+•	uploadPdfToDrive, getCaseDriveFolderId from ./driveUploadService
+•	EXHIBIT_GENERATION_CONFIG from ../lib/exhibitTemplateConfig
+•	createDocument, addSectionHeading, addBodyText, addEvidenceTable, addPageBreak, finalizePdf from ./legalPdfTemplate
+•	All relevant DB tables from @workspace/db
+Export these six async functions. Every function must:
+•	Create a document_generation_jobs record at the start with appropriate docSubtype
+•	Update job status to 'processing' when work begins
+•	Set status: 'completed' and completedAt: new Date() on success
+•	Set status: 'failed' and errorMessage on failure
+•	Be called fire-and-forget from route handlers — never block the HTTP response
+________________________________________
+Function 1: generateCriteriaExhibits(caseSetupId: number, criteriaCode: string, triggeredByStaffId: string): Promise<void>
+1.	Load criteria row from petition_criteria_exhibits
+2.	Load client context via buildClientContext(profileId)
+3.	Load assessment from criteria_assessments for this caseSetupId + criteriaCode
+4.	Load documents via fetchCaseDocuments — filter to this criteria + Resume + Demographics
+5.	Load config from EXHIBIT_GENERATION_CONFIG for visa category + criteria name
+6.	Determine exhibit letter from criteriaCode position in the ordered criteria list
+7.	Get Exhibits Drive folder ID via getCaseDriveFolderId(caseSetupId, 'exhibits')
+Make three sequential Claude API calls:
+Call 1 — Main Document (max_tokens: 4000):
+system: baseSystemPrompt + mainDocument.systemPrompt
+user: [client name, visa, criteria name, CFR, requirement, key elements,
+       assessment strengths/weaknesses/adjudicator concerns,
+       all document text content]
+       "Generate the complete Main Criterion Document. Output legal prose only —
+       no markdown fences, no code blocks, no commentary outside the document."
+Build PDF using legalPdfTemplate: createDocument → addSectionHeading per section → addBodyText per paragraph → finalizePdf Upload via uploadPdfToDrive(pdfBuffer, 'Main_[criteriaCode]_[clientName].pdf', exhibitsDriveFolderId) Save to exhibit_documents table
+Call 2 — Index Exhibit (max_tokens: 3000):
+system: baseSystemPrompt + indexExhibit.systemPrompt
+user: [same context + list of all files in criteria folder with names and types
+       + tableType from config + instruction to reference sub-exhibits by number]
+Build PDF, upload to Drive, save to exhibit_documents with exhibitLabel: '[letter]1'
+Calls 3+ — Sub-Exhibits (max_tokens: 3000 each): One call per document in the criteria folder:
+system: baseSystemPrompt + subExhibit.systemPrompt
+user: [single document text + criteria context + exhibit number A2/A3/etc
+       + "include figure placeholders where data supports charts"]
+Build PDF per sub-exhibit, upload to Drive, save to exhibit_documents await new Promise(r => setTimeout(r, 1500)) between sub-exhibit calls
+Update petition_criteria_exhibits row: set status: 'draft', driveFileId, driveUrl from the main document upload
+________________________________________
+Function 2: generateAllCriteriaExhibits(caseSetupId: number, triggeredByStaffId: string): Promise<void>
+•	Load all criteria from petition_criteria_exhibits where caseSetupId matches and finalDecision = 'proceed' (joined from criteria_assessments) OR staffApprovedBy is not null
+•	Run generateCriteriaExhibits sequentially — await each, then wait 3000ms before next
+________________________________________
+Function 3: generateCoverLetter(caseSetupId: number, triggeredByStaffId: string): Promise<void>
+•	Load client context, all criteria with proceed decision, all existing exhibit_documents for this case
+•	Call existing generateCoverLetter logic pattern from petitionDocumentGenerator.ts but: 
+o	Use the upgraded system prompt from EXHIBIT_GENERATION_CONFIG.baseSystemPrompt
+o	Actually save the pdfBuffer to Drive via uploadPdfToDrive
+o	Save driveFileId and driveUrl to petition_package columns coverLetterDriveFileId and coverLetterDriveUrl
+o	Set coverLetterStatus: 'draft'
+________________________________________
+Function 4: generatePersonalDeclaration(caseSetupId: number, triggeredByStaffId: string): Promise<void>
+•	Fetch Resume + Demographics documents via fetchCaseDocuments
+•	Load all criteria assessment summaries for this case
+•	Claude call (max_tokens: 5000):
+system: baseSystemPrompt + "You are drafting a first-person personal declaration
+  for [name] for their [VISA] petition. Write in first person as the beneficiary.
+  Formal and precise. Cover educational background, career trajectory, and each
+  selected criterion with specific personal examples from the documents provided.
+  End with a jurat: 'I declare under penalty of perjury under the laws of the
+  United States that the foregoing is true and correct. Executed on [DATE].
+  _________________________ [Full Name]'"
+user: [all Resume + Demographics document text + all assessment summaries]
+•	Build PDF, upload to root Drive folder via getCaseDriveFolderId(caseSetupId, 'root')
+•	Save to exhibit_documents, update petition_package personal declaration columns
+________________________________________
+Function 5: generateFieldBrief(caseSetupId: number, triggeredByStaffId: string): Promise<void>
+•	Fetch Resume documents + all criteria assessments
+•	Claude call (max_tokens: 4000):
+system: baseSystemPrompt + "You are drafting a Field of Significance brief.
+  Establish why [client's field] is of national importance to the United States
+  and why [name]'s contributions are significant within it.
+  For NIW cases directly address Matter of Dhanasar Prongs 1 and 3 by name.
+  Include references to government priority areas, industry reports, and
+  economic impact data where applicable.
+  Structure: I. Overview of the Field | II. National Importance |
+  III. Beneficiary's Position and Contributions | IV. Why the US Benefits |
+  V. Conclusion"
+•	Build PDF, upload to Exhibits Drive folder, save to exhibit_documents, update petition_package field brief columns
+________________________________________
+Function 6: generateRecommendationTemplates(caseSetupId: number, triggeredByStaffId: string): Promise<void>
+•	Load client context + all criteria assessments + top strengths
+•	Make three sequential Claude calls (max_tokens: 2000 each): 
+o	Call 1: Independent Expert template — "someone who knows the beneficiary by reputation only, not a direct collaborator"
+o	Call 2: Direct Collaborator template — "someone who has worked directly alongside the beneficiary"
+o	Call 3: Industry Leader template — "a senior figure speaking to the field-wide significance of the beneficiary's contributions"
+•	Each letter: pre-populated with beneficiary's specific achievements, marked clearly at top: "DRAFT TEMPLATE — FOR RECOMMENDER USE ONLY — TO BE REVISED AND SIGNED BY RECOMMENDER"
+•	Upload all three as separate PDFs to Exhibits Drive folder
+•	Save all three to exhibit_documents with documentType: 'recommendation_template'
+Confirm file created and compiles without TypeScript errors.
