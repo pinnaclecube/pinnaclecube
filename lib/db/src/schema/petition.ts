@@ -40,6 +40,10 @@ export const petitionCriteriaExhibitsTable = pgTable("petition_criteria_exhibits
   staffApprovedBy: text("staff_approved_by"),
   staffApprovedAt: timestamp("staff_approved_at", { withTimezone: true }),
   regenerationCount: integer("regeneration_count").default(0),
+  driveFileId: text("drive_file_id"),
+  driveUrl: text("drive_url"),
+  driveUploadedAt: timestamp("drive_uploaded_at", { withTimezone: true }),
+  documentType: text("document_type").default("criteria_exhibit"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -69,8 +73,21 @@ export const petitionPackageTable = pgTable("petition_package", {
   exhibitIndexStatus: text("exhibit_index_status").default("not_started"),
   coverLetterJobId: integer("cover_letter_job_id"),
   coverLetterStatus: text("cover_letter_status").default("not_started"),
+  coverLetterDriveFileId: text("cover_letter_drive_file_id"),
+  coverLetterDriveUrl: text("cover_letter_drive_url"),
   o1ItineraryJobId: integer("o1_itinerary_job_id"),
   o1ItineraryStatus: text("o1_itinerary_status").default("not_started"),
+  personalDeclarationJobId: integer("personal_declaration_job_id"),
+  personalDeclarationStatus: text("personal_declaration_status").default("not_started"),
+  personalDeclarationDriveFileId: text("personal_declaration_drive_file_id"),
+  personalDeclarationDriveUrl: text("personal_declaration_drive_url"),
+  fieldBriefJobId: integer("field_brief_job_id"),
+  fieldBriefStatus: text("field_brief_status").default("not_started"),
+  fieldBriefDriveFileId: text("field_brief_drive_file_id"),
+  fieldBriefDriveUrl: text("field_brief_drive_url"),
+  recoTemplatesJobId: integer("reco_templates_job_id"),
+  recoTemplatesStatus: text("reco_templates_status").default("not_started"),
+  petitionReadiness: integer("petition_readiness").default(0),
   packagePublishedAt: timestamp("package_published_at", { withTimezone: true }),
   packagePublishedBy: text("package_published_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -93,11 +110,57 @@ export const documentGenerationJobsTable = pgTable("document_generation_jobs", {
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });
 
+export const criteriaAssessmentsTable = pgTable("criteria_assessments", {
+  id: serial("id").primaryKey(),
+  caseSetupId: integer("case_setup_id").notNull(),
+  profileId: integer("profile_id").notNull(),
+  criteriaCode: text("criteria_code").notNull(),
+  criteriaName: text("criteria_name").notNull(),
+  visaCategory: text("visa_category").notNull(),
+  recommendation: text("recommendation"),
+  confidenceScore: integer("confidence_score"),
+  summary: text("summary"),
+  strengths: jsonb("strengths").default([]),
+  weaknesses: jsonb("weaknesses").default([]),
+  missingEvidence: jsonb("missing_evidence").default([]),
+  adjudicatorConcerns: jsonb("adjudicator_concerns").default([]),
+  rfeRisk: text("rfe_risk"),
+  proceedRecommendation: boolean("proceed_recommendation"),
+  documentsAnalyzed: integer("documents_analyzed").default(0),
+  assessmentJson: jsonb("assessment_json"),
+  assessedAt: timestamp("assessed_at", { withTimezone: true }),
+  staffOverride: boolean("staff_override").default(false),
+  staffOverrideBy: text("staff_override_by"),
+  staffOverrideAt: timestamp("staff_override_at", { withTimezone: true }),
+  staffOverrideNote: text("staff_override_note"),
+  finalDecision: text("final_decision"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const exhibitDocumentsTable = pgTable("exhibit_documents", {
+  id: serial("id").primaryKey(),
+  caseSetupId: integer("case_setup_id").notNull(),
+  profileId: integer("profile_id").notNull(),
+  jobId: integer("job_id"),
+  documentType: text("document_type").notNull(),
+  exhibitLabel: text("exhibit_label"),
+  criteriaCode: text("criteria_code"),
+  fileName: text("file_name").notNull(),
+  driveFileId: text("drive_file_id"),
+  driveUrl: text("drive_url"),
+  publishedToClient: boolean("published_to_client").default(false),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  publishedBy: text("published_by"),
+  generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow(),
+});
+
 export const insertCasePetitionSetupSchema = createInsertSchema(casePetitionSetupTable).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertPetitionCriteriaExhibitSchema = createInsertSchema(petitionCriteriaExhibitsTable).omit({ id: true, createdAt: true });
 export const insertPetitionRecoLetterSchema = createInsertSchema(petitionRecoLettersTable).omit({ id: true, createdAt: true });
 export const insertPetitionPackageSchema = createInsertSchema(petitionPackageTable).omit({ id: true, createdAt: true });
 export const insertDocumentGenerationJobSchema = createInsertSchema(documentGenerationJobsTable).omit({ id: true, createdAt: true });
+export const insertCriteriaAssessmentSchema = createInsertSchema(criteriaAssessmentsTable).omit({ id: true, createdAt: true });
+export const insertExhibitDocumentSchema = createInsertSchema(exhibitDocumentsTable).omit({ id: true });
 
 export type InsertCasePetitionSetup = z.infer<typeof insertCasePetitionSetupSchema>;
 export type CasePetitionSetup = typeof casePetitionSetupTable.$inferSelect;
@@ -109,3 +172,7 @@ export type InsertPetitionPackage = z.infer<typeof insertPetitionPackageSchema>;
 export type PetitionPackage = typeof petitionPackageTable.$inferSelect;
 export type InsertDocumentGenerationJob = z.infer<typeof insertDocumentGenerationJobSchema>;
 export type DocumentGenerationJob = typeof documentGenerationJobsTable.$inferSelect;
+export type InsertCriteriaAssessment = z.infer<typeof insertCriteriaAssessmentSchema>;
+export type CriteriaAssessment = typeof criteriaAssessmentsTable.$inferSelect;
+export type InsertExhibitDocument = z.infer<typeof insertExhibitDocumentSchema>;
+export type ExhibitDocument = typeof exhibitDocumentsTable.$inferSelect;
