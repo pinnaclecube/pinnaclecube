@@ -1,4 +1,3 @@
-import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { 
   LayoutDashboard, 
@@ -8,12 +7,14 @@ import {
   Map, 
   GraduationCap,
   FolderArchive,
+  ClipboardCheck,
 } from "lucide-react";
 import { Logo } from "../ui/logo";
 
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/where-you-stand", label: "Where You Stand", icon: Target },
+  { href: "/tasks", label: "My Tasks", icon: ClipboardCheck },
   { href: "/evidence", label: "Evidence Engine", icon: FolderLock },
   { href: "/my-files", label: "Case Files", icon: FolderArchive },
   { href: "/criteria", label: "Criteria Exhibit", icon: FileCheck2 },

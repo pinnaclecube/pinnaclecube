@@ -86,11 +86,9 @@ export function NotificationPanel({ open, onClose, notifications, onRefresh, tok
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {notifications.map((n) => (
-                <div
-                  key={n.id}
-                  className={`px-6 py-4 transition-colors group ${n.status === "unread" ? "bg-blue-50/50" : ""}`}
-                >
+              {notifications.map((n) => {
+                const isActionItem = n.notificationType === "action_item";
+                const rowContent = (
                   <div className="flex items-start gap-3">
                     <div className={`w-2 h-2 rounded-full mt-2 shrink-0 ${n.status === "unread" ? "bg-[#1E2D6B]" : "bg-transparent"}`} />
                     <div className="flex-1 min-w-0">
@@ -99,7 +97,7 @@ export function NotificationPanel({ open, onClose, notifications, onRefresh, tok
                           {n.title}
                         </p>
                         <button
-                          onClick={() => deleteNotification(n.id)}
+                          onClick={(e) => { e.stopPropagation(); deleteNotification(n.id); }}
                           className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground shrink-0"
                           aria-label="Dismiss notification"
                         >
@@ -109,7 +107,12 @@ export function NotificationPanel({ open, onClose, notifications, onRefresh, tok
                       <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">{n.message}</p>
                       <div className="flex items-center gap-3 mt-2">
                         <span className="text-xs text-muted-foreground">{formatDate(n.createdAt)}</span>
-                        {n.link && (
+                        {isActionItem && (
+                          <span className="text-xs text-[#1E2D6B] font-medium flex items-center gap-1">
+                            View tasks <ExternalLink className="w-3 h-3" />
+                          </span>
+                        )}
+                        {!isActionItem && n.link && (
                           <Link
                             href={n.link}
                             onClick={() => { markRead(n.id); onClose(); }}
@@ -118,7 +121,7 @@ export function NotificationPanel({ open, onClose, notifications, onRefresh, tok
                             View <ExternalLink className="w-3 h-3" />
                           </Link>
                         )}
-                        {n.status === "unread" && (
+                        {n.status === "unread" && !isActionItem && (
                           <button
                             onClick={() => markRead(n.id)}
                             className="text-xs text-muted-foreground hover:text-foreground"
@@ -129,8 +132,26 @@ export function NotificationPanel({ open, onClose, notifications, onRefresh, tok
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+
+                return isActionItem ? (
+                  <Link
+                    key={n.id}
+                    href="/tasks"
+                    onClick={() => { markRead(n.id); onClose(); }}
+                    className={`block px-6 py-4 transition-colors group cursor-pointer ${n.status === "unread" ? "bg-blue-50/50 hover:bg-blue-50" : "hover:bg-gray-50"}`}
+                  >
+                    {rowContent}
+                  </Link>
+                ) : (
+                  <div
+                    key={n.id}
+                    className={`px-6 py-4 transition-colors group ${n.status === "unread" ? "bg-blue-50/50" : ""}`}
+                  >
+                    {rowContent}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

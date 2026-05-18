@@ -49,6 +49,7 @@ import CourseDetail from "@/pages/course-detail";
 import ProfilePage from "@/pages/profile";
 import MyFiles from "@/pages/my-files";
 import ReadinessIntake from "@/pages/ReadinessIntake";
+import Tasks from "@/pages/tasks";
 
 import ExcellenceLabCheckout from "@/pages/checkout/ExcellenceLabCheckout";
 import ExcellenceLabSuccess from "@/pages/checkout/ExcellenceLabSuccess";
@@ -180,6 +181,11 @@ function Router() {
       </Route>
       <Route path="/my-files">
         <ProtectedRoute><MyFiles /></ProtectedRoute>
+      </Route>
+      <Route path="/tasks">
+        <ProtectedRoute>
+          <PaywallRoute><Tasks /></PaywallRoute>
+        </ProtectedRoute>
       </Route>
 
       {/* Internal staff routes */}
