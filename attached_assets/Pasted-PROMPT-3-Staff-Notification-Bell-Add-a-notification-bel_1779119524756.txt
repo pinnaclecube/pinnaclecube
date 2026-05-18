@@ -1,0 +1,63 @@
+PROMPT 3 — Staff Notification Bell
+
+Add a notification bell to the staff portal navbar and wire up staff notifications for key client events.
+Step 1 — Schema changes:
+In lib/db/src/schema/action_items.ts update the notifications table:
+
+Change userType from a hardcoded 'client' to accept both 'client' and 'staff'
+Add staffId column: text("staff_id") nullable — stores which staff member the notification is for
+Add caseSetupId column: integer("case_setup_id") nullable — for linking to a specific case
+
+Run drizzle-kit push and confirm schema applied.
+Step 2 — Staff notification endpoints:
+Add to the admin routes (all require X-Staff-Token):
+GET /api/admin/notifications
+  → returns notifications where userType = 'staff', ordered newest first, limit 50
+
+PATCH /api/admin/notifications/:id/read
+  → sets status: 'read'
+
+POST /api/admin/notifications/read-all
+  → sets status: 'read' on all staff notifications
+
+DELETE /api/admin/notifications/:id
+  → deletes the notification row
+Step 3 — Create staff notifications at these trigger points:
+Add insertStaffNotification(title, message, link) helper function that inserts a row with userType: 'staff'. Call it at:
+
+In PATCH /api/action-items/:id/complete (already built in Prompt 1) — after marking complete add:
+insertStaffNotification("Task Completed ✓", "[Client Name] completed: [task title]", "/internal/case/[profileId]")
+In the Drive webhook handler (driveWebhook.ts) after syncFolderContents — when upsertCount > 0 add:
+insertStaffNotification("New Files Uploaded", "[Client Name] added [N] file(s) to [folder name]", "/internal/case/[profileId]")
+In exhibitGeneratorService.ts when any generation job completes — add:
+insertStaffNotification("Exhibits Ready ✓", "Exhibits generated for [Client Name] — [criteria name]", "/internal/case/[profileId]/exhibits")
+In criteriaAssessmentService.ts when recommendation === 'INSUFFICIENT' or rfeRisk === 'HIGH' — add:
+insertStaffNotification("⚠ RFE Risk Detected", "[Client Name]: [criteria name] has HIGH RFE risk", "/internal/case/[profileId]")
+
+Step 4 — Frontend staff notification bell:
+Create two new components modelled exactly on the existing NotificationBell.tsx and NotificationPanel.tsx:
+StaffNotificationBell.tsx:
+
+Bell icon with red unread count badge (cap at 9+)
+Polls GET /api/admin/notifications every 60 seconds using X-Staff-Token header
+Clicking opens StaffNotificationPanel
+
+StaffNotificationPanel.tsx:
+
+Right-side slide-over panel
+Shows up to 50 notifications newest first
+Each row: title (bold), message, relative timestamp, clickable link if present
+"Mark read" button, dismiss button per row
+"Mark all read" bulk button when unread count > 0
+Calls the four admin notification endpoints above
+
+Mount StaffNotificationBell in the staff portal navbar — place it to the left of any existing nav items on the right side.
+Step 5 — Test:
+
+Create a test action item for a client via staff portal
+Mark it complete as the client
+Confirm staff notification bell badge increments
+Confirm notification panel shows "Task Completed ✓" with correct client name and link
+Click mark read — confirm badge decrements
+
+Confirm schema pushed, all endpoints working, bell mounted and functional.
