@@ -1,0 +1,48 @@
+PROMPT 2 — Client "My Tasks" Page
+
+Build a dedicated Tasks page in the client portal.
+Route: Add "Tasks" as a navigation item in the client portal navbar, linking to /tasks. Use the same nav pattern as existing client portal pages.
+Data: Call GET /api/action-items on mount to load all tasks.
+Page layout:
+Top summary strip — three stat boxes:
+
+Pending (status = 'sent', count, amber)
+Completed (status = 'completed', count, green)
+Total (all items, count, grey)
+
+Pending Tasks section (shown first):
+One card per item where status = 'sent', ordered by priority (high first) then sentAt:
+
+Priority badge: HIGH (red) / MEDIUM (amber) / LOW (blue)
+Task title in bold
+Description text
+"Assigned [X days ago]" in small grey text
+"Mark Complete" button (green, right side of card)
+Clicking opens a small modal:
+
+Title: "Mark Task Complete"
+Optional textarea: "Add a note for your Pinnacle team (optional)"
+Confirm button → calls PATCH /api/action-items/:id/complete with note
+Cancel button
+Confirm button shows spinner while in flight
+
+
+On success: card animates out of Pending and into Completed section immediately — no page reload
+On error: show inline error message on the card
+
+Completed Tasks section (below pending, collapsible, collapsed by default):
+
+Header: "Completed Tasks ([count])" with expand/collapse chevron
+Same card layout but with reduced opacity
+Shows "Completed [date]" instead of Mark Complete button
+Shows client note if present (strip the "Client note: " prefix for display)
+
+Empty states:
+
+No pending tasks: show a green checkmark icon + "You're all caught up! Your Pinnacle team will assign tasks here when action is needed."
+No tasks at all: same message
+
+Notification link:
+In NotificationPanel.tsx, when a notification has notificationType = 'action_item', make the entire notification row a clickable link to /tasks. This way clicking the bell notification takes the client directly to their task list.
+Use existing Pinnacle client portal design system components and patterns throughout.
+Confirm the page renders, tasks load, mark complete flow works end to end, and the notification bell links to /tasks.
