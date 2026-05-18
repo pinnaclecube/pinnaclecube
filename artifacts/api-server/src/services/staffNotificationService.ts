@@ -3,13 +3,17 @@
  *
  * Shared helper for inserting real-time staff notifications.
  * Fire-and-forget — never throws; errors are logged only.
+ * Emits an SSE event to all connected staff clients after each insert.
  */
 
+import { count, eq, and } from "drizzle-orm";
 import { db, notificationsTable } from "@workspace/db";
+import { emitToStaff } from "./sseService";
 import { logger } from "../lib/logger";
 
 /**
- * Inserts a staff notification row.
+ * Inserts a staff notification row, then broadcasts it via SSE to all
+ * connected staff clients.
  *
  * @param title       Short headline (e.g. "Task Completed ✓")
  * @param message     Full notification body
@@ -23,7 +27,7 @@ export async function insertStaffNotification(
   caseSetupId?: number | null,
 ): Promise<void> {
   try {
-    await db.insert(notificationsTable).values({
+    const [notification] = await db.insert(notificationsTable).values({
       profileId: null,
       userType: "staff",
       staffId: null,
@@ -34,6 +38,23 @@ export async function insertStaffNotification(
       link: link ?? null,
       status: "unread",
       priority: "medium",
+    }).returning();
+
+    if (!notification) return;
+
+    const [row] = await db
+      .select({ unreadCount: count() })
+      .from(notificationsTable)
+      .where(
+        and(
+          eq(notificationsTable.userType, "staff"),
+          eq(notificationsTable.status, "unread"),
+        ),
+      );
+
+    emitToStaff("notification", {
+      unreadCount: Number(row?.unreadCount ?? 1),
+      notification,
     });
   } catch (err) {
     logger.error({ err, title }, "[staffNotification] failed to insert staff notification");

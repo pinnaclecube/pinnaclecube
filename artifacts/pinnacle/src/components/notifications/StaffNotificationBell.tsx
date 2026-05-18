@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StaffNotificationPanel } from "./StaffNotificationPanel";
@@ -14,6 +14,72 @@ export interface StaffNotification {
   caseSetupId: number | null;
   createdAt: string;
 }
+
+// ─── SSE hook ─────────────────────────────────────────────────────────────────
+//
+// Opens /api/admin/notifications/stream via fetch() (not EventSource) so the
+// X-Staff-Token can be sent in a header.
+// On "notification" events, calls onNotification with the new notification.
+// Falls back silently to 60-second polling if the stream errors or drops.
+
+function useStaffNotificationSSE(
+  token: string,
+  onNotification: (n: StaffNotification) => void,
+) {
+  const cbRef = useRef(onNotification);
+  useEffect(() => { cbRef.current = onNotification; }, [onNotification]);
+
+  useEffect(() => {
+    if (!token) return;
+    const ctrl = new AbortController();
+    let alive = true;
+
+    void (async () => {
+      try {
+        const res = await fetch("/api/admin/notifications/stream", {
+          headers: { "X-Staff-Token": token },
+          signal: ctrl.signal,
+        });
+        if (!res.ok || !res.body) return;
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let eventName = "";
+
+        while (alive) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (line.startsWith("event: ")) {
+              eventName = line.slice(7).trim();
+            } else if (line.startsWith("data: ")) {
+              if (eventName === "notification") {
+                try {
+                  const payload = JSON.parse(line.slice(6));
+                  if (payload.notification) cbRef.current(payload.notification as StaffNotification);
+                } catch { /* ignore malformed */ }
+              }
+              eventName = "";
+            }
+          }
+        }
+      } catch {
+        // AbortError on unmount; network errors fall back to polling
+      }
+    })();
+
+    return () => {
+      alive = false;
+      ctrl.abort();
+    };
+  }, [token]);
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function StaffNotificationBell() {
   const [open, setOpen] = useState(false);
@@ -35,11 +101,22 @@ export function StaffNotificationBell() {
     }
   }, [token]);
 
+  // Polling fallback — fires every 60 s; SSE is the fast path
   useEffect(() => {
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 60_000);
     return () => clearInterval(interval);
   }, [fetchNotifications]);
+
+  // SSE — prepend new notification immediately on push
+  const handleSSENotification = useCallback((incoming: StaffNotification) => {
+    setNotifications((prev) => {
+      if (prev.some((n) => n.id === incoming.id)) return prev;
+      return [incoming, ...prev];
+    });
+  }, []);
+
+  useStaffNotificationSSE(token, handleSSENotification);
 
   const unreadCount = notifications.filter((n) => n.status === "unread").length;
 

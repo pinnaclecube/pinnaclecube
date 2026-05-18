@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { NotificationPanel } from "./NotificationPanel";
@@ -14,6 +14,72 @@ export interface Notification {
   priority: string | null;
   createdAt: string;
 }
+
+// ─── SSE hook ─────────────────────────────────────────────────────────────────
+//
+// Opens /api/notifications/stream via fetch() (not EventSource) so the Bearer
+// JWT can be sent in the Authorization header.
+// On "notification" events, calls onNotification with the new notification
+// object. Falls back silently to polling if the stream errors or drops.
+
+function useNotificationSSE(
+  token: string | null,
+  onNotification: (n: Notification) => void,
+) {
+  const cbRef = useRef(onNotification);
+  useEffect(() => { cbRef.current = onNotification; }, [onNotification]);
+
+  useEffect(() => {
+    if (!token) return;
+    const ctrl = new AbortController();
+    let alive = true;
+
+    void (async () => {
+      try {
+        const res = await fetch("/api/notifications/stream", {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: ctrl.signal,
+        });
+        if (!res.ok || !res.body) return;
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let eventName = "";
+
+        while (alive) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (line.startsWith("event: ")) {
+              eventName = line.slice(7).trim();
+            } else if (line.startsWith("data: ")) {
+              if (eventName === "notification") {
+                try {
+                  const payload = JSON.parse(line.slice(6));
+                  if (payload.notification) cbRef.current(payload.notification as Notification);
+                } catch { /* ignore malformed */ }
+              }
+              eventName = "";
+            }
+          }
+        }
+      } catch {
+        // AbortError on unmount; network errors fall back to polling
+      }
+    })();
+
+    return () => {
+      alive = false;
+      ctrl.abort();
+    };
+  }, [token]);
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function NotificationBell() {
   const { token } = useAuth();
@@ -34,11 +100,22 @@ export function NotificationBell() {
     }
   }, [token]);
 
+  // Polling fallback — fires every 60 s; SSE is the fast path
   useEffect(() => {
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 60_000);
     return () => clearInterval(interval);
   }, [fetchNotifications]);
+
+  // SSE — prepend new notification immediately on push
+  const handleSSENotification = useCallback((incoming: Notification) => {
+    setNotifications((prev) => {
+      if (prev.some((n) => n.id === incoming.id)) return prev;
+      return [incoming, ...prev];
+    });
+  }, []);
+
+  useNotificationSSE(token, handleSSENotification);
 
   const unreadCount = notifications.filter((n) => n.status === "unread").length;
 
@@ -48,7 +125,10 @@ export function NotificationBell() {
         variant="ghost"
         size="icon"
         className="relative"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setOpen(true);
+          fetchNotifications();
+        }}
         aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
       >
         <Bell className="w-5 h-5" />

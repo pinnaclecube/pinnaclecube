@@ -1,12 +1,13 @@
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import { eq, and, desc } from "drizzle-orm";
 import { db, notificationsTable } from "@workspace/db";
 import { requireClientAuth } from "../middlewares/clientAuth";
+import { addProfileSseClient, removeProfileSseClient } from "../services/sseService";
 import { z } from "zod";
 
 const router = Router();
 
-router.get("/notifications", requireClientAuth, async (req: any, res): Promise<void> => {
+router.get("/notifications", requireClientAuth, async (req: any, res: Response): Promise<void> => {
   const notifications = await db.select()
     .from(notificationsTable)
     .where(
@@ -21,8 +22,40 @@ router.get("/notifications", requireClientAuth, async (req: any, res): Promise<v
   res.json({ notifications });
 });
 
-router.patch("/notifications/:id/read", requireClientAuth, async (req: any, res): Promise<void> => {
-  const id = parseInt(req.params.id, 10);
+// ─── GET /notifications/stream ────────────────────────────────────────────────
+//
+// SSE stream for real-time client notification bell updates.
+// Uses fetch() + ReadableStream on the client (not EventSource) so the
+// Bearer JWT can be forwarded in the Authorization header.
+
+router.get(
+  "/notifications/stream",
+  requireClientAuth,
+  (req: any, res: Response): void => {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+
+    res.write("event: connected\ndata: {}\n\n");
+
+    const profileId = req.clientUser.id as number;
+    addProfileSseClient(profileId, res);
+
+    const ping = setInterval(() => {
+      try { res.write(": ping\n\n"); } catch { clearInterval(ping); }
+    }, 30_000);
+
+    req.on("close", () => {
+      clearInterval(ping);
+      removeProfileSseClient(profileId, res);
+    });
+  },
+);
+
+router.patch("/notifications/:id/read", requireClientAuth, async (req: any, res: Response): Promise<void> => {
+  const id = parseInt(req.params.id as string, 10);
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid notification ID" });
     return;
@@ -47,7 +80,7 @@ router.patch("/notifications/:id/read", requireClientAuth, async (req: any, res)
   res.json({ notification });
 });
 
-router.post("/notifications/read-by-type", requireClientAuth, async (req: any, res): Promise<void> => {
+router.post("/notifications/read-by-type", requireClientAuth, async (req: any, res: Response): Promise<void> => {
   const parsed = z.object({ type: z.string().min(1) }).safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Missing required field: type" });
@@ -69,7 +102,7 @@ router.post("/notifications/read-by-type", requireClientAuth, async (req: any, r
   res.json({ success: true });
 });
 
-router.post("/notifications/read-all", requireClientAuth, async (req: any, res): Promise<void> => {
+router.post("/notifications/read-all", requireClientAuth, async (req: any, res: Response): Promise<void> => {
   await db
     .update(notificationsTable)
     .set({ status: "read" })
@@ -84,8 +117,8 @@ router.post("/notifications/read-all", requireClientAuth, async (req: any, res):
   res.json({ success: true });
 });
 
-router.delete("/notifications/:id", requireClientAuth, async (req: any, res): Promise<void> => {
-  const id = parseInt(req.params.id, 10);
+router.delete("/notifications/:id", requireClientAuth, async (req: any, res: Response): Promise<void> => {
+  const id = parseInt(req.params.id as string, 10);
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid notification ID" });
     return;

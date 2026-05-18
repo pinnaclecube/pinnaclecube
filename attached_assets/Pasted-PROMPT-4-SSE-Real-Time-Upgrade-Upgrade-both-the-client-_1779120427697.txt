@@ -1,0 +1,71 @@
+PROMPT 4 — SSE Real-Time Upgrade
+
+Upgrade both the client and staff notification bells from 60-second polling to real-time Server-Sent Events, using the existing SSE infrastructure in sseService.ts.
+Step 1 — Extend sseService.ts with profile-level connections:
+Add a second connection registry alongside the existing caseId registry:
+typescriptconst profileConnections = new Map<number, Set<Response>>();
+
+export function addProfileSseClient(profileId: number, res: Response): void {
+  if (!profileConnections.has(profileId)) profileConnections.set(profileId, new Set());
+  profileConnections.get(profileId)!.add(res);
+}
+
+export function removeProfileSseClient(profileId: number, res: Response): void {
+  profileConnections.get(profileId)?.delete(res);
+}
+
+export function emitToProfile(profileId: number, event: string, data: unknown): void {
+  const clients = profileConnections.get(profileId);
+  if (!clients) return;
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const res of clients) {
+    try { res.write(payload); } catch { clients.delete(res); }
+  }
+}
+
+export function emitToStaff(event: string, data: unknown): void {
+  // broadcasts to all connected staff SSE clients
+  // use a single staffConnections Set<Response> registry
+}
+Step 2 — Add SSE endpoints:
+In the existing driveWebhook.ts or a new notifications.ts route file, add:
+GET /api/notifications/stream
+  → requires client Bearer JWT
+  → sets SSE headers (Content-Type: text/event-stream, Cache-Control: no-cache, Connection: keep-alive)
+  → calls addProfileSseClient(profileId, res)
+  → sends: data: {"event":"connected"}\n\n
+  → pings every 30 seconds: data: {"event":"ping"}\n\n
+  → on client disconnect: calls removeProfileSseClient(profileId, res)
+
+GET /api/admin/notifications/stream
+  → requires X-Staff-Token
+  → registers in staffConnections
+  → same handshake and ping pattern
+  → on disconnect: remove from staffConnections
+Step 3 — Emit on notification insert:
+In staffNotificationService.ts insertStaffNotification function, after the DB insert call emitToStaff('notification', { unreadCount, notification }).
+In the existing client notification insert (in adminCases.ts line 277–284 where action_item notification is created), after the DB insert call emitToProfile(profileId, 'notification', { unreadCount, notification }).
+Get unreadCount with a quick SELECT COUNT(*) where status = 'unread' for that profile/staff after the insert.
+Step 4 — Update NotificationBell.tsx (client):
+
+On mount, open SSE connection to GET /api/notifications/stream using fetch + ReadableStream (same pattern as FolderBrowser.tsx — copy the useDriveSSE hook pattern so Bearer token can be sent in headers)
+On notification event: update unread count badge immediately
+Keep 60-second polling as fallback — if SSE connection drops or errors, polling continues until SSE reconnects
+On unmount: abort the SSE fetch
+
+Step 5 — Update StaffNotificationBell.tsx:
+
+Same pattern but connect to GET /api/admin/notifications/stream with X-Staff-Token header
+On notification event: update badge immediately
+Keep 60-second polling as fallback
+
+Step 6 — Test end to end:
+
+Open client portal — confirm SSE stream connects (check network tab shows open EventStream to /api/notifications/stream)
+From staff portal create and send a new action item to that client
+Confirm client bell badge increments within 1 second — no 60 second wait
+Open staff portal — confirm SSE stream connects to /api/admin/notifications/stream
+As client mark the task complete
+Confirm staff bell badge increments within 1 second
+
+Report SSE connection confirmation and timing of badge updates for both tests.

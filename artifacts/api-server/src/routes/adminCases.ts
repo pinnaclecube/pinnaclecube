@@ -6,7 +6,7 @@
  */
 
 import { Router, type IRouter, type Request, type Response } from "express";
-import { eq, desc, and, inArray } from "drizzle-orm";
+import { eq, desc, and, inArray, count } from "drizzle-orm";
 import {
   db,
   profilesTable,
@@ -26,6 +26,7 @@ import {
 } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { sendEmail, actionItemEmail, passwordResetEmail } from "../services/emailService";
+import { emitToProfile } from "../services/sseService";
 import { z } from "zod/v4";
 import bcrypt from "bcrypt";
 
@@ -274,14 +275,31 @@ router.post(
       status: "draft",
     }).returning();
 
-    await db.insert(notificationsTable).values({
+    const [notification] = await db.insert(notificationsTable).values({
       profileId: id,
       userType: "client",
       notificationType: "action_item",
       title: "New action item assigned",
       message: parsed.data.title,
       priority: parsed.data.priority,
-    });
+    }).returning();
+
+    if (notification) {
+      const [row] = await db
+        .select({ unreadCount: count() })
+        .from(notificationsTable)
+        .where(
+          and(
+            eq(notificationsTable.profileId, id),
+            eq(notificationsTable.userType, "client"),
+            eq(notificationsTable.status, "unread"),
+          ),
+        );
+      emitToProfile(id, "notification", {
+        unreadCount: Number(row?.unreadCount ?? 1),
+        notification,
+      });
+    }
 
     res.json({ actionItem: item });
   },

@@ -4,6 +4,7 @@
  * Staff notification endpoints (all require X-Staff-Token).
  *
  * GET    /admin/notifications          — list staff notifications (newest first, limit 50)
+ * GET    /admin/notifications/stream   — SSE stream for real-time badge updates
  * PATCH  /admin/notifications/:id/read — mark one notification read
  * POST   /admin/notifications/read-all — mark all staff notifications read
  * DELETE /admin/notifications/:id      — delete a notification
@@ -13,6 +14,7 @@ import { Router, type Request, type Response } from "express";
 import { eq, and, desc } from "drizzle-orm";
 import { db, notificationsTable } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
+import { addStaffSseClient, removeStaffSseClient } from "../services/sseService";
 
 const router = Router();
 
@@ -28,6 +30,36 @@ router.get(
       .limit(50);
 
     res.json({ notifications });
+  },
+);
+
+// ─── GET /admin/notifications/stream ─────────────────────────────────────────
+//
+// SSE stream for real-time staff notification bell updates.
+// Registered before /:id routes so the path "stream" isn't parsed as an id.
+
+router.get(
+  "/admin/notifications/stream",
+  requireStaffAuth,
+  (req: Request, res: Response): void => {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+
+    res.write("event: connected\ndata: {}\n\n");
+
+    addStaffSseClient(res);
+
+    const ping = setInterval(() => {
+      try { res.write(": ping\n\n"); } catch { clearInterval(ping); }
+    }, 30_000);
+
+    req.on("close", () => {
+      clearInterval(ping);
+      removeStaffSseClient(res);
+    });
   },
 );
 
