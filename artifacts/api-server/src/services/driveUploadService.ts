@@ -37,6 +37,7 @@ export async function uploadPdfToDrive(
   logger.info({ fileName, driveFolderId }, "[driveUpload] uploading PDF");
 
   const response = await drive.files.create({
+    supportsAllDrives: true,
     requestBody: {
       name: fileName,
       mimeType: "application/pdf",
@@ -59,6 +60,7 @@ export async function uploadPdfToDrive(
   }
 
   await drive.permissions.create({
+    supportsAllDrives: true,
     fileId,
     requestBody: { role: "reader", type: "anyone" },
   });

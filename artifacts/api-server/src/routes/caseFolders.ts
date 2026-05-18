@@ -180,6 +180,7 @@ router.post(
 
     const drive = getDriveClient();
     const driveRes = await drive.files.create({
+      supportsAllDrives: true,
       requestBody: {
         name: name.trim(),
         mimeType: "application/vnd.google-apps.folder",
@@ -361,6 +362,7 @@ router.post(
 
     const drive = getDriveClient();
     const driveRes = await drive.files.create({
+      supportsAllDrives: true,
       requestBody: {
         name: file.originalname,
         parents: [folder.driveId],

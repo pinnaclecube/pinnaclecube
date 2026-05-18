@@ -68,6 +68,7 @@ export async function createDriveFolder(
   logger.info({ name, parentDriveId }, "[driveService] creating folder");
 
   const res = await getDriveClient().files.create({
+    supportsAllDrives: true,
     requestBody: {
       name,
       mimeType: "application/vnd.google-apps.folder",
@@ -95,6 +96,8 @@ export async function listDriveFolderFiles(
   folderId: string,
 ): Promise<DriveFileMetadata[]> {
   const res = await getDriveClient().files.list({
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
     q: `'${folderId}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'`,
     fields: "files(id,name,mimeType,webViewLink)",
     pageSize: 100,

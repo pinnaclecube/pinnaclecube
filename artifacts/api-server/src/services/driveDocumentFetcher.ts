@@ -67,7 +67,7 @@ function isSupportedMime(mimeType: string): boolean {
 async function downloadAsBuffer(fileId: string): Promise<Buffer> {
   const drive = getDriveClient();
   const response = await drive.files.get(
-    { fileId, alt: "media" },
+    { supportsAllDrives: true, fileId, alt: "media" },
     { responseType: "arraybuffer" },
   );
   return Buffer.from(response.data as ArrayBuffer);

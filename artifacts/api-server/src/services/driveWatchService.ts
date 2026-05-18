@@ -73,6 +73,7 @@ export async function registerDriveWatch(
   const drive = getDriveClient();
 
   const res = await drive.files.watch({
+    supportsAllDrives: true,
     fileId: rootDriveFolderId,
     requestBody: {
       id: channelId,
