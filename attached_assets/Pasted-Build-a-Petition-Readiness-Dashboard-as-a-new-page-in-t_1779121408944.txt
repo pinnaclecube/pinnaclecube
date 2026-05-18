@@ -1,0 +1,200 @@
+Build a Petition Readiness Dashboard as a new page in the staff portal. This is the most important staff-facing page in the app — it must be visually exceptional, high UX, and immediately actionable.
+Route: /internal/readiness — add to staff portal navbar as "Readiness" or "Dashboard"
+
+Step 1 — Backend: Readiness Score Calculator
+Create artifacts/api-server/src/services/readinessService.ts:
+Export calculateReadinessScore(caseSetupId: number): Promise<ReadinessScore>
+The score is calculated from 0–100 using these weighted components:
+typescriptinterface ReadinessScore {
+  total: number;                    // 0–100 final score
+  band: 'getting_started' | 'in_progress' | 'building' | 'nearly_ready' | 'filing_ready';
+  bandLabel: string;                // human readable
+  bandColor: string;                // hex color for UI
+  components: {
+    driveConnected: number;         // 0 or 10
+    assessmentsComplete: number;    // 0–20
+    evidenceStrength: number;       // 0–15
+    rfeRiskPenalty: number;         // 0 to -10 (negative)
+    exhibitsGenerated: number;      // 0–20
+    packageDocuments: number;       // 0–15
+    publishedToClient: number;      // 0 or 10
+  };
+  details: {
+    totalCriteria: number;
+    assessedCriteria: number;
+    strongCriteria: number;
+    borderlineCriteria: number;
+    insufficientCriteria: number;
+    highRfeCriteria: number;
+    proceedCriteria: number;
+    generatedExhibits: number;
+    publishedExhibits: number;
+    coverLetterDone: boolean;
+    personalDeclarationDone: boolean;
+    fieldBriefDone: boolean;
+    recoTemplatesDone: boolean;
+    pendingTasks: number;
+    completedTasks: number;
+    driveConnected: boolean;
+  };
+  nextActions: string[];            // 3–5 specific actionable next steps
+}
+Scoring logic:
+driveConnected:       folders exist with drive_id → 10pts, else 0
+
+assessmentsComplete:  (assessedCriteria / totalCriteria) × 20
+                      assessedCriteria = criteria_assessments rows with assessedAt not null
+
+evidenceStrength:     ((strongCriteria × 1.0 + borderlineCriteria × 0.5) / totalCriteria) × 15
+
+rfeRiskPenalty:       -(highRfeCriteria × 2) capped at -10
+
+exhibitsGenerated:    (generatedExhibits / totalCriteria) × 20
+                      generatedExhibits = exhibit_documents where documentType = 'main_document'
+
+packageDocuments:     (completedPackageDocs / 4) × 15
+                      completedPackageDocs = count of: coverLetterDriveFileId present,
+                      personalDeclarationDriveFileId present, fieldBriefDriveFileId present,
+                      recoTemplatesStatus = 'draft'
+
+publishedToClient:    any exhibit_documents where publishedToClient = true → 10pts, else 0
+
+total = sum of all components, clamped to 0–100, rounded to nearest integer
+Band mapping:
+0–20:   getting_started  "#94A3B8"  "Getting Started"
+21–40:  in_progress      "#EF4444"  "In Progress"
+41–60:  building         "#F59E0B"  "Building"
+61–80:  nearly_ready     "#3B82F6"  "Nearly Ready"
+81–100: filing_ready     "#22C55E"  "Filing Ready"
+nextActions — generate 3–5 specific strings based on what's missing:
+
+If assessedCriteria < totalCriteria → "Run assessments for [N] unassessed criteria"
+If highRfeCriteria > 0 → "Address HIGH RFE risk on [N] criteria"
+If generatedExhibits < proceedCriteria → "Generate exhibits for [N] approved criteria"
+If !coverLetterDone → "Generate cover letter"
+If !personalDeclarationDone → "Generate personal declaration"
+If publishedExhibits === 0 && generatedExhibits > 0 → "Publish [N] ready exhibits to client"
+If pendingTasks > 0 → "Client has [N] pending tasks awaiting completion"
+
+Also export getAllCasesReadiness(): Promise<CaseReadinessSummary[]> which runs calculateReadinessScore for all active cases and returns an array sorted by score ascending (lowest first — most urgent at top).
+
+Step 2 — Backend: Dashboard API Endpoint
+Add to admin routes:
+GET /api/admin/readiness
+  → requires X-Staff-Token
+  → calls getAllCasesReadiness()
+  → returns array of:
+    {
+      profileId: number,
+      caseSetupId: number,
+      clientName: string,
+      clientEmail: string,
+      visaPath: string,
+      score: ReadinessScore,
+      lastActivity: timestamp   // most recent updatedAt across all case tables
+    }
+  → sorted by score.total ascending
+Also add:
+GET /api/admin/readiness/:caseSetupId
+  → returns single case readiness with full details
+
+Step 3 — Frontend: Readiness Dashboard Page
+Create artifacts/pinnacle/src/pages/internal/ReadinessDashboard.tsx
+Register route at /internal/readiness in App.tsx wrapped in StaffProtectedRoute. Add "Readiness" link to staff navbar.
+Page header:
+
+Title: "Petition Readiness"
+Subtitle: "Track filing readiness across all active cases"
+Last updated timestamp + manual refresh button
+Summary bar: total cases | filing ready count | cases needing attention (score < 40) | avg score across all cases
+
+Main content — one card per client:
+Layout: responsive grid, 1 column on narrow, 2 columns on wide screens.
+Each card contains:
+Left side — Score Meter (the centerpiece):
+Build a semicircular arc meter (like a credit score gauge or speedometer) using SVG:
+
+Semicircle arc as the track (grey background)
+Colored fill arc from 0 to score value, color matches band color
+Needle/indicator pointing to current score position
+Large score number centered below the arc (e.g. "67")
+Band label below score (e.g. "Nearly Ready") in band color
+Score range labels: "0" on far left, "100" on far right of arc
+
+SVG arc math:
+javascript// Semicircle: center (100,100), radius 80, stroke-width 16
+// Arc from 180° to 0° (left to right)
+// Score 0 = 180°, Score 100 = 0°
+// angle = 180 - (score / 100 * 180)
+const cx = 100, cy = 100, r = 80;
+const startAngle = Math.PI;           // 180° left
+const endAngle = Math.PI - (score / 100) * Math.PI;
+const x1 = cx + r * Math.cos(startAngle);
+const y1 = cy + r * Math.sin(startAngle);  // always (20, 100)
+const x2 = cx + r * Math.cos(endAngle);
+const y2 = cy + r * Math.sin(endAngle);
+const largeArc = score > 50 ? 1 : 0;
+// path: M x1 y1 A r r 0 largeArc 0 x2 y2
+Right side — Client Info + Components:
+
+Client name (large, bold)
+Email + visa category badge (EB-1A / NIW / O-1A)
+Component breakdown as a mini progress list:
+Drive Connected        ████████████ 10/10
+Assessments           ████░░░░░░░░  4/20
+Evidence Strength     ███░░░░░░░░░  6/15
+RFE Risk              ██░░░░░░░░░░ -4/0
+Exhibits Generated    ░░░░░░░░░░░░  0/20
+Package Documents     ░░░░░░░░░░░░  0/15
+Published to Client   ░░░░░░░░░░░░  0/10
+Each row: label | thin progress bar in band color | score/max
+
+Bottom of card — Next Actions:
+
+Section title: "Next Steps" with a lightning bolt icon
+Render score.nextActions as a bulleted list, each item as a clickable chip
+Clicking a next action chip navigates to the relevant tab:
+
+Assessment actions → /internal/case/[profileId] with ?tab=petition-assessment
+Exhibit actions → /internal/case/[profileId] with ?tab=exhibits
+Task actions → /internal/case/[profileId] with ?tab=overview
+
+
+
+Card footer:
+
+"View Case" button → /internal/case/[profileId]
+Last activity timestamp
+
+Sorting and filtering controls (above the grid):
+
+Sort by: Score (low to high default) | Score (high to low) | Client name | Visa category
+Filter by visa: All | EB-1A | NIW | O-1A
+Filter by band: All | Getting Started | In Progress | Building | Nearly Ready | Filing Ready
+
+Loading state:
+Skeleton cards with animated pulse on the score meter arc while data loads.
+Empty state:
+If no cases exist: "No active cases. Convert a prospect to get started."
+
+Step 4 — Auto-refresh and Score Caching
+
+The dashboard auto-refreshes every 5 minutes silently in the background
+After each refresh, write the calculated score back to petition_package.petition_readiness for each case — this wires up the previously dead column
+Add a visible "Last refreshed: X minutes ago" indicator that counts up in real time
+The manual refresh button resets the counter and triggers an immediate recalculation
+
+
+Step 5 — Deep Link from Staff Notifications
+When a staff notification links to a case, append the relevant tab as a query param so clicking a notification about RFE risk opens the Petition Assessment tab directly, and a notification about exhibits opens the Exhibits tab directly. Update StaffNotificationPanel.tsx to append ?tab=petition-assessment or ?tab=exhibits to notification links where relevant.
+
+Confirm:
+
+/internal/readiness loads and shows all 5 production cases
+Score meters render correctly with correct colors per band
+Component breakdown bars show correct values
+Next actions are specific and accurate per case
+Clicking a next action chip navigates to the correct tab
+Sort and filter controls work
+petition_readiness column is being updated on each calculation
+Show the calculated scores for all 5 production cases

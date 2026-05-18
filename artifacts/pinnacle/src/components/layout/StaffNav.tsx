@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { StaffNotificationBell } from "@/components/notifications/StaffNotificationBell";
 
 const NAV_LINKS = [
+  { href: "/internal/readiness", label: "Readiness" },
   { href: "/internal/cases", label: "Cases" },
   { href: "/internal/prospects", label: "Prospects" },
   { href: "/internal/elite-blueprint-applications", label: "Blueprint Apps" },

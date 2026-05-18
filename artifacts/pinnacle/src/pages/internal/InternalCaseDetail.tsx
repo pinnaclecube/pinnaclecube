@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link, useParams } from "wouter";
+import { Link, useParams, useSearch } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1083,9 +1083,25 @@ function DriveFoldersTab({ userId }: { userId: string }) {
 
 // ─── Main ───────────────────────────────────────────────────────────────────────
 
+const TAB_SLUG_MAP: Record<string, Tab> = {
+  "overview": "Overview",
+  "evidence": "Evidence",
+  "excellence-lab": "Excellence Lab",
+  "petition-workspace": "Petition Workspace",
+  "petition-assessment": "Petition Assessment",
+  "exhibits": "Exhibits",
+  "documents": "Documents",
+  "drive-folders": "Drive Folders",
+};
+
 export default function InternalCaseDetail() {
   const { user_id } = useParams() as { user_id: string };
-  const [activeTab, setActiveTab] = useState<Tab>("Overview");
+  const search = useSearch();
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    const params = new URLSearchParams(search);
+    const slug = params.get("tab");
+    return (slug && TAB_SLUG_MAP[slug]) ? TAB_SLUG_MAP[slug] : "Overview";
+  });
   const [profileData, setProfileData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState<"auth" | "not_found" | "error" | null>(null);

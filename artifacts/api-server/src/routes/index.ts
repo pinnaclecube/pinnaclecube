@@ -29,6 +29,7 @@ import caseFoldersRouter from "./caseFolders";
 import caseExhibitsRouter from "./caseExhibits";
 import actionItemsRouter from "./actionItems";
 import adminNotificationsRouter from "./adminNotifications";
+import adminReadinessRouter from "./adminReadiness";
 
 const router: IRouter = Router();
 
@@ -62,5 +63,6 @@ router.use(caseFoldersRouter);
 router.use(caseExhibitsRouter);
 router.use(actionItemsRouter);
 router.use(adminNotificationsRouter);
+router.use(adminReadinessRouter);
 
 export default router;

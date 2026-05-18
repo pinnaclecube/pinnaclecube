@@ -47,6 +47,23 @@ export function StaffNotificationPanel({
 
   const unreadCount = notifications.filter((n) => n.status === "unread").length;
 
+  function resolveLink(link: string, notificationType: string): string {
+    const low = notificationType.toLowerCase();
+    let tab: string | null = null;
+    if (low.includes("rfe") || low.includes("assessment") || low.includes("criteria")) {
+      tab = "petition-assessment";
+    } else if (low.includes("exhibit") || low.includes("publish")) {
+      tab = "exhibits";
+    } else if (low.includes("evidence") || low.includes("drive")) {
+      tab = "evidence";
+    } else if (low.includes("action_item") || low.includes("task")) {
+      tab = "overview";
+    }
+    if (!tab) return link;
+    const sep = link.includes("?") ? "&" : "?";
+    return `${link}${sep}tab=${tab}`;
+  }
+
   const formatDate = (str: string) => {
     const d = new Date(str);
     const now = new Date();
@@ -137,7 +154,7 @@ export function StaffNotificationPanel({
                         </span>
                         {n.link && (
                           <Link
-                            href={n.link}
+                            href={resolveLink(n.link, n.notificationType)}
                             onClick={() => {
                               markRead(n.id);
                               onClose();
