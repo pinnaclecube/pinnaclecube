@@ -6,7 +6,7 @@
  */
 
 import { Router, type IRouter, type Request, type Response } from "express";
-import { eq, desc, and, inArray, count } from "drizzle-orm";
+import { eq, desc, and, inArray, count, ne } from "drizzle-orm";
 import {
   db,
   profilesTable,
@@ -57,6 +57,7 @@ router.get(
         createdAt: profilesTable.createdAt,
       })
       .from(profilesTable)
+      .where(ne(profilesTable.accessLevel, "free"))
       .orderBy(desc(profilesTable.createdAt));
 
     res.json({ profiles, total: profiles.length });
