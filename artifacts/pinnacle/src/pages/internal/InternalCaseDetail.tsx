@@ -1088,12 +1088,26 @@ export default function InternalCaseDetail() {
   const [activeTab, setActiveTab] = useState<Tab>("Overview");
   const [profileData, setProfileData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [profileError, setProfileError] = useState<"auth" | "not_found" | "error" | null>(null);
 
   const loadProfile = useCallback(async () => {
     try {
       const r = await staffFetch(`/admin/profiles/${user_id}`);
-      if (r.ok) setProfileData(await r.json());
-    } finally { setLoading(false); }
+      if (r.ok) {
+        setProfileData(await r.json());
+      } else if (r.status === 401 || r.status === 403) {
+        sessionStorage.removeItem("pinnacle_staff_token");
+        setProfileError("auth");
+      } else if (r.status === 404) {
+        setProfileError("not_found");
+      } else {
+        setProfileError("error");
+      }
+    } catch {
+      setProfileError("error");
+    } finally {
+      setLoading(false);
+    }
   }, [user_id]);
 
   useEffect(() => { loadProfile(); }, [loadProfile]);
@@ -1110,6 +1124,19 @@ export default function InternalCaseDetail() {
   }
 
   if (!profileData) {
+    if (profileError === "auth") {
+      return (
+        <div className="min-h-screen bg-gray-50 flex flex-col">
+          <StaffNav />
+          <main className="flex-1 p-8 max-w-5xl mx-auto w-full">
+            <p className="text-muted-foreground mb-3">Staff session expired or token is invalid.</p>
+            <Button variant="outline" onClick={() => { window.location.href = "/internal"; }}>
+              Re-authenticate
+            </Button>
+          </main>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <StaffNav />
@@ -1117,7 +1144,9 @@ export default function InternalCaseDetail() {
           <Link href="/internal/cases" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors">
             <ArrowLeft className="w-4 h-4" /> All Cases
           </Link>
-          <p className="text-muted-foreground">Profile not found.</p>
+          <p className="text-muted-foreground">
+            {profileError === "not_found" ? `Profile ${user_id} not found.` : "Failed to load profile — please try again."}
+          </p>
         </main>
       </div>
     );
