@@ -602,6 +602,53 @@ export function caseActivationEmail(
   };
 }
 
+// ─── Template 16: Task completed — staff alert ────────────────────────────────
+
+export function taskCompletedStaffAlertEmail(
+  clientName: string,
+  taskTitle: string,
+  completedAt: Date,
+  clientNote: string | null,
+  caseUrl: string,
+): { subject: string; html: string; text: string } {
+  const formattedDate = completedAt.toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/New_York",
+  });
+  return {
+    subject: `Task Completed — ${clientName}`,
+    html: layout(`
+      ${h1("A client completed a task")}
+      ${p(`<strong>${clientName}</strong> has marked an action item as complete.`)}
+      <table cellpadding="0" cellspacing="0" style="border:1px solid #e9ecef;border-radius:8px;width:100%;margin:0 0 24px;overflow:hidden;">
+        <tr style="background:#f8f9fb;">
+          <td colspan="2" style="padding:10px 16px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;">Task Details</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;width:140px;">Client</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;">${clientName}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Task</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;">${taskTitle}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Completed at</td>
+          <td style="padding:10px 16px;font-size:14px;color:#111827;border-top:1px solid #e9ecef;">${formattedDate} ET</td>
+        </tr>
+        ${clientNote ? `
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;vertical-align:top;">Client note</td>
+          <td style="padding:10px 16px;font-size:14px;color:#374151;border-top:1px solid #e9ecef;line-height:1.6;">${clientNote}</td>
+        </tr>` : ""}
+      </table>
+      ${btn("View client case", caseUrl)}
+    `),
+    text: `Task Completed — ${clientName}\n\nClient: ${clientName}\nTask: ${taskTitle}\nCompleted: ${formattedDate} ET${clientNote ? `\nClient note: ${clientNote}` : ""}\n\nView case: ${caseUrl}`,
+  };
+}
+
 // ─── Sender helper ─────────────────────────────────────────────────────────────
 
 export interface EmailAttachment {

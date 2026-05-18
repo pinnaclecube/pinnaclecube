@@ -27,6 +27,7 @@ import adminInvoiceRouter from "./adminInvoice";
 import driveWebhookRouter from "./driveWebhook";
 import caseFoldersRouter from "./caseFolders";
 import caseExhibitsRouter from "./caseExhibits";
+import actionItemsRouter from "./actionItems";
 
 const router: IRouter = Router();
 
@@ -58,5 +59,6 @@ router.use(adminInvoiceRouter);
 router.use(driveWebhookRouter);
 router.use(caseFoldersRouter);
 router.use(caseExhibitsRouter);
+router.use(actionItemsRouter);
 
 export default router;
