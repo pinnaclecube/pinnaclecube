@@ -8,6 +8,7 @@
     "backfill:drive": "tsx ./src/backfillDrive.ts",
     "migrate:folders:dry-run": "tsx ./src/dryRunMigrateFolders.ts",
     "migrate:folders:execute": "tsx ./src/dryRunMigrateFolders.ts --execute",
+    "recreate:folders": "tsx ./src/recreateFoldersInSharedDrive.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

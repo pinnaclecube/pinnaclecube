@@ -1,0 +1,37 @@
+Go with Option A — these are real client cases and need to be done properly. But since the existing folders are all demo/test cases with no real client files yet, the script will be clean.
+Send this to Replit:
+
+REPLIT PROMPT 3 — Recreate Folder Structure in Shared Drive
+
+Recreate the full folder structure for all 5 existing cases inside the Shared Drive and update the database to point to the new folders. The existing personal Drive folders will be left in place but the DB will point to the new Shared Drive folders going forward.
+Run this as a script — not triggered by any API route. Execute it once and report results.
+For each of the 5 cases in case_folders (cases 5–9):
+Step 1 — Get the full existing folder tree from case_folders for this case, ordered by folder_type so root comes first, then top-level folders, then criteria subfolders.
+Step 2 — Create a new root folder inside the Shared Drive:
+typescriptdrive.files.create({
+  supportsAllDrives: true,
+  requestBody: {
+    name: existingRootFolder.name,
+    mimeType: 'application/vnd.google-apps.folder',
+    parents: [process.env.DRIVE_ROOT_FOLDER_ID],
+    driveId: process.env.DRIVE_ROOT_FOLDER_ID,
+  },
+  fields: 'id, webViewLink',
+})
+Step 3 — Create each top-level subfolder (Resume, Evidence, Demographics, Exhibits) inside the new root folder, using the same names from case_folders.
+Step 4 — Create each criteria subfolder inside the new Evidence folder, using the same names and criteria_index order from case_folders.
+Step 5 — Update every case_folders row for this case with the new drive_id and drive_url from the newly created Shared Drive folders. Match old folders to new folders by folder_type and criteria_name.
+Step 6 — Update drive_watch_channels — delete all existing channel rows for this case (the old channels watched personal Drive folders and are now stale). Re-register fresh watch channels for every new Shared Drive folder using the existing driveWatchService registration function.
+Step 7 — Update case_petition_setup — set drive_sync_status = 'synced' for this case.
+Run case by case sequentially — wait 2 seconds between cases.
+For each case log:
+
+Case ID and client name
+Old root Drive ID → New root Drive ID
+Number of folders recreated
+Number of DB rows updated
+Watch channels re-registered count
+Success or failure per step
+
+Do not delete the old personal Drive folders — leave them in place. Do not move any files — these cases have no real client files yet.
+Report full output per case.
