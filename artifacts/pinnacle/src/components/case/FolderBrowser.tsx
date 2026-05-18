@@ -15,6 +15,7 @@
  * - Source badges (App / Drive / Staff) on every file row
  * - Drag-and-drop + click-to-upload
  * - New Folder modal (staff can mark as staff-only at creation time)
+ * - Criteria folders show upload guidance card (dismissible per folder)
  */
 
 import { useState, useEffect, useCallback, useRef, Fragment } from "react";
@@ -27,7 +28,7 @@ import {
 import {
   Folder, FolderOpen, FolderPlus, Upload, File, FileText,
   ExternalLink, Loader2, ChevronRight, ChevronDown, AlertCircle,
-  X, ShieldCheck, RefreshCw, Lock, ImageIcon,
+  X, ShieldCheck, RefreshCw, Lock, ImageIcon, Info, Clipboard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +41,9 @@ interface CaseFolder {
   driveUrl: string;
   parentFolderId: number | null;
   staffOnly: boolean;
+  legalStandard: string | null;
+  uploadGuidance: string | null;
+  criteriaCode: string | null;
   children?: CaseFolder[];
 }
 
@@ -210,6 +214,73 @@ function useDriveSSE(caseId: number, fetchFn: FetchFn, onSync: () => void) {
   }, [caseId, fetchFn]);
 }
 
+// ─── Guidance card ────────────────────────────────────────────────────────────
+
+interface GuidanceCardProps {
+  folder: CaseFolder;
+  dismissed: boolean;
+  collapsed: boolean;
+  onDismiss: () => void;
+  onToggleCollapse: () => void;
+  cardRef: React.RefObject<HTMLDivElement>;
+}
+
+function GuidanceCard({
+  folder, dismissed, collapsed, onDismiss, onToggleCollapse, cardRef,
+}: GuidanceCardProps) {
+  if (dismissed || !folder.uploadGuidance) return null;
+
+  return (
+    <div
+      ref={cardRef}
+      className="mx-4 mt-3 rounded-lg border border-violet-100 bg-violet-50 overflow-hidden"
+    >
+      {/* Card header — clickable to collapse */}
+      <button
+        onClick={onToggleCollapse}
+        className="w-full flex items-center justify-between px-3.5 py-2.5 text-left group"
+      >
+        <div className="flex items-center gap-2">
+          <Clipboard className="w-3.5 h-3.5 text-violet-500 shrink-0" />
+          <span className="text-sm font-semibold text-violet-700">What to upload here</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {collapsed
+            ? <ChevronRight className="w-3.5 h-3.5 text-violet-400 group-hover:text-violet-600 transition-colors" />
+            : <ChevronDown className="w-3.5 h-3.5 text-violet-400 group-hover:text-violet-600 transition-colors" />}
+          <button
+            onClick={(e) => { e.stopPropagation(); onDismiss(); }}
+            className="p-0.5 rounded hover:bg-violet-100 transition-colors text-violet-400 hover:text-violet-600"
+            title="Dismiss"
+            aria-label="Dismiss guidance"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </button>
+
+      {/* Card body — collapsible */}
+      {!collapsed && (
+        <div className="px-3.5 pb-3.5 space-y-2.5">
+          <p className="text-sm text-gray-700 leading-relaxed">
+            {folder.uploadGuidance}
+          </p>
+          {folder.legalStandard && (
+            <div className="pt-2 border-t border-violet-100">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                Legal standard
+              </p>
+              <p className="text-xs text-gray-500 italic leading-relaxed">
+                {folder.legalStandard}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Tree node ────────────────────────────────────────────────────────────────
 
 interface TreeNodeProps {
@@ -221,15 +292,17 @@ interface TreeNodeProps {
   toggleExpanded: (id: number) => void;
   isStaff: boolean;
   onToggleStaffOnly: (f: CaseFolder) => void;
+  onScrollToGuidance: () => void;
 }
 
 function TreeNode({
   node, depth, selectedId, onSelect, expandedIds,
-  toggleExpanded, isStaff, onToggleStaffOnly,
+  toggleExpanded, isStaff, onToggleStaffOnly, onScrollToGuidance,
 }: TreeNodeProps) {
   const isExpanded = expandedIds.has(node.id);
   const isSelected = selectedId === node.id;
   const hasChildren = (node.children?.length ?? 0) > 0;
+  const showGuidanceBadge = isSelected && node.folderType === "criteria" && !!node.uploadGuidance;
 
   return (
     <div>
@@ -285,6 +358,18 @@ function TreeNode({
         )}
       </div>
 
+      {/* "What to upload" badge — shown for selected criteria folders with guidance */}
+      {showGuidanceBadge && (
+        <button
+          onClick={onScrollToGuidance}
+          className="flex items-center gap-1 text-[10px] text-violet-500 hover:text-violet-700 transition-colors py-0.5 w-full"
+          style={{ paddingLeft: `${8 + depth * 16 + 20}px` }}
+        >
+          <Info className="w-2.5 h-2.5 shrink-0" />
+          <span>What to upload</span>
+        </button>
+      )}
+
       {isExpanded && hasChildren && node.children?.map((child) => (
         <TreeNode
           key={child.id}
@@ -296,6 +381,7 @@ function TreeNode({
           toggleExpanded={toggleExpanded}
           isStaff={isStaff}
           onToggleStaffOnly={onToggleStaffOnly}
+          onScrollToGuidance={onScrollToGuidance}
         />
       ))}
     </div>
@@ -316,6 +402,11 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
   const [folderError, setFolderError] = useState<string | null>(null);
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
 
+  // Guidance card state — tracked per folder ID
+  const [dismissedFolderIds, setDismissedFolderIds] = useState<Set<number>>(new Set());
+  const [collapsedGuidanceIds, setCollapsedGuidanceIds] = useState<Set<number>>(new Set());
+  const guidanceRef = useRef<HTMLDivElement>(null);
+
   // New folder modal
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -332,6 +423,24 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
   // Keep a ref to selected folder so SSE handler can access it without stale closure
   const selectedFolderRef = useRef<CaseFolder | null>(null);
   useEffect(() => { selectedFolderRef.current = selectedFolder; }, [selectedFolder]);
+
+  // ─── Guidance helpers ──────────────────────────────────────────────────────
+
+  const scrollToGuidance = useCallback(() => {
+    guidanceRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, []);
+
+  const handleDismissGuidance = useCallback((folderId: number) => {
+    setDismissedFolderIds((prev) => new Set([...prev, folderId]));
+  }, []);
+
+  const handleToggleGuidanceCollapse = useCallback((folderId: number) => {
+    setCollapsedGuidanceIds((prev) => {
+      const next = new Set(prev);
+      next.has(folderId) ? next.delete(folderId) : next.add(folderId);
+      return next;
+    });
+  }, []);
 
   // ─── Breadcrumb ────────────────────────────────────────────────────────────
 
@@ -524,6 +633,14 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
     );
   }
 
+  // Derived guidance card state for selected folder
+  const showGuidanceCard = !!(
+    selectedFolder?.folderType === "criteria" &&
+    selectedFolder.uploadGuidance &&
+    !dismissedFolderIds.has(selectedFolder.id)
+  );
+  const guidanceCollapsed = !!(selectedFolder && collapsedGuidanceIds.has(selectedFolder.id));
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -577,6 +694,7 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
                 toggleExpanded={toggleExpanded}
                 isStaff={isStaff}
                 onToggleStaffOnly={handleToggleStaffOnly}
+                onScrollToGuidance={scrollToGuidance}
               />
             ))}
           </div>
@@ -690,6 +808,18 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
             </div>
           )}
 
+          {/* Guidance card — criteria folders only */}
+          {showGuidanceCard && selectedFolder && (
+            <GuidanceCard
+              folder={selectedFolder}
+              dismissed={false}
+              collapsed={guidanceCollapsed}
+              onDismiss={() => handleDismissGuidance(selectedFolder.id)}
+              onToggleCollapse={() => handleToggleGuidanceCollapse(selectedFolder.id)}
+              cardRef={guidanceRef as React.RefObject<HTMLDivElement>}
+            />
+          )}
+
           {/* Drop zone + file list */}
           <div
             className={cn(
@@ -714,7 +844,7 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
               </div>
 
             ) : items.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground py-16">
+              <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground py-12">
                 {isDragging ? (
                   <>
                     <Upload className="w-10 h-10 mb-2 text-[#1E2D6B]/50" />
@@ -723,13 +853,31 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
                 ) : (
                   <>
                     <div className="w-14 h-14 rounded-full bg-gray-50 border border-gray-200 flex items-center justify-center mb-3">
-                      <File className="w-6 h-6 text-gray-300" />
+                      <Upload className="w-6 h-6 text-gray-300" />
                     </div>
-                    <p className="text-sm font-medium text-gray-600">No files yet</p>
+                    <p className="text-sm font-medium text-gray-600">No documents uploaded yet</p>
                     {!readOnly && (
-                      <p className="text-xs mt-1 text-gray-400">
-                        Click <span className="font-medium text-gray-500">Upload</span> or drag &amp; drop files here
+                      <p className="text-xs mt-1 text-gray-400 max-w-xs">
+                        {selectedFolder.folderType === "criteria"
+                          ? "Use the Upload button above to add documents for this criterion."
+                          : <>Click <span className="font-medium text-gray-500">Upload</span> or drag &amp; drop files here</>}
                       </p>
+                    )}
+                    {/* Show guidance inline in empty state when card was dismissed */}
+                    {selectedFolder.folderType === "criteria" &&
+                      selectedFolder.uploadGuidance &&
+                      dismissedFolderIds.has(selectedFolder.id) && (
+                      <div className="mt-4 max-w-sm text-left rounded-lg border border-violet-100 bg-violet-50 px-3.5 py-3">
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <Clipboard className="w-3 h-3 text-violet-400 shrink-0" />
+                          <span className="text-[10px] font-semibold text-violet-600 uppercase tracking-wide">
+                            What to upload
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-600 leading-relaxed">
+                          {selectedFolder.uploadGuidance}
+                        </p>
+                      </div>
                     )}
                   </>
                 )}

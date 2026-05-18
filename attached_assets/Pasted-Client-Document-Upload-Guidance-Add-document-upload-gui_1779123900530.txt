@@ -1,0 +1,131 @@
+Client Document Upload Guidance
+
+Add document upload guidance to the client-facing folder browser. When a client is viewing a criteria subfolder, show them what documents belong there and the legal standard for that criterion.
+Step 1 — Add guidance text column to visa_criteria table:
+In the schema add:
+typescriptuploadGuidance: text("upload_guidance"),
+Then seed the upload_guidance column for all criteria with the following values:
+EB-1A:
+Extraordinary Ability Awards →
+"Upload award certificates, nomination letters, trophy photos, and any press coverage specifically about receiving the award. Include documentation showing how recipients are selected and what percentage of professionals in your field receive this recognition."
+
+Membership in Associations →
+"Upload your membership certificate or confirmation letter, the organization's membership criteria page, and any documentation showing the selection process. Evidence that membership requires a vote by existing members or peer review is especially valuable."
+
+Published Material About the Alien →
+"Upload the full article or interview (not just the headline), documentation of the publication's circulation or reach, and evidence that the coverage is specifically about you and your work — not just a mention. Screenshots of online articles with view counts or domain authority help."
+
+Judge of Others Work →
+"Upload the formal invitation letter naming you as a judge or reviewer, the event program or panel description, any certificates of participation, and documentation showing the scope of what you reviewed (number of submissions, prestige of the event or journal)."
+
+Original Contributions →
+"Upload patents, published papers citing your work, letters from other professionals describing how they have adopted your methods, performance data showing impact, and any industry recognition of your specific contribution. The stronger the evidence that others have built on your work, the better."
+
+Scholarly Articles →
+"Upload the full text of each published article, the acceptance or publication confirmation email, the journal or conference homepage showing it is a recognized venue, and citation records if available. Include articles where you are a named author — co-authorship counts."
+
+Artistic Exhibitions →
+"Upload exhibition catalogs, invitations, photographs of your work on display, press coverage of the exhibition, and documentation of the venue's reputation. Evidence of juried or curated exhibitions is stronger than open-call shows."
+
+Leading or Critical Role →
+"Upload your offer letter or employment contract showing your title, an org chart placing you in the organization, performance reviews or letters from supervisors describing your responsibilities, and documentation of the organization's size, revenue, or distinguished reputation."
+
+High Salary →
+"Upload your most recent pay stubs (last 3 months), your offer letter showing base salary and total compensation, any bonus or equity documentation, and your W-2 or equivalent. We will compare your compensation to Bureau of Labor Statistics data for your role and location."
+
+Commercial Success →
+"Upload box office records, streaming numbers, album sales figures, ticket sales, or any official documentation of commercial performance. Include industry benchmark data showing how your results compare to peers in the performing arts."
+NIW:
+Substantial Merit and National Importance →
+"Upload research papers, project descriptions, government reports referencing your field, news articles about the national importance of your work, and any letters from institutions or agencies describing the broader impact of your contributions."
+
+Well Positioned to Advance →
+"Upload your full CV, degrees and transcripts, publications, awards, letters from collaborators confirming your expertise, and any evidence of past success in advancing your proposed endeavor."
+
+Balance of Benefits →
+"Upload evidence that your work uniquely benefits the United States — such as partnerships with US institutions, funding from US government agencies, or documentation that your specific expertise is scarce among US workers. Letters from US employers or institutions are particularly helpful."
+O-1A:
+Awards/Prizes →
+"Upload award certificates, nomination letters, and documentation of the award's selectivity and national or international recognition. Include evidence of how recipients are chosen."
+
+Membership →
+"Upload membership confirmation, the organization's selection criteria, and evidence that membership requires outstanding achievement as judged by recognized experts in the field."
+
+Press/Media Coverage →
+"Upload full copies of articles or interviews about you and your work, with documentation of the publication's reach and audience. Coverage in major trade publications or mainstream media carries the most weight."
+
+Judging →
+"Upload your formal invitation to judge, the event or journal description, any participation certificate, and evidence of the scope and prestige of what you reviewed."
+
+Original Contributions →
+"Upload patents, letters from peers describing the impact of your contributions, citations, adoption evidence, and any industry or academic recognition of your specific work."
+
+Scholarly Articles →
+"Upload full article texts, publication confirmations, journal or conference credentials, and citation records. Co-authored articles where you are a named author are included."
+
+Critical Role →
+"Upload your title documentation, org chart, letters describing your specific responsibilities, and evidence of the organization's distinguished reputation — such as revenue figures, industry rankings, or press coverage."
+
+High Remuneration →
+"Upload pay stubs, offer letter, W-2 or equivalent, bonus and equity documentation, and any employer compensation statements. We compare your earnings to industry benchmarks for your role."
+Run drizzle-kit push after schema change. Then run a seed/update script to populate upload_guidance for all rows in visa_criteria. Confirm all rows updated.
+
+Step 2 — Enrich the folders API response:
+In GET /api/cases/:caseId/folders — after fetching the flat folder list, for any folder where folderType = 'criteria', join to visa_criteria on visa_path = folder.visaCategory and display_order = folder.criteriaIndex + 1 (or match on folder_name if index alignment is uncertain) to pull legal_standard, upload_guidance, and criteria_code.
+Add these fields to the response object for criteria folders only:
+typescriptlegalStandard: string | null;
+uploadGuidance: string | null;
+criteriaCode: string | null;
+Non-criteria folders return these fields as null.
+Confirm the enriched fields appear in the API response for a criteria folder.
+
+Step 3 — Update FolderBrowser.tsx to display guidance:
+Update the CaseFolder TypeScript interface to include legalStandard, uploadGuidance, criteriaCode.
+In the folder tree (left panel):
+When a criteria folder is selected (active), show a subtle info badge below the folder name:
+[Info icon] What to upload
+Clicking this badge scrolls the right panel to the guidance section. Keep it subtle — small text, grey, non-intrusive.
+In the right panel (file list view) when a criteria folder is selected:
+Show a guidance card at the top of the file list, above the Upload button and file list:
+┌─────────────────────────────────────────────────────┐
+│ 📋 What to upload here                              │
+│                                                      │
+│ [upload_guidance text]                              │
+│                                                      │
+│ Legal standard: [legal_standard text]               │
+│ (small grey text, slightly smaller font)            │
+│                                                      │
+│                              [Dismiss ✕] (remembers │
+│                               per folder in state)  │
+└─────────────────────────────────────────────────────┘
+Styling:
+
+Card background: soft violet/indigo tint (bg-violet-50 border border-violet-100)
+"What to upload here" in violet, semi-bold, with clipboard icon
+Guidance text in text-sm text-gray-700
+"Legal standard:" label in text-xs text-gray-400 uppercase tracking-wide
+Legal standard text in text-xs text-gray-500 italic
+Dismiss button: small X in top right, clicking hides the card for that folder (stored in local component state — reappears if they navigate away and return)
+Card is collapsible — clicking the header toggles body open/closed, default open
+
+Do not show the guidance card for non-criteria folders (Resume, Demographics, Exhibits, root, custom).
+Empty state update:
+When a criteria folder has zero files, update the empty state message from a generic "No files" to:
+[Upload icon]
+No documents uploaded yet
+Use the Upload button above to add documents for this criterion.
+[upload_guidance text shown inline here too if card was dismissed]
+
+Step 4 — Test:
+
+Log in as a client (profile 34 — Arjun)
+Navigate to Evidence Engine → Drive Folders
+Click any criteria subfolder (e.g. "Scholarly Articles")
+Confirm guidance card appears at top of file list with correct upload_guidance text
+Confirm legal standard text appears below
+Confirm dismiss button hides the card
+Click a different criteria folder — confirm guidance card reappears with that folder's guidance
+Confirm no guidance card appears on Resume, Demographics, or Exhibits folders
+Confirm API response includes uploadGuidance and legalStandard fields for criteria folders
+
+Report pass or fail for each test step.

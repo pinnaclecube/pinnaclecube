@@ -73,25 +73,23 @@ async function fixOrphanedCaseAccess(): Promise<void> {
 }
 
 export async function seedReferenceData(): Promise<void> {
+  // Always upsert visa_criteria to pick up schema changes (e.g. new upload_guidance values,
+  // display_order corrections, criteriaName/legalStandard fixes).
   try {
-    const [vcRow] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(visaCriteriaTable);
-    if ((vcRow?.count ?? 0) === 0) {
-      await db
-        .insert(visaCriteriaTable)
-        .values(VISA_CRITERIA_SEED)
-        .onConflictDoNothing();
-      logger.info(
-        { rows: VISA_CRITERIA_SEED.length },
-        "[seed] visa_criteria inserted",
-      );
-    } else {
-      logger.info(
-        { rows: vcRow?.count },
-        "[seed] visa_criteria already populated — skip",
-      );
-    }
+    await db
+      .insert(visaCriteriaTable)
+      .values(VISA_CRITERIA_SEED)
+      .onConflictDoUpdate({
+        target: visaCriteriaTable.id,
+        set: {
+          criteriaName: sql`excluded.criteria_name`,
+          legalStandard: sql`excluded.legal_standard`,
+          displayOrder: sql`excluded.display_order`,
+          uploadGuidance: sql`excluded.upload_guidance`,
+          isCommon: sql`excluded.is_common`,
+        },
+      });
+    logger.info({ rows: VISA_CRITERIA_SEED.length }, "[seed] visa_criteria upserted");
   } catch (err) {
     logger.error({ err }, "[seed] visa_criteria seed failed");
   }

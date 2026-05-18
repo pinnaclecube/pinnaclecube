@@ -13,10 +13,13 @@
  * Auth: X-Staff-Token (staff) OR Bearer JWT (client).
  * Client routes enforce that the case belongs to the authenticated profile.
  * Staff-only folders are filtered out of client responses.
+ *
+ * Criteria folders are enriched with legalStandard, uploadGuidance, and
+ * criteriaCode from visa_criteria (joined on visa_path + displayOrder).
  */
 
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
 import { Readable } from "stream";
 import multer from "multer";
 import {
@@ -24,6 +27,7 @@ import {
   caseFoldersTable,
   caseFolderItemsTable,
   casePetitionSetupTable,
+  visaCriteriaTable,
 } from "@workspace/db";
 import { getDriveClient } from "../services/driveService";
 import { requireClientAuth } from "../middlewares/clientAuth";
@@ -83,6 +87,77 @@ async function authorizeCase(
   return caseRecord;
 }
 
+// ─── Criteria enrichment ──────────────────────────────────────────────────────
+// Maps the visa_category enum used in case_folders to the visa_path stored in
+// visa_criteria. O1A is stored as "o1" (not "o1a") in visa_criteria.
+
+const VISA_PATH_MAP: Record<string, string> = {
+  EB1A: "eb1a",
+  NIW: "niw",
+  O1A: "o1",
+};
+
+type EnrichedFolder = typeof caseFoldersTable.$inferSelect & {
+  legalStandard: string | null;
+  uploadGuidance: string | null;
+  criteriaCode: string | null;
+};
+
+async function enrichFolders(
+  folders: (typeof caseFoldersTable.$inferSelect)[],
+): Promise<EnrichedFolder[]> {
+  const criteriaFolders = folders.filter(
+    (f) => f.folderType === "criteria" && f.criteriaIndex != null,
+  );
+
+  // Build a lookup map keyed on "visaPath_displayOrder"
+  const vcMap = new Map<
+    string,
+    { legalStandard: string; uploadGuidance: string | null; criteriaCode: string }
+  >();
+
+  if (criteriaFolders.length > 0) {
+    const conditions = criteriaFolders.map((f) =>
+      and(
+        eq(
+          visaCriteriaTable.visaPath,
+          VISA_PATH_MAP[f.visaCategory] ?? f.visaCategory.toLowerCase(),
+        ),
+        eq(visaCriteriaTable.displayOrder, (f.criteriaIndex as number) + 1),
+      ),
+    );
+
+    const vcRows = await db
+      .select({
+        visaPath: visaCriteriaTable.visaPath,
+        displayOrder: visaCriteriaTable.displayOrder,
+        legalStandard: visaCriteriaTable.legalStandard,
+        uploadGuidance: visaCriteriaTable.uploadGuidance,
+        criteriaCode: visaCriteriaTable.criteriaCode,
+      })
+      .from(visaCriteriaTable)
+      .where(or(...conditions));
+
+    for (const vc of vcRows) {
+      vcMap.set(`${vc.visaPath}_${vc.displayOrder}`, vc);
+    }
+  }
+
+  return folders.map((f) => {
+    if (f.folderType === "criteria" && f.criteriaIndex != null) {
+      const visaPath = VISA_PATH_MAP[f.visaCategory] ?? f.visaCategory.toLowerCase();
+      const vc = vcMap.get(`${visaPath}_${f.criteriaIndex + 1}`);
+      return {
+        ...f,
+        legalStandard: vc?.legalStandard ?? null,
+        uploadGuidance: vc?.uploadGuidance ?? null,
+        criteriaCode: vc?.criteriaCode ?? null,
+      };
+    }
+    return { ...f, legalStandard: null, uploadGuidance: null, criteriaCode: null };
+  });
+}
+
 // ─── GET /cases/me ────────────────────────────────────────────────────────────
 // Resolves the authenticated client's case setup ID.
 // Must be declared BEFORE /cases/:caseId/* to prevent "me" matching as a param.
@@ -107,6 +182,7 @@ router.get("/cases/me", requireClientAuth, async (req: Request, res: Response): 
 // ─── GET /cases/:caseId/folders ───────────────────────────────────────────────
 // Returns the full flat folder list for a case.
 // Client users have staffOnly=true folders filtered out server-side.
+// Criteria folders are enriched with legalStandard, uploadGuidance, criteriaCode.
 
 router.get(
   "/cases/:caseId/folders",
@@ -128,7 +204,8 @@ router.get(
       .from(caseFoldersTable)
       .where(and(...conditions));
 
-    res.json({ folders });
+    const enriched = await enrichFolders(folders);
+    res.json({ folders: enriched });
   },
 );
 
