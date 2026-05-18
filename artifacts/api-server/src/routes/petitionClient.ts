@@ -13,6 +13,7 @@ import {
   petitionCriteriaExhibitsTable,
   petitionRecoLettersTable,
   petitionPackageTable,
+  exhibitDocumentsTable,
 } from "@workspace/db";
 import { requireClientAuth } from "../middlewares/clientAuth";
 
@@ -100,6 +101,72 @@ router.get(
       package: packageDocs,
       totalDocuments: criteriaExhibits.length + recoLetters.length,
     });
+  },
+);
+
+// ─── GET /petition/my-exhibits ───────────────────────────────────────────────
+// Returns published exhibit_documents enriched with criteriaName + exhibit
+// letter from petition_criteria_exhibits. Strips all internal fields.
+
+router.get(
+  "/petition/my-exhibits",
+  requireClientAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const user = (req as AuthedRequest).clientUser;
+
+    const setups = await db
+      .select()
+      .from(casePetitionSetupTable)
+      .where(eq(casePetitionSetupTable.profileId, user.id));
+
+    if (!setups.length) {
+      res.json({ exhibits: [], visaPath: null });
+      return;
+    }
+
+    const setup = setups.sort((a, b) => b.id - a.id)[0];
+
+    // Published exhibit documents
+    const docs = await db
+      .select()
+      .from(exhibitDocumentsTable)
+      .where(
+        and(
+          eq(exhibitDocumentsTable.caseSetupId, setup.id),
+          eq(exhibitDocumentsTable.publishedToClient, true),
+        ),
+      );
+
+    if (!docs.length) {
+      res.json({ exhibits: [], visaPath: setup.visaPath });
+      return;
+    }
+
+    // Criteria exhibits for enrichment (criteriaName + exhibitNumber/letter)
+    const criteriaRows = await db
+      .select({
+        criteriaCode: petitionCriteriaExhibitsTable.criteriaCode,
+        criteriaName: petitionCriteriaExhibitsTable.criteriaName,
+        exhibitNumber: petitionCriteriaExhibitsTable.exhibitNumber,
+      })
+      .from(petitionCriteriaExhibitsTable)
+      .where(eq(petitionCriteriaExhibitsTable.caseSetupId, setup.id));
+
+    const criteriaMap = new Map(
+      criteriaRows.map((c) => [c.criteriaCode, { criteriaName: c.criteriaName, exhibitLabel: c.exhibitNumber }]),
+    );
+
+    // Return only safe fields — driveFileId, publishedBy, jobId stripped
+    const exhibits = docs.map(({ driveFileId: _df, publishedBy: _pb, jobId: _jid, ...rest }) => {
+      const meta = rest.criteriaCode ? criteriaMap.get(rest.criteriaCode) : undefined;
+      return {
+        ...rest,
+        criteriaName: meta?.criteriaName ?? null,
+        criteriaExhibitLabel: meta?.exhibitLabel ?? null,
+      };
+    });
+
+    res.json({ exhibits, visaPath: setup.visaPath });
   },
 );
 
