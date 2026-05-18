@@ -9,6 +9,8 @@
     "migrate:folders:dry-run": "tsx ./src/dryRunMigrateFolders.ts",
     "migrate:folders:execute": "tsx ./src/dryRunMigrateFolders.ts --execute",
     "recreate:folders": "tsx ./src/recreateFoldersInSharedDrive.ts",
+    "test1:folders": "tsx ./src/test1CaseFolders.ts",
+    "cleanup:regression": "tsx ./src/cleanupRegressionTest.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
