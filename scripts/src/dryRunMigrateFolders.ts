@@ -1,20 +1,23 @@
 /**
  * dryRunMigrateFolders.ts — Pinnacle³
  *
- * Dry-run preview of moving existing client case root folders from personal
- * Drive into the Shared Drive at DRIVE_ROOT_FOLDER_ID.
+ * Migrates existing client case root folders from personal Drive into the
+ * Shared Drive at DRIVE_ROOT_FOLDER_ID.
  *
  * Usage:
- *   pnpm --filter @workspace/scripts tsx src/dryRunMigrateFolders.ts
+ *   Dry-run  : pnpm --filter @workspace/scripts run migrate:folders:dry-run
+ *   Live move: pnpm --filter @workspace/scripts run migrate:folders:execute
  *
- * Does NOT modify anything in Drive or the database.
- * Prints MOVE / SKIP for each root folder and a summary at the end.
+ * In dry-run mode no Drive changes are made.
+ * In execute mode each root folder is reparented via drive.files.update.
  */
 
 import pg from "pg";
 import { google } from "googleapis";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
+
+const EXECUTE = process.argv.includes("--execute");
 
 const SHARED_DRIVE_ID = process.env.DRIVE_ROOT_FOLDER_ID;
 if (!SHARED_DRIVE_ID) {
@@ -55,10 +58,12 @@ interface RootFolderRow {
 }
 
 async function main() {
+  const mode = EXECUTE ? "LIVE EXECUTE" : "DRY RUN";
+
   console.log("=".repeat(70));
-  console.log("DRY-RUN: Migrate client root folders → Shared Drive");
+  console.log(`${mode}: Migrate client root folders → Shared Drive`);
   console.log(`Shared Drive ID : ${SHARED_DRIVE_ID}`);
-  console.log("Mode            : DRY RUN — no Drive changes will be made");
+  console.log(`Mode            : ${mode}${EXECUTE ? " — Drive changes WILL be made" : " — no Drive changes will be made"}`);
   console.log("=".repeat(70));
   console.log();
 
@@ -91,18 +96,21 @@ async function main() {
   // ── 2. Build Drive client ──────────────────────────────────────────────────
   const drive = buildDriveClient();
 
-  // ── 3. Inspect each root folder ───────────────────────────────────────────
+  // ── 3. Inspect and optionally move each root folder ───────────────────────
   let moveCount = 0;
   let skipCount = 0;
+  let successCount = 0;
   let errorCount = 0;
 
   for (const row of rows) {
-    process.stdout.write(`Case ID ${String(row.case_id).padStart(4)} │ "${row.name}" │ ${row.drive_id} │ `);
+    console.log(`Case ID ${String(row.case_id).padStart(4)} │ "${row.name}"`);
+    console.log(`             │ Drive folder ID : ${row.drive_id}`);
 
     let currentParentId: string | null = null;
     let action: "MOVE" | "SKIP" | "ERROR" = "ERROR";
     let errorMsg = "";
 
+    // Fetch current parents
     try {
       const res = await drive.files.get({
         supportsAllDrives: true,
@@ -113,7 +121,6 @@ async function main() {
       const parents = res.data.parents ?? [];
       currentParentId = parents[0] ?? null;
 
-      // SKIP if already a direct child of the Shared Drive root
       if (currentParentId === SHARED_DRIVE_ID) {
         action = "SKIP";
         skipCount++;
@@ -127,16 +134,49 @@ async function main() {
       errorCount++;
     }
 
-    if (action === "MOVE") {
-      console.log(`current parent: ${currentParentId ?? "(none)"}`);
-      console.log(`             │ Action         : MOVE`);
-      console.log(`             │ Would move to  : ${SHARED_DRIVE_ID}`);
-    } else if (action === "SKIP") {
-      console.log(`current parent: ${currentParentId ?? "(none)"}`);
-      console.log(`             │ Action         : SKIP (already in Shared Drive)`);
-    } else {
-      console.log(`ERROR`);
-      console.log(`             │ Action         : ERROR — ${errorMsg}`);
+    console.log(`             │ Current parent  : ${currentParentId ?? "(none)"}`);
+    console.log(`             │ Action          : ${action}${action === "SKIP" ? " (already in Shared Drive)" : ""}`);
+
+    if (action === "ERROR") {
+      console.log(`             │ Error           : ${errorMsg}`);
+      console.log();
+      continue;
+    }
+
+    if (action === "SKIP") {
+      console.log();
+      continue;
+    }
+
+    // action === "MOVE"
+    if (!EXECUTE) {
+      console.log(`             │ Would move to   : ${SHARED_DRIVE_ID}`);
+      console.log();
+      continue;
+    }
+
+    // ── Live move ────────────────────────────────────────────────────────────
+    try {
+      const updateRes = await drive.files.update({
+        supportsAllDrives: true,
+        fileId: row.drive_id,
+        addParents: SHARED_DRIVE_ID!,
+        removeParents: currentParentId ?? undefined,
+        fields: "id,name,parents",
+      });
+
+      const newParents = updateRes.data.parents ?? [];
+      const movedTo = newParents[0] ?? "(unknown)";
+
+      console.log(`             │ Move result     : SUCCESS`);
+      console.log(`             │ New parent ID   : ${movedTo}`);
+      console.log(`             │ Drive response  : id=${updateRes.data.id}, name="${updateRes.data.name}"`);
+      successCount++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`             │ Move result     : FAILED — ${msg}`);
+      errorCount++;
+      moveCount--; // revert the count since the move didn't succeed
     }
 
     console.log();
@@ -146,15 +186,25 @@ async function main() {
   console.log("=".repeat(70));
   console.log("SUMMARY");
   console.log(`  Total inspected : ${rows.length}`);
-  console.log(`  Would MOVE      : ${moveCount}`);
-  console.log(`  Would SKIP      : ${skipCount} (already in Shared Drive)`);
-  console.log(`  Errors          : ${errorCount}`);
-  console.log("=".repeat(70));
-  console.log();
-  if (moveCount > 0) {
-    console.log(`Next step: confirm to run the live migration for ${moveCount} folder(s).`);
+  if (EXECUTE) {
+    console.log(`  Moved (success) : ${successCount}`);
+    console.log(`  Skipped         : ${skipCount} (already in Shared Drive)`);
+    console.log(`  Failed          : ${errorCount}`);
   } else {
-    console.log("All root folders are already in the Shared Drive. No migration needed.");
+    console.log(`  Would MOVE      : ${moveCount}`);
+    console.log(`  Would SKIP      : ${skipCount} (already in Shared Drive)`);
+    console.log(`  Errors          : ${errorCount}`);
+  }
+  console.log("=".repeat(70));
+
+  if (EXECUTE && successCount > 0) {
+    console.log();
+    console.log(`✓ ${successCount} folder(s) successfully moved into the Shared Drive.`);
+  }
+  if (EXECUTE && errorCount > 0) {
+    console.log();
+    console.log(`✗ ${errorCount} folder(s) failed — check errors above.`);
+    process.exit(1);
   }
 }
 
