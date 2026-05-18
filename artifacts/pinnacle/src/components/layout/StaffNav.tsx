@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { StaffNotificationBell } from "@/components/notifications/StaffNotificationBell";
 
 const NAV_LINKS = [
   { href: "/internal/cases", label: "Cases" },
@@ -17,6 +18,7 @@ export default function StaffNav() {
         [pinnacle]³ <span className="text-white/50 font-normal text-sm ml-2">Staff Portal</span>
       </Link>
       <nav className="flex items-center gap-1">
+        <StaffNotificationBell />
         {NAV_LINKS.map((link) => (
           <Link
             key={link.href}

@@ -16,6 +16,7 @@ import {
 import { buildClientContext } from "./petitionDocumentGenerator";
 import { fetchCaseDocuments } from "./driveDocumentFetcher";
 import { EXHIBIT_GENERATION_CONFIG } from "../lib/exhibitTemplateConfig";
+import { insertStaffNotification } from "./staffNotificationService";
 import { logger } from "../lib/logger";
 
 // ─── AI client ────────────────────────────────────────────────────────────────
@@ -217,8 +218,12 @@ export async function assessCriteriaEvidence(
 
   // 10. Staff alert for weak assessments
   if (parsed.recommendation === "INSUFFICIENT" || parsed.rfe_risk === "HIGH") {
-    // TODO: replace with a proper staff notification once a shared notifyStaff()
-    // utility is extracted from petitionAdmin.ts / adminBlueprint.ts
+    void insertStaffNotification(
+      "⚠ RFE Risk Detected",
+      `${clientCtx.clientName}: ${criteriaName} has HIGH RFE risk`,
+      `/internal/case/${profileId}`,
+      caseSetupId,
+    );
     logger.warn(
       {
         caseSetupId,

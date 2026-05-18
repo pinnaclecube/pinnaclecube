@@ -28,6 +28,7 @@ import driveWebhookRouter from "./driveWebhook";
 import caseFoldersRouter from "./caseFolders";
 import caseExhibitsRouter from "./caseExhibits";
 import actionItemsRouter from "./actionItems";
+import adminNotificationsRouter from "./adminNotifications";
 
 const router: IRouter = Router();
 
@@ -60,5 +61,6 @@ router.use(driveWebhookRouter);
 router.use(caseFoldersRouter);
 router.use(caseExhibitsRouter);
 router.use(actionItemsRouter);
+router.use(adminNotificationsRouter);
 
 export default router;

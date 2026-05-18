@@ -12,11 +12,12 @@
 
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { eq } from "drizzle-orm";
-import { db, driveWatchChannelsTable } from "@workspace/db";
+import { db, driveWatchChannelsTable, petitionPackageTable, caseFoldersTable, profilesTable } from "@workspace/db";
 import { syncFolderContents } from "../services/driveWatchService";
 import { addSseClient, removeSseClient, emitToCase } from "../services/sseService";
 import { requireClientAuth } from "../middlewares/clientAuth";
 import { requireStaffAuth } from "../middlewares/staffAuth";
+import { insertStaffNotification } from "../services/staffNotificationService";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -85,6 +86,45 @@ router.post("/drive/webhook", (req: Request, res: Response): void => {
         { caseId: channel.caseId, itemCount },
         "[driveWebhook] sync complete and SSE emitted",
       );
+
+      // 4. Staff notification when new files were found
+      if (itemCount > 0) {
+        void (async () => {
+          try {
+            const [pkg] = await db
+              .select({ profileId: petitionPackageTable.profileId })
+              .from(petitionPackageTable)
+              .where(eq(petitionPackageTable.caseSetupId, channel.caseId))
+              .limit(1);
+
+            if (!pkg) return;
+
+            const [profile] = await db
+              .select({ name: profilesTable.name, firstName: profilesTable.firstName })
+              .from(profilesTable)
+              .where(eq(profilesTable.id, pkg.profileId))
+              .limit(1);
+
+            const [folder] = await db
+              .select({ name: caseFoldersTable.name })
+              .from(caseFoldersTable)
+              .where(eq(caseFoldersTable.driveId, channel.driveFolderId))
+              .limit(1);
+
+            const clientName = profile?.name ?? profile?.firstName ?? "A client";
+            const folderName = folder?.name ?? "their Drive folder";
+
+            await insertStaffNotification(
+              "New Files Uploaded",
+              `${clientName} added ${itemCount} file(s) to ${folderName}`,
+              `/internal/case/${pkg.profileId}`,
+              channel.caseId,
+            );
+          } catch (err) {
+            logger.error({ err }, "[driveWebhook] failed to insert staff notification");
+          }
+        })();
+      }
     } catch (err) {
       logger.error({ channelId, err }, "[driveWebhook] error processing notification");
     }

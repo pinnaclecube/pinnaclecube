@@ -31,6 +31,7 @@ import {
   type DocType,
   type DocumentMetadata,
 } from "./legalPdfTemplate";
+import { insertStaffNotification } from "./staffNotificationService";
 import { logger } from "../lib/logger";
 
 void addEvidenceTable; // imported per spec — used by callers via legalPdfTemplate directly
@@ -342,6 +343,12 @@ export async function generateCriteriaExhibits(
       .where(eq(petitionCriteriaExhibitsTable.id, exhibit.id));
 
     await updateJob(job.id, "completed");
+    void insertStaffNotification(
+      "Exhibits Ready ✓",
+      `Exhibits generated for ${clientCtx.clientName} — ${criteriaName}`,
+      `/internal/case/${profileId}`,
+      caseSetupId,
+    );
     logger.info({ caseSetupId, criteriaCode, jobId: job.id }, "[exhibitGen] criteria exhibits complete");
   } catch (err) {
     await updateJob(job.id, "failed", String(err));

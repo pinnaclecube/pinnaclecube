@@ -19,8 +19,10 @@ export const clientActionItemsTable = pgTable("client_action_items", {
 
 export const notificationsTable = pgTable("notifications", {
   id: serial("id").primaryKey(),
-  profileId: integer("profile_id").notNull(),
+  profileId: integer("profile_id"),
   userType: text("user_type").notNull().default("client"),
+  staffId: text("staff_id"),
+  caseSetupId: integer("case_setup_id"),
   notificationType: text("notification_type").notNull(),
   title: text("title").notNull(),
   message: text("message").notNull(),

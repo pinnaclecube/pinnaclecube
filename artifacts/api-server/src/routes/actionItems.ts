@@ -12,6 +12,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { db, clientActionItemsTable, profilesTable } from "@workspace/db";
 import { requireClientAuth } from "../middlewares/clientAuth";
 import { sendEmail, taskCompletedStaffAlertEmail } from "../services/emailService";
+import { insertStaffNotification } from "../services/staffNotificationService";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -150,6 +151,12 @@ router.patch(
       STAFF_EMAIL,
       taskCompletedStaffAlertEmail(clientName, updated.title, now, clientNote ?? null, caseUrl),
     ).catch(() => {});
+
+    void insertStaffNotification(
+      "Task Completed ✓",
+      `${clientName} completed: ${updated.title}`,
+      `/internal/case/${profileId}`,
+    );
 
     res.json({ actionItem: updated });
   },
