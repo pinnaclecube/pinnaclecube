@@ -1,0 +1,75 @@
+Add Tasks Tab to Staff Case View
+
+Add a dedicated "Tasks" tab to the staff case detail page.
+Step 1 — Add "Tasks" to the TABS array in InternalCaseDetail.tsx, positioned between "Overview" and "Evidence":
+typescriptconst TABS = [
+  "Overview",
+  "Tasks",
+  "Evidence",
+  "Excellence Lab",
+  "Petition Workspace",
+  "Petition Assessment",
+  "Exhibits",
+  "Documents",
+  "Drive Folders",
+] as const;
+Add the Tasks icon to the sidebar nav items — use ClipboardList from Lucide.
+Step 2 — Create TasksTab.tsx as a separate component. Lift the existing action items state and handlers (actionItems, createActionItem, updateStatus) out of OverviewTab and into InternalCaseDetail so they can be passed as props to TasksTab. The hidden action items card code in Overview can now be fully removed since Tasks tab owns this feature.
+TasksTab should render:
+Top section — Create new task form (always visible, not collapsible):
+
+Title input (required, placeholder: "Task title")
+Description textarea (optional, placeholder: "Describe what the client needs to do...")
+Priority selector: LOW / MEDIUM / HIGH (button group, default MEDIUM)
+"Save as Draft" button (creates with status: 'draft') and "Send to Client" button (creates with status: 'sent' and fires email immediately)
+Inline validation — title required before either button is active
+
+Task list section — grouped by status:
+Group 1 — "Awaiting Client" (status = 'sent'):
+
+Shown first, most urgent
+Each card: priority badge (HIGH red / MEDIUM amber / LOW grey), title bold, description, "Sent [X days ago]", "Mark Complete" button (staff can complete on behalf of client), "Cancel" button
+Sent count shown as red badge on the group header
+
+Group 2 — "Drafts" (status = 'draft'):
+
+Each card: priority badge, title, description, "Send to Client" button (changes status → sent, fires email), "Cancel" button
+
+Group 3 — "Completed" (collapsible, collapsed by default):
+
+Each card: greyed out, title with strikethrough, "Completed [date]", client note if present shown as "Client note: [text]"
+
+Group 4 — "Cancelled" (collapsible, collapsed by default):
+
+Greyed out cards, cancelled date
+
+Empty state (no tasks at all):
+"No tasks yet. Use the form above to assign work to this client."
+Step 3 — Add sent count badge on the Tasks sidebar nav item:
+tsx<span>Tasks</span>
+{sentCount > 0 && (
+  <span className="ml-auto bg-red-500 text-white text-xs
+                   rounded-full px-1.5 py-0.5 leading-none">
+    {sentCount}
+  </span>
+)}
+sentCount = count of items where status = 'sent'. Load alongside action items on mount. Update in real time when tasks are sent or completed.
+Step 4 — Wire ?tab=tasks query param:
+Add to the existing TAB_SLUG_MAP:
+typescript"tasks": "Tasks"
+Step 5 — Update StaffNotificationPanel.tsx:
+Where notificationType = 'action_item' or task completion links point to a case, change ?tab=overview to ?tab=tasks.
+Step 6 — Confirm all of the following:
+
+Tasks tab appears in the left sidebar with ClipboardList icon
+Red badge shows correct sent count and updates live
+Creating a draft task works
+Sending a task fires the client email and creates the client notification
+"Send to Client" on a draft card changes status correctly
+Staff marking complete works
+Completed and Cancelled groups are collapsible
+?tab=tasks deep link opens Tasks tab directly
+Clicking a task completion staff notification navigates to Tasks tab
+Overview tab has no action items card remaining
+
+Use existing Pinnacle staff portal design system components throughout.
