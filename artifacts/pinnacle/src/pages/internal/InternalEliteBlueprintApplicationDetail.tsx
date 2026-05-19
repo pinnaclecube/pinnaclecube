@@ -20,7 +20,7 @@ function staffFetch(path: string, opts: RequestInit = {}) {
     ...opts,
     headers: {
       "X-Staff-Token": getStaffToken() ?? "",
-      ...(opts.body ? { "Content-Type": "application/json" } : {}),
+      ...(opts.body && !(opts.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
     },
   });
 }
