@@ -34,6 +34,8 @@ export const prospectsTable = pgTable("prospects", {
   invoiceCheckoutUrl: text("invoice_checkout_url"),
   invoiceStripeSessionId: text("invoice_stripe_session_id"),
   paymentReceivedAt: timestamp("payment_received_at", { withTimezone: true }),
+  newsletterOptIn: boolean("newsletter_opt_in").default(true),
+  newsletterUnsubscribeToken: text("newsletter_unsubscribe_token"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

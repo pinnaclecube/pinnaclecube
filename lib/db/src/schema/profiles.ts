@@ -34,6 +34,9 @@ export const profilesTable = pgTable("profiles", {
   // Password reset
   passwordResetToken: text("password_reset_token"),
   passwordResetExpiresAt: timestamp("password_reset_expires_at", { withTimezone: true }),
+  // Newsletter
+  newsletterOptIn: boolean("newsletter_opt_in").default(true),
+  newsletterUnsubscribeToken: text("newsletter_unsubscribe_token"),
   // Access
   accessLevel: text("access_level").notNull().default("free"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
