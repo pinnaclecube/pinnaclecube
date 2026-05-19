@@ -15,6 +15,8 @@ import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
 import {
   ArrowLeft, Plus, Check, AlertTriangle, Lock,
   RefreshCw, ExternalLink, Loader2, CheckCircle, Clock, Zap, Activity,
+  LayoutDashboard, FolderSearch, GraduationCap, ClipboardCheck,
+  FileText, Files, HardDrive, Menu, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FolderBrowser } from "@/components/case/FolderBrowser";
@@ -23,6 +25,18 @@ import { ExhibitsTab } from "./ExhibitsTab";
 
 const TABS = ["Overview", "Evidence", "Excellence Lab", "Petition Workspace", "Petition Assessment", "Exhibits", "Documents", "Drive Folders"] as const;
 type Tab = typeof TABS[number];
+
+const HIDDEN_TABS = ["Petition Workspace"] as const;
+
+const TAB_ICONS: Partial<Record<Tab, React.ComponentType<{ className?: string }>>> = {
+  "Overview": LayoutDashboard,
+  "Evidence": FolderSearch,
+  "Excellence Lab": GraduationCap,
+  "Petition Assessment": ClipboardCheck,
+  "Exhibits": FileText,
+  "Documents": Files,
+  "Drive Folders": HardDrive,
+};
 
 function staffFetch(path: string, opts: RequestInit = {}) {
   return fetch(`/api${path}`, {
@@ -203,6 +217,8 @@ function OverviewTab({ userId, data, onReload }: { userId: string; data: any; on
           </CardContent>
         </Card>
 
+        {/* Action Items hidden — moved to Tasks tab */}
+        {false && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Action Items</CardTitle>
@@ -256,6 +272,7 @@ function OverviewTab({ userId, data, onReload }: { userId: string; data: any; on
             ))}
           </CardContent>
         </Card>
+        )}
       </div>
 
       <div className="flex items-center gap-2 pt-2 border-t">
@@ -1105,6 +1122,7 @@ export default function InternalCaseDetail() {
   const [profileData, setProfileData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState<"auth" | "not_found" | "error" | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const loadProfile = useCallback(async () => {
     try {
@@ -1173,42 +1191,104 @@ export default function InternalCaseDetail() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <StaffNav />
-      <main className="flex-1 p-8 max-w-5xl mx-auto w-full">
-        <Link href="/internal/cases" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors">
-          <ArrowLeft className="w-4 h-4" /> All Cases
-        </Link>
 
-        <div className="flex items-start justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold">{profile.name ?? "Unknown Client"}</h1>
-            <p className="text-muted-foreground text-sm">{profile.email} · <span className="uppercase">{profile.visaTarget}</span></p>
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Mobile overlay */}
+        {sidebarOpen && (
+          <div
+            className="absolute inset-0 z-20 bg-black/30 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
+        {/* ── Left sidebar ──────────────────────────────────────────────── */}
+        <aside className={cn(
+          "absolute md:static z-30 h-full w-56 bg-white border-r border-gray-200 flex flex-col shrink-0 transition-transform duration-200",
+          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+        )}>
+          {/* Back link */}
+          <div className="px-4 pt-4 pb-3 border-b border-gray-100">
+            <Link href="/internal/cases" className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+              <ArrowLeft className="w-3.5 h-3.5" /> All Cases
+            </Link>
           </div>
-          <Badge className="capitalize bg-[#1E2D6B]/10 text-[#1E2D6B] border-0 px-3 py-1">
-            {profile.accessLevel?.replace(/_/g, " ")}
-          </Badge>
-        </div>
 
-        <div className="flex border-b mb-6 overflow-x-auto">
-          {TABS.map((tab) => (
-            <button key={tab} onClick={() => setActiveTab(tab)}
-              className={cn(
-                "px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors",
-                activeTab === tab ? "border-[#1E2D6B] text-[#1E2D6B]" : "border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300",
-              )}>
-              {tab}
+          {/* Client info */}
+          <div className="px-4 py-4 border-b border-gray-100 space-y-2">
+            <div className="w-9 h-9 rounded-full bg-[#1E2D6B]/10 flex items-center justify-center text-[#1E2D6B] font-bold text-base shrink-0">
+              {(profile.name ?? profile.email)[0].toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold text-sm leading-tight truncate">{profile.name ?? "Unknown Client"}</p>
+              <p className="text-xs text-muted-foreground truncate mt-0.5">{profile.email}</p>
+            </div>
+            <Badge variant="outline" className="text-xs uppercase tracking-wide w-fit">
+              {profile.visaTarget}
+            </Badge>
+          </div>
+
+          {/* Nav items — Petition Workspace is hidden but still in TABS */}
+          <nav className="flex-1 py-2 overflow-y-auto">
+            {TABS.filter((tab) => !(HIDDEN_TABS as readonly string[]).includes(tab)).map((tab) => {
+              const Icon = TAB_ICONS[tab];
+              const isActive = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  onClick={() => { setActiveTab(tab); setSidebarOpen(false); }}
+                  className={cn(
+                    "w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-left transition-colors border-r-2",
+                    isActive
+                      ? "bg-violet-50 text-violet-700 font-medium border-violet-600"
+                      : "text-gray-600 hover:bg-gray-50 border-transparent",
+                  )}
+                >
+                  {Icon && (
+                    <Icon className={cn("w-4 h-4 shrink-0", isActive ? "text-violet-600" : "text-gray-400")} />
+                  )}
+                  <span className="truncate">{tab}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Access level indicator at bottom */}
+          <div className="px-4 py-4 border-t border-gray-100">
+            <div className="flex items-center justify-center">
+              <Badge className="capitalize bg-[#1E2D6B]/10 text-[#1E2D6B] border-0 text-xs px-3 py-1 text-center w-full justify-center">
+                {profile.accessLevel?.replace(/_/g, " ")}
+              </Badge>
+            </div>
+          </div>
+        </aside>
+
+        {/* ── Main content area ─────────────────────────────────────────── */}
+        <div className="flex-1 overflow-y-auto min-w-0">
+          {/* Mobile top bar */}
+          <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-200 sticky top-0 z-10">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-1.5 rounded text-gray-600 hover:bg-gray-100 transition-colors"
+              aria-label="Open navigation"
+            >
+              <Menu className="w-5 h-5" />
             </button>
-          ))}
-        </div>
+            <span className="text-sm font-medium truncate">{profile.name ?? "Unknown Client"}</span>
+            <span className="text-xs text-muted-foreground ml-auto shrink-0">{activeTab}</span>
+          </div>
 
-        {activeTab === "Overview" && <OverviewTab userId={user_id} data={profileData} onReload={loadProfile} />}
-        {activeTab === "Evidence" && <EvidenceTab userId={user_id} />}
-        {activeTab === "Excellence Lab" && <ExcellenceLabTab userId={user_id} />}
-        {activeTab === "Petition Workspace" && <PetitionWorkspaceTab userId={user_id} />}
-        {activeTab === "Petition Assessment" && <PetitionAssessmentTab userId={user_id} />}
-        {activeTab === "Exhibits" && <ExhibitsTab userId={user_id} profileData={profileData} />}
-        {activeTab === "Documents" && <DocumentsTab userId={user_id} />}
-        {activeTab === "Drive Folders" && <DriveFoldersTab userId={user_id} />}
-      </main>
+          <div className="p-6">
+            {activeTab === "Overview" && <OverviewTab userId={user_id} data={profileData} onReload={loadProfile} />}
+            {activeTab === "Evidence" && <EvidenceTab userId={user_id} />}
+            {activeTab === "Excellence Lab" && <ExcellenceLabTab userId={user_id} />}
+            {activeTab === "Petition Workspace" && <PetitionWorkspaceTab userId={user_id} />}
+            {activeTab === "Petition Assessment" && <PetitionAssessmentTab userId={user_id} />}
+            {activeTab === "Exhibits" && <ExhibitsTab userId={user_id} profileData={profileData} />}
+            {activeTab === "Documents" && <DocumentsTab userId={user_id} />}
+            {activeTab === "Drive Folders" && <DriveFoldersTab userId={user_id} />}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
