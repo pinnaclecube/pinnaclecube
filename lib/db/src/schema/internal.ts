@@ -24,6 +24,10 @@ export const clientActivityLogTable = pgTable("client_activity_log", {
   profileId: integer("profile_id").notNull(),
   eventType: text("event_type").notNull(),
   eventData: jsonb("event_data").default({}),
+  actor: text("actor"),
+  actorName: text("actor_name"),
+  category: text("category"),
+  caseSetupId: integer("case_setup_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

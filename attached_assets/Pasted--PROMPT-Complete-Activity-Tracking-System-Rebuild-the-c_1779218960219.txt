@@ -1,0 +1,286 @@
+
+
+---
+
+## PROMPT — Complete Activity Tracking System
+
+> **Rebuild the client activity tracking system from the ground up. The audit revealed two separate tables, 7 invisible event types, and only 3 of 24 events being tracked. Fix everything.**
+>
+> ---
+>
+> ### STEP 1 — Unify the Two Tables
+>
+> The system has two activity tables (`activity` and `client_activity_log`) that are both written to inconsistently. Unify them:
+>
+> 1. Add missing columns to `client_activity_log`:
+> ```typescript
+> actor: text("actor"),           // 'client' | 'staff' | 'system'
+> actorName: text("actor_name"),  // display name of who did it
+> category: text("category"),     // 'auth' | 'files' | 'tasks' | 'exhibits' | 'assessment' | 'navigation' | 'system'
+> caseSetupId: integer("case_setup_id"),
+> ```
+>
+> 2. Create a single shared `logActivity(params)` helper in a new file `services/activityLogger.ts`:
+> ```typescript
+> export async function logActivity({
+>   profileId,
+>   eventType,
+>   description,
+>   actor,
+>   actorName,
+>   category,
+>   caseSetupId,
+>   metadata,
+> }: ActivityLogParams): Promise<void>
+> ```
+> This function inserts into `client_activity_log` only. Make it fire-and-forget — wrap in try/catch, never throw, never block the calling function.
+>
+> 3. Run `drizzle-kit push` to apply schema changes.
+>
+> ---
+>
+> ### STEP 2 — Add Tracking to All Missing Events
+>
+> Add `logActivity()` calls at every missing event point. Use fire-and-forget — never await these calls inside route handlers:
+>
+> **Auth events (`auth.ts`):**
+> ```
+> Client login success → eventType: 'client_login', actor: 'client', category: 'auth'
+>   metadata: { ip: req.ip, userAgent: req.headers['user-agent'] }
+>
+> Self-service password reset → eventType: 'password_reset_self', actor: 'client', category: 'auth'
+> ```
+>
+> **File events (`caseFolders.ts`):**
+> ```
+> Staff uploads file → eventType: 'file_uploaded_staff', actor: 'staff', category: 'files'
+>   metadata: { fileName, folderName, folderId, fileSize, mimeType }
+>
+> Client uploads file → eventType: 'file_uploaded_client', actor: 'client', category: 'files'
+>   metadata: { fileName, folderName, folderId, fileSize, mimeType }
+>
+> Subfolder created via app → eventType: 'folder_created_app', actor: depends on auth type, category: 'files'
+>   metadata: { folderName, parentFolderName }
+> ```
+>
+> **Drive webhook events (`driveWebhook.ts`):**
+> ```
+> File detected via Drive webhook → eventType: 'file_uploaded_drive', actor: 'client', category: 'files'
+>   metadata: { fileName, folderName, driveFileId }
+> ```
+>
+> **Task events (`adminCases.ts` and `actionItems.ts`):**
+> ```
+> Task created by staff → eventType: 'task_created', actor: 'staff', category: 'tasks'
+>   metadata: { taskTitle, priority, status }
+>
+> Task sent to client → eventType: 'task_sent', actor: 'staff', category: 'tasks'
+>   metadata: { taskTitle, priority }
+>
+> Task completed by client → eventType: 'task_completed', actor: 'client', category: 'tasks'
+>   metadata: { taskTitle, clientNote }
+>
+> Task cancelled → eventType: 'task_cancelled', actor: 'staff', category: 'tasks'
+>   metadata: { taskTitle }
+> ```
+>
+> **Assessment events (`criteriaAssessmentService.ts`):**
+> ```
+> Assessment run → eventType: 'assessment_run', actor: 'staff', category: 'assessment'
+>   metadata: { criteriaName, recommendation, confidenceScore, rfeRisk, documentsAnalyzed }
+>
+> Staff override → eventType: 'assessment_overridden', actor: 'staff', category: 'assessment'
+>   metadata: { criteriaName, decision, overrideNote }
+> ```
+>
+> **Exhibit events (`exhibitGeneratorService.ts` and existing petition routes):**
+> ```
+> Exhibit generation started → eventType: 'exhibit_generation_started', actor: 'staff', category: 'exhibits'
+>   metadata: { criteriaName, documentType }
+>
+> Exhibit generation completed → eventType: 'exhibit_generated', actor: 'system', category: 'exhibits'
+>   metadata: { criteriaName, documentType, driveUrl }
+>
+> Exhibit published to client → eventType: 'exhibit_published', actor: 'staff', category: 'exhibits'
+>   metadata: { exhibitLabel, documentType, fileName }
+> ```
+>
+> **Notification events (`adminCases.ts` notification insert):**
+> ```
+> Notification read by client → eventType: 'notification_read', actor: 'client', category: 'system'
+>   metadata: { notificationType, notificationTitle }
+> Add this to the PATCH /api/notifications/:id/read handler
+> ```
+>
+> ---
+>
+> ### STEP 3 — Client-Side Page Visit Tracking
+>
+> Create a lightweight React hook `usePageTracking(pageName: string)` in `artifacts/pinnacle/src/hooks/usePageTracking.ts`:
+>
+> ```typescript
+> export function usePageTracking(pageName: string, metadata?: Record<string, unknown>) {
+>   useEffect(() => {
+>     const startTime = Date.now();
+>     // Fire page_visit event on mount
+>     fetch('/api/activity/page-visit', {
+>       method: 'POST',
+>       headers: {
+>         'Content-Type': 'application/json',
+>         'Authorization': `Bearer ${localStorage.getItem('pinnacle_token')}`
+>       },
+>       body: JSON.stringify({ pageName, metadata })
+>     }).catch(() => {}); // silent fail
+>
+>     // Fire page_exit event with duration on unmount
+>     return () => {
+>       const duration = Math.round((Date.now() - startTime) / 1000);
+>       navigator.sendBeacon('/api/activity/page-exit', JSON.stringify({
+>         pageName,
+>         durationSeconds: duration,
+>         metadata
+>       }));
+>     };
+>   }, [pageName]);
+> }
+> ```
+>
+> Add `POST /api/activity/page-visit` and `POST /api/activity/page-exit` client-auth endpoints that call `logActivity` with:
+> ```
+> eventType: 'page_visited' / 'page_exited'
+> actor: 'client'
+> category: 'navigation'
+> metadata: { pageName, durationSeconds (on exit) }
+> ```
+>
+> Add `usePageTracking()` to these client portal pages:
+> - `my-files.tsx` → pageName: 'Case Files'
+> - `tasks.tsx` → pageName: 'My Tasks'
+> - `evidence/index.tsx` → pageName: 'Evidence Engine'
+> - `dashboard.tsx` → pageName: 'Dashboard'
+> - `where-you-stand.tsx` → pageName: 'Where You Stand'
+> - `criteria/index.tsx` → pageName: 'Criteria'
+>
+> ---
+>
+> ### STEP 4 — Rebuild the Activity Log API
+>
+> Replace the existing `GET /admin/profiles/:id/activity-log` handler with:
+>
+> ```typescript
+> GET /admin/profiles/:id/activity-log
+>   Query params:
+>     limit: number (default 50, max 200)
+>     offset: number (default 0) — for pagination
+>     category: string (optional — filter by category)
+>     actor: string (optional — 'client' | 'staff' | 'system')
+>     from: ISO date string (optional)
+>     to: ISO date string (optional)
+>     search: string (optional — searches description and metadata)
+>
+>   Returns:
+>   {
+>     events: ActivityLogEntry[],
+>     total: number,        // total count matching filters (for pagination)
+>     hasMore: boolean,     // offset + limit < total
+>     summary: {
+>       lastLogin: timestamp | null,
+>       lastActivity: timestamp | null,
+>       totalEvents: number,
+>       eventsByCategory: Record<string, number>,
+>       filesUploaded: number,
+>       tasksCompleted: number,
+>       exhibitsViewed: number,
+>       pagesVisited: number,
+>       avgSessionDuration: number | null,
+>     }
+>   }
+> ```
+>
+> Also merge the `activity` table events into the response — join both tables by `profileId` and `createdAt`, union them, sort by `createdAt DESC`. Map `activity` table events to the new schema: `actor: 'client'`, `category: 'system'`, `description: activity.description`.
+>
+> ---
+>
+> ### STEP 5 — Rebuild the Activity Log UI
+>
+> Replace `InternalCaseActivityLog.tsx` entirely with a new version. Move it from a standalone page into a **tab inside `InternalCaseDetail.tsx`** called "Activity" — add it between "Overview" and "Tasks" in the sidebar.
+>
+> **Page layout:**
+>
+> **Top section — Client Activity Summary cards (always visible):**
+> ```
+> ┌──────────────┬──────────────┬──────────────┬──────────────┐
+> │ Last Login   │ Last Active  │ Files        │ Tasks Done   │
+> │ 2 days ago   │ 4 hours ago  │ 12 uploaded  │ 3 completed  │
+> └──────────────┴──────────────┴──────────────┴──────────────┘
+> ```
+> Pull from `summary` object in API response.
+>
+> **Filter bar:**
+> - Category filter pills: All | Auth | Files | Tasks | Exhibits | Assessment | Navigation | System
+> - Actor filter: All | Client | Staff | System
+> - Date range picker: From / To
+> - Search input: searches event description and metadata
+> - "Clear filters" button
+> - Active filter count badge
+>
+> **Timeline:**
+> One entry per event, newest first, grouped by date (today, yesterday, [date]):
+>
+> Each entry:
+> - Left: colored category icon in a circle (Files=blue folder, Tasks=green clipboard, Auth=purple key, Exhibits=orange document, Assessment=red clipboard, Navigation=grey compass, System=grey gear)
+> - Actor badge: CLIENT (violet) / STAFF (blue) / SYSTEM (grey)
+> - Human-friendly event label (use a map — not raw slug):
+>   ```
+>   client_login → "Logged in"
+>   file_uploaded_client → "Uploaded a file"
+>   file_uploaded_staff → "Staff uploaded a file"
+>   file_uploaded_drive → "File added via Google Drive"
+>   task_completed → "Completed a task"
+>   task_sent → "Task assigned by staff"
+>   assessment_run → "Criteria assessment run"
+>   exhibit_published → "Exhibit published"
+>   page_visited → "Visited [pageName]"
+>   page_exited → "Spent [duration] on [pageName]"
+>   ... (full map for all event types)
+>   ```
+> - Description or key metadata shown inline (file name, task title, page name, criteria name)
+> - Timestamp: relative ("2 hours ago") with full datetime on hover
+> - Expandable metadata panel: clicking the row expands to show all metadata fields in a clean key-value layout — not raw JSON
+>
+> **Pagination:**
+> - Load 50 events at a time
+> - "Load more" button at bottom
+> - Shows "Showing X of Y events"
+>
+> **Empty state:**
+> "No activity recorded yet. Activity will appear here as the client uses the portal."
+>
+> ---
+>
+> ### STEP 6 — Update App.tsx and Sidebar
+>
+> 1. Add "Activity" to `TABS` array in `InternalCaseDetail.tsx` between "Overview" and "Tasks"
+> 2. Add `Activity` Lucide icon to sidebar nav
+> 3. Remove the old standalone `/internal/case/:user_id/activity-log` route from `App.tsx` — redirect it to `/internal/case/:user_id?tab=activity` for any bookmarked links
+> 4. Remove the "Activity Log" button from the sidebar bottom action row since it's now a tab
+>
+> ---
+>
+> ### STEP 7 — Test
+>
+> 1. Log in as a client (profile 34) — confirm `client_login` event appears in activity log
+> 2. Navigate to Case Files page — confirm `page_visited` event appears
+> 3. Upload a file — confirm `file_uploaded_client` event appears with file name
+> 4. Complete a task — confirm `task_completed` event appears with task title
+> 5. Log in as staff and run an assessment — confirm `assessment_run` event appears with criteria name and recommendation
+> 6. Filter by category "Files" — confirm only file events show
+> 7. Search for the uploaded file name — confirm the event appears in results
+> 8. Confirm summary cards show correct last login time and files uploaded count
+> 9. Confirm pagination works — load more button appears and loads next 50 events
+>
+> Report pass or fail for each test step with specific event IDs and values.
+
+---
+
+This is a large build — send it as one prompt and let Replit work through it. 
