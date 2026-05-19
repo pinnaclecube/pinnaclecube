@@ -9,7 +9,7 @@ import { ReconsentModal } from "@/components/disclaimers/ReconsentModal";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { StaffProtectedRoute } from "@/components/auth/StaffProtectedRoute";
 import { ProductProtectedRoute } from "@/components/auth/ProductProtectedRoute";
-import { PaywallRoute } from "@/components/auth/PaywallRoute";
+import { ActiveClientRoute } from "@/components/auth/ActiveClientRoute";
 import NotFound from "@/pages/not-found";
 
 import Home from "@/pages/Home";
@@ -113,17 +113,17 @@ function Router() {
       {/* Protected client routes — require at least one paid product */}
       <Route path="/dashboard">
         <ProtectedRoute>
-          <PaywallRoute><Dashboard /></PaywallRoute>
+          <ActiveClientRoute><Dashboard /></ActiveClientRoute>
         </ProtectedRoute>
       </Route>
       <Route path="/dashboard/readiness-intake">
         <ProtectedRoute>
-          <PaywallRoute><ReadinessIntake /></PaywallRoute>
+          <ActiveClientRoute><ReadinessIntake /></ActiveClientRoute>
         </ProtectedRoute>
       </Route>
       <Route path="/where-you-stand">
         <ProtectedRoute>
-          <PaywallRoute><WhereYouStand /></PaywallRoute>
+          <ActiveClientRoute><WhereYouStand /></ActiveClientRoute>
         </ProtectedRoute>
       </Route>
       <Route path="/evidence">
@@ -144,13 +144,13 @@ function Router() {
       </Route>
       <Route path="/criteria">
         <ProtectedRoute>
-          <PaywallRoute><CriteriaExhibit /></PaywallRoute>
+          <ActiveClientRoute><CriteriaExhibit /></ActiveClientRoute>
         </ProtectedRoute>
       </Route>
       <Route path="/criteria/:id">
         {() => (
           <ProtectedRoute>
-            <PaywallRoute><CriterionDetail /></PaywallRoute>
+            <ActiveClientRoute><CriterionDetail /></ActiveClientRoute>
           </ProtectedRoute>
         )}
       </Route>
@@ -185,7 +185,7 @@ function Router() {
       </Route>
       <Route path="/tasks">
         <ProtectedRoute>
-          <PaywallRoute><Tasks /></PaywallRoute>
+          <ActiveClientRoute><Tasks /></ActiveClientRoute>
         </ProtectedRoute>
       </Route>
 
