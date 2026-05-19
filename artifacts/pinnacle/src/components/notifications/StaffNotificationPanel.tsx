@@ -57,7 +57,7 @@ export function StaffNotificationPanel({
     } else if (low.includes("evidence") || low.includes("drive")) {
       tab = "evidence";
     } else if (low.includes("action_item") || low.includes("task")) {
-      tab = "overview";
+      tab = "tasks";
     }
     if (!tab) return link;
     const sep = link.includes("?") ? "&" : "?";

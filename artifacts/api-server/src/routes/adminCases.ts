@@ -255,6 +255,7 @@ const CreateActionItemBody = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
   priority: z.enum(["low", "medium", "high"]).default("medium"),
+  status: z.enum(["draft", "sent"]).default("draft"),
 });
 
 router.post(
@@ -273,7 +274,8 @@ router.post(
       title: parsed.data.title,
       description: parsed.data.description ?? null,
       priority: parsed.data.priority,
-      status: "draft",
+      status: parsed.data.status,
+      sentAt: parsed.data.status === "sent" ? new Date() : null,
     }).returning();
 
     const [notification] = await db.insert(notificationsTable).values({
@@ -300,6 +302,19 @@ router.post(
         unreadCount: Number(row?.unreadCount ?? 1),
         notification,
       });
+    }
+
+    // Fire email immediately when creating as sent
+    if (parsed.data.status === "sent" && item) {
+      const [profile] = await db
+        .select({ email: profilesTable.email, firstName: profilesTable.firstName, name: profilesTable.name })
+        .from(profilesTable)
+        .where(eq(profilesTable.id, id))
+        .limit(1);
+      if (profile) {
+        const firstName = profile.firstName ?? profile.name?.split(" ")[0] ?? "there";
+        sendEmail(profile.email, actionItemEmail(firstName, item.title, item.description ?? null, item.priority ?? "medium")).catch(() => {});
+      }
     }
 
     res.json({ actionItem: item });

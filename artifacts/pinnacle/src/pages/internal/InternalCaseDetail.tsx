@@ -16,20 +16,22 @@ import {
   ArrowLeft, Plus, Check, AlertTriangle, Lock,
   RefreshCw, ExternalLink, Loader2, CheckCircle, Clock, Zap, Activity,
   LayoutDashboard, FolderSearch, GraduationCap, ClipboardCheck,
-  FileText, Files, HardDrive, Menu, X,
+  FileText, Files, HardDrive, Menu, X, ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FolderBrowser } from "@/components/case/FolderBrowser";
 import { PetitionAssessmentTab } from "./PetitionAssessmentTab";
 import { ExhibitsTab } from "./ExhibitsTab";
+import { TasksTab } from "./TasksTab";
 
-const TABS = ["Overview", "Evidence", "Excellence Lab", "Petition Workspace", "Petition Assessment", "Exhibits", "Documents", "Drive Folders"] as const;
+const TABS = ["Overview", "Tasks", "Evidence", "Excellence Lab", "Petition Workspace", "Petition Assessment", "Exhibits", "Documents", "Drive Folders"] as const;
 type Tab = typeof TABS[number];
 
 const HIDDEN_TABS = ["Petition Workspace"] as const;
 
 const TAB_ICONS: Partial<Record<Tab, React.ComponentType<{ className?: string }>>> = {
   "Overview": LayoutDashboard,
+  "Tasks": ClipboardList,
   "Evidence": FolderSearch,
   "Excellence Lab": GraduationCap,
   "Petition Assessment": ClipboardCheck,
@@ -73,44 +75,10 @@ function StatusBadge({ status }: { status: string }) {
 
 function OverviewTab({ userId, data, onReload }: { userId: string; data: any; onReload: () => void }) {
   const { profile, intake, resume } = data;
-  const [actionItems, setActionItems] = useState<any[]>([]);
-  const [showNewItem, setShowNewItem] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
-  const [newDesc, setNewDesc] = useState("");
-  const [newPriority, setNewPriority] = useState("medium");
   const [saving, setSaving] = useState(false);
   const [showResetPw, setShowResetPw] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-
-  useEffect(() => {
-    staffFetch(`/admin/profiles/${userId}/action-items`)
-      .then((r) => r.json())
-      .then((d) => setActionItems(d.actionItems ?? []));
-  }, [userId]);
-
-  const createActionItem = async () => {
-    if (!newTitle.trim()) return;
-    setSaving(true);
-    try {
-      const r = await staffFetch(`/admin/profiles/${userId}/action-items`, {
-        method: "POST",
-        body: JSON.stringify({ title: newTitle, description: newDesc, priority: newPriority }),
-      });
-      const d = await r.json();
-      if (d.actionItem) { setActionItems((prev) => [d.actionItem, ...prev]); }
-      setNewTitle(""); setNewDesc(""); setNewPriority("medium"); setShowNewItem(false);
-    } finally { setSaving(false); }
-  };
-
-  const updateStatus = async (aid: number, status: string) => {
-    const r = await staffFetch(`/admin/profiles/${userId}/action-items/${aid}`, {
-      method: "PATCH",
-      body: JSON.stringify({ status }),
-    });
-    const d = await r.json();
-    if (d.actionItem) setActionItems((prev) => prev.map((a) => a.id === aid ? d.actionItem : a));
-  };
 
   const resetPassword = async () => {
     if (newPassword.length < 8) return;
@@ -217,62 +185,6 @@ function OverviewTab({ userId, data, onReload }: { userId: string; data: any; on
           </CardContent>
         </Card>
 
-        {/* Action Items hidden — moved to Tasks tab */}
-        {false && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Action Items</CardTitle>
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowNewItem(true)}>
-              <Plus className="w-3 h-3 mr-1" /> Add
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {showNewItem && (
-              <div className="border rounded-lg p-3 space-y-2 bg-gray-50">
-                <Input placeholder="Item title" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} className="text-sm h-8" />
-                <Textarea placeholder="Description (optional)" value={newDesc} onChange={(e) => setNewDesc(e.target.value)} className="text-sm min-h-[50px]" />
-                <div className="flex items-center gap-2">
-                  <Select value={newPriority} onValueChange={setNewPriority}>
-                    <SelectTrigger className="h-7 text-xs w-28"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="low">Low</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button size="sm" className="h-7 text-xs bg-[#1E2D6B] hover:bg-[#3D4FA8]" onClick={createActionItem} disabled={saving || !newTitle.trim()}>Save</Button>
-                  <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setShowNewItem(false)}>Cancel</Button>
-                </div>
-              </div>
-            )}
-            {actionItems.length === 0 && !showNewItem ? (
-              <p className="text-muted-foreground text-sm italic">No action items yet.</p>
-            ) : actionItems.map((item) => (
-              <div key={item.id} className="flex items-start gap-2 p-2 rounded border bg-white">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{item.title}</p>
-                  {item.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{item.description}</p>}
-                  <div className="flex items-center gap-2 mt-1">
-                    <StatusBadge status={item.status} />
-                    <span className={cn("text-xs font-medium", item.priority === "high" ? "text-red-600" : item.priority === "medium" ? "text-yellow-600" : "text-gray-400")}>
-                      {item.priority}
-                    </span>
-                  </div>
-                </div>
-                <Select value={item.status} onValueChange={(v) => updateStatus(item.id, v)}>
-                  <SelectTrigger className="h-6 text-xs w-24 shrink-0"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="sent">Sent</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                    <SelectItem value="cancelled">Cancelled</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-        )}
       </div>
 
       <div className="flex items-center gap-2 pt-2 border-t">
@@ -1102,6 +1014,7 @@ function DriveFoldersTab({ userId }: { userId: string }) {
 
 const TAB_SLUG_MAP: Record<string, Tab> = {
   "overview": "Overview",
+  "tasks": "Tasks",
   "evidence": "Evidence",
   "excellence-lab": "Excellence Lab",
   "petition-workspace": "Petition Workspace",
@@ -1123,6 +1036,7 @@ export default function InternalCaseDetail() {
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState<"auth" | "not_found" | "error" | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sentCount, setSentCount] = useState(0);
 
   const loadProfile = useCallback(async () => {
     try {
@@ -1247,6 +1161,11 @@ export default function InternalCaseDetail() {
                     <Icon className={cn("w-4 h-4 shrink-0", isActive ? "text-violet-600" : "text-gray-400")} />
                   )}
                   <span className="truncate">{tab}</span>
+                  {tab === "Tasks" && sentCount > 0 && (
+                    <span className="ml-auto bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 leading-none shrink-0">
+                      {sentCount}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -1279,6 +1198,7 @@ export default function InternalCaseDetail() {
 
           <div className="p-6">
             {activeTab === "Overview" && <OverviewTab userId={user_id} data={profileData} onReload={loadProfile} />}
+            {activeTab === "Tasks" && <TasksTab userId={user_id} onSentCountChange={setSentCount} />}
             {activeTab === "Evidence" && <EvidenceTab userId={user_id} />}
             {activeTab === "Excellence Lab" && <ExcellenceLabTab userId={user_id} />}
             {activeTab === "Petition Workspace" && <PetitionWorkspaceTab userId={user_id} />}
