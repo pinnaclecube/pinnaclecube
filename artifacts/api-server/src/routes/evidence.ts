@@ -35,7 +35,10 @@ function normalizeVisaPath(raw: string): VisaPathKey | null {
 
 // ─── Multer (memory storage) ──────────────────────────────────────────────────
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
+});
 
 // ─── GET /api/evidence/criteria ───────────────────────────────────────────────
 

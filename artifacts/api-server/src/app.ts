@@ -28,8 +28,8 @@ app.use(
 app.use(cors());
 // Stripe webhook needs the raw body BEFORE the json parser consumes it
 app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 app.use("/api", router);
 
