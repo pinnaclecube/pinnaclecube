@@ -1,0 +1,64 @@
+Make the following UI changes to the staff case detail page (InternalCaseDetail.tsx). Do not remove anything — only hide and restructure.
+Change 1 — Convert horizontal tab bar to left sidebar navigation:
+Replace the current horizontal scrolling tab bar with a fixed left sidebar. The layout should become a two-column structure:
+┌─────────────────┬──────────────────────────────────────┐
+│                 │                                      │
+│  Client Info    │                                      │
+│  Name           │                                      │
+│  Email · Visa   │         Active Tab Content           │
+│                 │                                      │
+│  ─────────────  │                                      │
+│                 │                                      │
+│  Overview       │                                      │
+│  Evidence       │                                      │
+│  Excellence Lab │                                      │
+│  Petition Assess│                                      │
+│  Exhibits       │                                      │
+│  Documents      │                                      │
+│  Drive Folders  │                                      │
+│                 │                                      │
+└─────────────────┴──────────────────────────────────────┘
+Left sidebar specs:
+
+Fixed width: w-56 (224px)
+Full height of the content area
+White background with a right border border-r border-gray-200
+Client name, email, visa category badge at the top of the sidebar above the nav items — move these from the current page header into the sidebar top section
+Each nav item: full width button, left-aligned, with padding px-4 py-2.5
+Active item: bg-violet-50 text-violet-700 font-medium border-r-2 border-violet-600
+Inactive item: text-gray-600 hover:bg-gray-50
+Icon per nav item (use Lucide icons):
+
+Overview → LayoutDashboard
+Evidence → FolderSearch
+Excellence Lab → GraduationCap
+Petition Assessment → ClipboardCheck
+Exhibits → FileText
+Documents → Files
+Drive Folders → HardDrive
+
+
+"Evidence Vault" button currently in the top right — move it to the bottom of the left sidebar
+The right content area takes the remaining width: flex-1 overflow-y-auto p-6
+
+Change 2 — Hide "Petition Workspace" tab:
+Remove "Petition Workspace" from the visible sidebar nav items but keep it in the TABS array and keep the tab content rendering intact. It should not be visible in the sidebar but the route ?tab=petition-workspace should still work if navigated to directly.
+Implement this by maintaining a HIDDEN_TABS constant:
+typescriptconst HIDDEN_TABS = ["Petition Workspace"] as const;
+Filter it out when rendering sidebar nav items but not when rendering tab content.
+Change 3 — Hide Action Items card on Overview tab:
+In OverviewTab (or wherever the action items card is currently rendered in the Overview tab content), wrap the action items card in:
+tsx{false && <ActionItemsCard ... />}
+Or simply comment it out clearly:
+tsx{/* Action Items hidden — moved to Tasks tab */}
+{/* <ActionItemsCard ... /> */}
+Do not delete any code — just hide it. The Tasks tab we are about to build will be the home for action items.
+Confirm all three changes:
+
+Left sidebar renders with correct icons and active state styling
+Client name, email, visa badge visible at top of sidebar
+"Petition Workspace" not visible in sidebar but ?tab=petition-workspace still works
+Overview tab no longer shows action items card
+All other tabs still render their content correctly
+Evidence Vault button visible at bottom of sidebar
+Layout is responsive — on narrow screens the sidebar collapses gracefully (can use a simple toggle button to show/hide on mobile)
