@@ -1,0 +1,101 @@
+Fix the Drive sync to detect and persist subfolders created directly in Google Drive.
+Root cause confirmed: listDriveFolderFiles in driveService.ts filters out all folders with mimeType != 'application/vnd.google-apps.folder'. When a client creates a subfolder directly in Drive, the webhook fires but the subfolder is silently discarded.
+Fix 1 — Add a separate folder listing function in driveService.ts:
+typescriptexport async function listDriveSubfolders(folderId: string): Promise<DriveFile[]> {
+  const res = await getDriveClient().files.list({
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+    q: `'${folderId}' in parents and trashed = false and mimeType = 'application/vnd.google-apps.folder'`,
+    fields: 'files(id,name,mimeType,webViewLink)',
+    pageSize: 100,
+  });
+  return res.data.files ?? [];
+}
+Fix 2 — Update syncFolderContents in driveWatchService.ts to also sync subfolders:
+After syncing files, add subfolder detection and persistence:
+typescriptexport async function syncFolderContents(driveFolderId: string): Promise<number> {
+  const [folder] = await db
+    .select()
+    .from(caseFoldersTable)
+    .where(eq(caseFoldersTable.driveId, driveFolderId))
+    .limit(1);
+
+  if (!folder) {
+    logger.warn({ driveFolderId }, '[syncFolderContents] no case_folder found');
+    return 0;
+  }
+
+  // Sync files (existing logic unchanged)
+  const files = await listDriveFolderFiles(driveFolderId);
+  let upsertCount = 0;
+  for (const file of files) {
+    await db.insert(caseFolderItemsTable).values({
+      caseFolderId: folder.id,
+      driveId: file.id,
+      name: file.name,
+      mimeType: file.mimeType,
+      driveUrl: file.webViewLink,
+      addedBySource: 'drive',
+    }).onConflictDoUpdate({
+      target: caseFolderItemsTable.driveId,
+      set: { name: file.name, driveUrl: file.webViewLink },
+    });
+    upsertCount++;
+  }
+
+  // NEW: Sync subfolders created directly in Drive
+  const subfolders = await listDriveSubfolders(driveFolderId);
+  for (const subfolder of subfolders) {
+    // Check if this subfolder already exists in case_folders
+    const existing = await db.select().from(caseFoldersTable)
+      .where(eq(caseFoldersTable.driveId, subfolder.id)).limit(1);
+
+    if (existing.length === 0) {
+      // Insert new case_folders row for the Drive-created subfolder
+      const [newFolder] = await db.insert(caseFoldersTable).values({
+        caseId: folder.caseId,
+        name: subfolder.name,
+        folderType: 'custom',
+        parentFolderId: folder.id,
+        driveId: subfolder.id,
+        driveUrl: subfolder.webViewLink,
+        visaCategory: folder.visaCategory,
+        staffOnly: false,
+      }).returning();
+
+      // Register a watch channel for this new subfolder
+      // so future changes inside it also trigger webhooks
+      try {
+        await registerDriveWatch(subfolder.id, newFolder.id);
+      } catch (err) {
+        logger.warn({ subfolderDriveId: subfolder.id }, '[syncFolderContents] watch registration failed for new subfolder');
+      }
+
+      logger.info({ subfolderName: subfolder.name, driveId: subfolder.id },
+        '[syncFolderContents] new Drive subfolder detected and saved');
+      upsertCount++;
+    }
+
+    // Recursively sync contents of this subfolder
+    await syncFolderContents(subfolder.id);
+  }
+
+  return upsertCount;
+}
+Fix 3 — Backfill existing cases:
+Run a one-time backfill that calls syncFolderContents on every folder in case_folders across all active cases. This will detect and persist any subfolders already created directly in Drive that were missed before this fix.
+typescript// Run once — backfill all existing case folders
+const allFolders = await db.select().from(caseFoldersTable);
+for (const folder of allFolders) {
+  await syncFolderContents(folder.driveId);
+  await new Promise(r => setTimeout(r, 200)); // rate limit
+}
+Run the backfill immediately and report how many new subfolders were detected and saved across all cases.
+Fix 4 — Verify for Srinivas Chilakamarri:
+After the backfill, confirm:
+
+"Peer Reviews" and "Events" subfolders now appear in case_folders for his case
+The Drive Folders tab in the staff portal now shows these subfolders under "Judge of Others' Work"
+Watch channels are registered for both new subfolders
+
+Show the new case_folders rows created and confirm the UI displays them.

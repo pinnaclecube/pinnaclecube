@@ -21,7 +21,7 @@ import {
   driveWatchChannelsTable,
   channelRenewalFailuresTable,
 } from "@workspace/db";
-import { getDriveClient, listDriveFolderFiles } from "./driveService";
+import { getDriveClient, listDriveFolderFiles, listDriveSubfolders } from "./driveService";
 import { logger } from "../lib/logger";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -113,10 +113,14 @@ async function stopChannel(channelId: string, resourceId: string): Promise<void>
 // ─── Folder content sync ──────────────────────────────────────────────────────
 
 /**
- * Fetches the non-folder direct children of `driveFolderId` from Drive
- * and upserts them into case_folder_items.
+ * Fetches the direct children of `driveFolderId` from Drive and syncs them:
  *
- * Returns the number of items synced.
+ * - Non-folder files  → upserted into case_folder_items.
+ * - Subfolders        → inserted into case_folders (if not already present),
+ *                       a watch channel is registered for each new one, and
+ *                       their contents are synced recursively.
+ *
+ * Returns the total count of files upserted + new subfolders persisted.
  */
 export async function syncFolderContents(driveFolderId: string): Promise<number> {
   // Look up the case_folder record that owns this Drive folder
@@ -130,6 +134,8 @@ export async function syncFolderContents(driveFolderId: string): Promise<number>
     logger.warn({ driveFolderId }, "[syncFolderContents] no case_folder found for drive_id — skipping");
     return 0;
   }
+
+  // ── 1. Sync non-folder files (existing logic unchanged) ───────────────────
 
   const files = await listDriveFolderFiles(driveFolderId);
   let upsertCount = 0;
@@ -153,6 +159,66 @@ export async function syncFolderContents(driveFolderId: string): Promise<number>
         },
       });
     upsertCount++;
+  }
+
+  // ── 2. Detect and persist subfolders created directly in Drive ────────────
+
+  const subfolders = await listDriveSubfolders(driveFolderId);
+
+  for (const subfolder of subfolders) {
+    // Check if this subfolder is already tracked in case_folders
+    const [existing] = await db
+      .select()
+      .from(caseFoldersTable)
+      .where(eq(caseFoldersTable.driveId, subfolder.id))
+      .limit(1);
+
+    if (!existing) {
+      // Persist the Drive-created subfolder as a 'custom' folder
+      const [newFolder] = await db
+        .insert(caseFoldersTable)
+        .values({
+          caseId: folder.caseId,
+          name: subfolder.name,
+          folderType: "custom",
+          parentFolderId: folder.id,
+          driveId: subfolder.id,
+          driveUrl: subfolder.webViewLink,
+          visaCategory: folder.visaCategory,
+          staffOnly: false,
+        })
+        .returning();
+
+      logger.info(
+        { subfolderName: subfolder.name, driveId: subfolder.id, caseId: folder.caseId },
+        "[syncFolderContents] new Drive subfolder detected and saved",
+      );
+
+      upsertCount++;
+
+      // Register a watch channel so future changes inside this subfolder
+      // also trigger webhooks — non-fatal if Drive API call fails
+      try {
+        await registerDriveWatch(folder.caseId, subfolder.id);
+        logger.info(
+          { subfolderDriveId: subfolder.id, caseId: folder.caseId },
+          "[syncFolderContents] watch channel registered for new subfolder",
+        );
+      } catch (err) {
+        logger.warn(
+          { subfolderDriveId: subfolder.id, err },
+          "[syncFolderContents] watch registration failed for new subfolder",
+        );
+      }
+
+      // Recurse into the new subfolder to pick up any files already inside it
+      if (newFolder) {
+        await syncFolderContents(subfolder.id);
+      }
+    } else {
+      // Already tracked — still recurse to catch any new files inside
+      await syncFolderContents(subfolder.id);
+    }
   }
 
   logger.info(

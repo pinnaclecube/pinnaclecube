@@ -1,8 +1,10 @@
 /**
  * driveWebhook.ts — Pinnacle³
  *
- * POST /drive/webhook  — receives Google Drive push notifications
- * GET  /drive/events   — SSE stream for real-time Drive sync updates
+ * POST /drive/webhook           — receives Google Drive push notifications
+ * GET  /drive/events            — SSE stream for real-time Drive sync updates
+ * POST /drive/backfill-subfolders — staff-only: scan all case_folders for
+ *                                   Drive-created subfolders and persist them
  *
  * The SSE endpoint accepts both client (Bearer JWT) and staff (X-Staff-Token)
  * auth so the FolderBrowser component can connect via fetch() with the same
@@ -71,7 +73,7 @@ router.post("/drive/webhook", (req: Request, res: Response): void => {
         return;
       }
 
-      // 2. Sync the watched root folder's direct file children
+      // 2. Sync the watched folder's direct children (files + any new subfolders)
       const itemCount = await syncFolderContents(channel.driveFolderId);
 
       // 3. Push real-time update to all SSE clients watching this case
@@ -130,6 +132,55 @@ router.post("/drive/webhook", (req: Request, res: Response): void => {
     }
   })();
 });
+
+// ─── POST /drive/backfill-subfolders ─────────────────────────────────────────
+//
+// Staff-only one-shot endpoint. Iterates every row in case_folders, calls
+// syncFolderContents on its Drive ID (which now detects and persists any
+// subfolders that were created directly in Drive), and returns a summary.
+// A 200 ms delay between each folder avoids Drive API rate-limit bursts.
+
+router.post(
+  "/drive/backfill-subfolders",
+  requireStaffAuth,
+  (_req: Request, res: Response): void => {
+    void (async () => {
+      try {
+        const allFolders = await db.select().from(caseFoldersTable);
+
+        logger.info({ total: allFolders.length }, "[driveBackfill] starting subfolder backfill");
+
+        let totalSynced = 0;
+        const results: { folderId: number; name: string; driveId: string; synced: number }[] = [];
+
+        for (const folder of allFolders) {
+          try {
+            const synced = await syncFolderContents(folder.driveId);
+            totalSynced += synced;
+            results.push({ folderId: folder.id, name: folder.name, driveId: folder.driveId, synced });
+          } catch (err) {
+            logger.warn({ folderId: folder.id, driveId: folder.driveId, err }, "[driveBackfill] folder sync failed");
+            results.push({ folderId: folder.id, name: folder.name, driveId: folder.driveId, synced: -1 });
+          }
+
+          // Rate-limit: 200 ms between Drive API calls
+          await new Promise<void>((r) => setTimeout(r, 200));
+        }
+
+        logger.info({ totalSynced, foldersProcessed: allFolders.length }, "[driveBackfill] backfill complete");
+
+        res.json({
+          foldersProcessed: allFolders.length,
+          totalNewItemsAndSubfolders: totalSynced,
+          results,
+        });
+      } catch (err) {
+        logger.error({ err }, "[driveBackfill] backfill failed");
+        res.status(500).json({ error: "Backfill failed" });
+      }
+    })();
+  },
+);
 
 // ─── GET /drive/events ────────────────────────────────────────────────────────
 //

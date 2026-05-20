@@ -108,3 +108,24 @@ export async function listDriveFolderFiles(
       Boolean(f.id && f.name && f.mimeType && f.webViewLink),
   ) as DriveFileMetadata[];
 }
+
+/**
+ * Lists the direct subfolder children of a Drive folder.
+ * Returns folders only (non-folder files are excluded).
+ */
+export async function listDriveSubfolders(
+  folderId: string,
+): Promise<DriveFileMetadata[]> {
+  const res = await getDriveClient().files.list({
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+    q: `'${folderId}' in parents and trashed = false and mimeType = 'application/vnd.google-apps.folder'`,
+    fields: "files(id,name,mimeType,webViewLink)",
+    pageSize: 100,
+  });
+
+  return (res.data.files ?? []).filter(
+    (f): f is DriveFileMetadata =>
+      Boolean(f.id && f.name && f.mimeType && f.webViewLink),
+  ) as DriveFileMetadata[];
+}
