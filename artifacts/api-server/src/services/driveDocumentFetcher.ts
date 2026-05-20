@@ -7,6 +7,11 @@
  * Processing order: criteria folders first (priority for the 150k char cap),
  * then resume, demographics, and all other folder types.
  * Never throws on a single-file failure — errors are caught per file.
+ *
+ * Custom subfolder handling (Bug A fix):
+ *   Drive-created subfolders have folderType='custom'. Their documents are
+ *   attributed to the nearest criteria/resume/demographics ancestor by walking
+ *   the parentFolderId chain, so they reach Claude during assessment.
  */
 
 import { eq } from "drizzle-orm";
@@ -24,6 +29,7 @@ export interface FetchedDocument {
   mimeType: string;
   folderType: string;
   folderName: string;
+  caseFolderId: number;
   criteriaIndex: number | null;
   criteriaName: string | null;
   criteriaCode: string | null;
@@ -82,6 +88,50 @@ async function exportGoogleDocAsText(fileId: string): Promise<string> {
   return Buffer.from(response.data as ArrayBuffer).toString("utf8");
 }
 
+// ─── Parent-chain ancestor resolution ────────────────────────────────────────
+
+type AncestorInfo =
+  | { folderType: "criteria"; criteriaName: string }
+  | { folderType: "resume" }
+  | { folderType: "demographics" };
+
+/**
+ * For every custom folder in the set, walk parentFolderId until a
+ * criteria/resume/demographics ancestor is found.  Returns a Map keyed
+ * by the custom folder's DB id.
+ */
+function buildCustomAncestorMap(
+  folders: Array<typeof caseFoldersTable.$inferSelect>,
+): Map<number, AncestorInfo> {
+  const folderById = new Map(folders.map((f) => [f.id, f]));
+  const result = new Map<number, AncestorInfo>();
+
+  for (const folder of folders) {
+    if (folder.folderType !== "custom" || !folder.parentFolderId) continue;
+
+    let current = folderById.get(folder.parentFolderId);
+    while (current) {
+      if (current.folderType === "criteria") {
+        result.set(folder.id, { folderType: "criteria", criteriaName: current.name });
+        break;
+      }
+      if (current.folderType === "resume") {
+        result.set(folder.id, { folderType: "resume" });
+        break;
+      }
+      if (current.folderType === "demographics") {
+        result.set(folder.id, { folderType: "demographics" });
+        break;
+      }
+      // Current folder is also custom — keep climbing
+      current = current.parentFolderId ? folderById.get(current.parentFolderId) : undefined;
+    }
+    // If we exhausted the chain without hitting a known type, leave unmapped (orphan)
+  }
+
+  return result;
+}
+
 // ─── Main fetcher ─────────────────────────────────────────────────────────────
 
 const CHAR_CAP = 150_000;
@@ -94,6 +144,9 @@ export async function fetchCaseDocuments(
     .select()
     .from(caseFoldersTable)
     .where(eq(caseFoldersTable.caseId, caseSetupId));
+
+  // Build ancestor map for custom subfolders before walking files
+  const customAncestorMap = buildCustomAncestorMap(folders);
 
   // Process criteria folders first so they consume the char cap preferentially
   const criteriaFolders = folders.filter((f) => f.folderType === "criteria");
@@ -164,6 +217,7 @@ export async function fetchCaseDocuments(
         mimeType: file.mimeType,
         folderType: folder.folderType,
         folderName: folder.name,
+        caseFolderId: folder.id,
         criteriaIndex: folder.criteriaIndex ?? null,
         criteriaName: folder.folderType === "criteria" ? folder.name : null,
         criteriaCode: null, // not stored in case_folders; resolved by callers via exhibit table
@@ -175,23 +229,45 @@ export async function fetchCaseDocuments(
   }
 
   // 4. Build grouped result
-  const resume = allDocuments.filter((d) => d.folderType === "resume");
-  const demographics = allDocuments.filter(
-    (d) => d.folderType === "demographics",
-  );
-
+  //    Custom subfolders are attributed to their nearest criteria/resume/demographics
+  //    ancestor via the customAncestorMap built above.
+  const resume: FetchedDocument[] = [];
+  const demographics: FetchedDocument[] = [];
   const byCriteria: Record<string, FetchedDocument[]> = {};
+
   for (const doc of allDocuments) {
     if (doc.folderType === "criteria" && doc.criteriaName) {
       (byCriteria[doc.criteriaName] ??= []).push(doc);
+    } else if (doc.folderType === "custom") {
+      const ancestor = customAncestorMap.get(doc.caseFolderId);
+      if (!ancestor) {
+        // Orphaned custom folder — no criteria ancestor found; skip
+        continue;
+      }
+      if (ancestor.folderType === "criteria") {
+        (byCriteria[ancestor.criteriaName] ??= []).push({
+          ...doc,
+          criteriaName: ancestor.criteriaName,
+          // Label the folder name so Claude knows it came from a subfolder
+          folderName: `${doc.folderName} (subfolder of ${ancestor.criteriaName})`,
+        });
+      } else if (ancestor.folderType === "resume") {
+        resume.push(doc);
+      } else if (ancestor.folderType === "demographics") {
+        demographics.push(doc);
+      }
+    } else if (doc.folderType === "resume") {
+      resume.push(doc);
+    } else if (doc.folderType === "demographics") {
+      demographics.push(doc);
     }
+    // root / evidence / exhibits / other types — not passed to assessment
   }
 
+  // A criteria folder is empty only if it has no files AND none of its custom
+  // subfolders have files (byCriteria is already populated with both).
   const emptyCriteriaFolders = criteriaFolders
-    .filter(
-      (f) =>
-        !byCriteria[f.name] || byCriteria[f.name].length === 0,
-    )
+    .filter((f) => !byCriteria[f.name] || byCriteria[f.name].length === 0)
     .map((f) => f.name);
 
   logger.info(
@@ -202,6 +278,7 @@ export async function fetchCaseDocuments(
       excludedCount: excludedFiles.length,
       criteriaFolderCount: criteriaFolders.length,
       emptyCriteriaFolders: emptyCriteriaFolders.length,
+      customFoldersMapped: customAncestorMap.size,
     },
     "[docFetcher] fetch complete",
   );

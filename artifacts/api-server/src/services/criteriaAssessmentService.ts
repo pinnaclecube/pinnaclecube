@@ -35,6 +35,51 @@ function getAI(): Anthropic {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Normalise a criteria name for fuzzy matching:
+ *   - lowercase
+ *   - strip all apostrophe/quote variants (curly, straight, backtick)
+ *     so "Judge of Others' Work" and "Judge of Others Work" compare equal
+ *   - collapse runs of whitespace → single space
+ *   - trim edges
+ */
+function normalizeCriteriaName(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[\u2018\u2019\u0060']/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Looks up documents for a criteria name.
+ * Tries exact key match first; if that misses, falls back to a normalised
+ * comparison and logs a warning so data inconsistencies are visible.
+ */
+function findCriteriaDocuments(
+  byCriteria: Record<string, import("./driveDocumentFetcher").FetchedDocument[]>,
+  criteriaName: string,
+): import("./driveDocumentFetcher").FetchedDocument[] {
+  // Exact match — fast path
+  if (byCriteria[criteriaName]) return byCriteria[criteriaName];
+
+  // Normalised fallback
+  const normalizedTarget = normalizeCriteriaName(criteriaName);
+  const matchingKey = Object.keys(byCriteria).find(
+    (key) => normalizeCriteriaName(key) === normalizedTarget,
+  );
+
+  if (matchingKey) {
+    logger.warn(
+      { criteriaName, matchedKey: matchingKey },
+      "[assessCriteria] criteria name fuzzy matched — check for data inconsistency",
+    );
+    return byCriteria[matchingKey];
+  }
+
+  return [];
+}
+
 function extractJson<T>(raw: string): T {
   const stripped = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
   const match = stripped.match(/\{[\s\S]*\}/);
@@ -101,7 +146,8 @@ export async function assessCriteriaEvidence(
   const { grouped } = fetchResult;
 
   // Filter to this criterion's docs + resume + demographics
-  const criteriaDocuments = grouped.byCriteria[criteriaName] ?? [];
+  // findCriteriaDocuments tries exact match first, then normalised fallback (Bug B fix)
+  const criteriaDocuments = findCriteriaDocuments(grouped.byCriteria, criteriaName);
   const documents = [
     ...criteriaDocuments,
     ...grouped.resume,
