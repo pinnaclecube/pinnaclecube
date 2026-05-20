@@ -215,10 +215,11 @@ export async function syncFolderContents(driveFolderId: string): Promise<number>
       if (newFolder) {
         await syncFolderContents(subfolder.id);
       }
-    } else {
-      // Already tracked — still recurse to catch any new files inside
-      await syncFolderContents(subfolder.id);
     }
+    // Already-tracked subfolders are intentionally NOT recursed into here.
+    // Each tracked subfolder has its own watch channel (webhooks) and will be
+    // iterated directly by the backfill loop, so recursing would multiply
+    // Drive API calls by the depth of the folder hierarchy.
   }
 
   logger.info(
