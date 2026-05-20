@@ -1,0 +1,33 @@
+Diagnose whether assessCriteriaEvidence is correctly reading documents from the specific criteria Drive folder when running a petition assessment.
+Check 1 — Trace the document fetching logic:
+In criteriaAssessmentService.ts, show the exact code path from assessCriteriaEvidence(caseSetupId, criteriaCode) to the Drive API call. Specifically:
+
+How does it resolve which Drive folder to read from — does it look up case_folders by criteriaCode, criteriaIndex, or folder name?
+What query does it run against case_folders to find the criteria folder?
+What does it pass to fetchCaseDocuments — the full caseSetupId or a specific folder ID?
+
+Check 2 — Trace fetchCaseDocuments in driveDocumentFetcher.ts:
+
+Show the exact case_folders query it runs
+Does it fetch ALL folders for the case or filter to specific folders?
+How does it group documents by criteria — what field does it use to match a document to a criteria folder?
+Does it filter the returned documents to only the relevant criteria folder before passing to Claude, or does it pass ALL case documents?
+
+Check 3 — What actually gets sent to Claude:
+Add temporary debug logging to assessCriteriaEvidence for one test run:
+
+Log the criteria name being assessed
+Log the Drive folder ID being queried
+Log the list of files found in that folder (file names only)
+Log the total character count of text being sent to Claude
+Log the first 200 characters of the system prompt to confirm the correct CFR citation is being used
+
+Run one assessment for any criteria that has documents uploaded and show the debug output.
+Check 4 — Confirm the filtering:
+After the debug run answer these specific questions:
+
+Are documents from OTHER criteria folders being included in the assessment? Yes or no.
+Are Resume and Demographics documents included? Yes or no — and is this intentional?
+If a criteria folder is empty, are documents from other folders used as a fallback? Yes or no.
+
+Report all findings with exact code snippets and the debug output from the test run. Do not change anything yet.

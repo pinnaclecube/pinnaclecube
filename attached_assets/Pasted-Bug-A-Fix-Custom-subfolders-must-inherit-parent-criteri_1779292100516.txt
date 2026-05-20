@@ -1,0 +1,130 @@
+Bug A Fix — Custom subfolders must inherit parent criteria folder context (HIGH PRIORITY)
+Files uploaded into Drive-created subfolders (like "Peer Reviews" and "Events" inside "Judge of Others' Work") have folderType: 'custom' and are silently dropped before reaching Claude.
+Fix in driveDocumentFetcher.ts — extend the grouping logic to walk custom subfolders and attribute their documents to the parent criteria folder:
+typescript// Build a lookup map: custom folder id → parent criteria folder
+const customFolderParentMap = new Map<number, { criteriaName: string; folderType: string }>();
+
+for (const folder of folders) {
+  if (folder.folderType === 'custom' && folder.parentFolderId) {
+    // Find the parent folder
+    const parent = folders.find(f => f.id === folder.parentFolderId);
+    if (parent) {
+      if (parent.folderType === 'criteria') {
+        // Direct child of a criteria folder
+        customFolderParentMap.set(folder.id, {
+          criteriaName: parent.name,
+          folderType: 'criteria'
+        });
+      } else if (parent.folderType === 'custom') {
+        // Nested custom subfolder — walk up to find the criteria ancestor
+        let ancestor = parent;
+        while (ancestor && ancestor.folderType === 'custom' && ancestor.parentFolderId) {
+          ancestor = folders.find(f => f.id === ancestor.parentFolderId)!;
+        }
+        if (ancestor && ancestor.folderType === 'criteria') {
+          customFolderParentMap.set(folder.id, {
+            criteriaName: ancestor.name,
+            folderType: 'criteria'
+          });
+        }
+      } else if (parent.folderType === 'resume') {
+        customFolderParentMap.set(folder.id, { criteriaName: '', folderType: 'resume' });
+      } else if (parent.folderType === 'demographics') {
+        customFolderParentMap.set(folder.id, { criteriaName: '', folderType: 'demographics' });
+      }
+    }
+  }
+}
+Then update the document grouping loop:
+typescriptfor (const doc of allDocuments) {
+  if (doc.folderType === 'criteria' && doc.criteriaName) {
+    (grouped.byCriteria[doc.criteriaName] ??= []).push(doc);
+  } else if (doc.folderType === 'custom') {
+    // Look up which parent this custom folder belongs to
+    const parentInfo = customFolderParentMap.get(doc.caseFolderId);
+    if (parentInfo) {
+      if (parentInfo.folderType === 'criteria' && parentInfo.criteriaName) {
+        // Attribute to parent criteria folder
+        (grouped.byCriteria[parentInfo.criteriaName] ??= []).push({
+          ...doc,
+          criteriaName: parentInfo.criteriaName,
+          folderName: `${doc.folderName} (subfolder)`, // label so Claude knows it came from a subfolder
+        });
+      } else if (parentInfo.folderType === 'resume') {
+        grouped.resume.push(doc);
+      } else if (parentInfo.folderType === 'demographics') {
+        grouped.demographics.push(doc);
+      }
+    }
+    // If no parent found — document is in an orphaned custom folder, skip
+  } else if (doc.folderType === 'resume') {
+    grouped.resume.push(doc);
+  } else if (doc.folderType === 'demographics') {
+    grouped.demographics.push(doc);
+  }
+}
+Also update the emptyCriteriaFolders detection to include documents from custom subfolders:
+typescript// A criteria folder is only truly empty if it has no files AND
+// none of its custom subfolders have files either
+grouped.emptyCriteriaFolders = criteriaFolders
+  .filter(f => {
+    const directFiles = grouped.byCriteria[f.name]?.length ?? 0;
+    return directFiles === 0;
+  })
+  .map(f => f.name);
+
+Bug B Fix — Name mismatch safety (MEDIUM PRIORITY)
+The lookup grouped.byCriteria[criteriaName] uses exact string match. If petition_criteria_exhibits.criteriaName differs from case_folders.name by even one character, the assessment silently returns INSUFFICIENT.
+Fix in criteriaAssessmentService.ts:
+typescript// Instead of exact match only, try normalized match as fallback
+function findCriteriaDocuments(
+  byCriteria: Record<string, FetchedDocument[]>,
+  criteriaName: string
+): FetchedDocument[] {
+  // Try exact match first
+  if (byCriteria[criteriaName]) return byCriteria[criteriaName];
+
+  // Normalize: lowercase, remove apostrophes, trim whitespace
+  const normalize = (s: string) => s.toLowerCase()
+    .replace(/['']/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const normalizedTarget = normalize(criteriaName);
+  const matchingKey = Object.keys(byCriteria).find(
+    key => normalize(key) === normalizedTarget
+  );
+
+  if (matchingKey) {
+    logger.warn(
+      { criteriaName, matchedKey: matchingKey },
+      '[assessCriteria] criteria name fuzzy matched — check for data inconsistency'
+    );
+    return byCriteria[matchingKey];
+  }
+
+  return [];
+}
+Replace the current lookup:
+typescript// Before
+const criteriaDocuments = grouped.byCriteria[criteriaName] ?? [];
+
+// After
+const criteriaDocuments = findCriteriaDocuments(grouped.byCriteria, criteriaName);
+Also add a warning log when the fuzzy match fires so data inconsistencies are visible in logs.
+
+Step 3 — Test both fixes:
+Test Bug A fix:
+
+Find any case that has a custom subfolder inside a criteria folder (e.g. "Peer Reviews" inside "Judge of Others' Work")
+Upload a test document into the custom subfolder
+Run fetchCaseDocuments for that case and confirm the document appears in grouped.byCriteria["Judge of Others' Work"]
+Run an assessment for that criteria and confirm the document text appears in the Claude prompt
+
+Test Bug B fix:
+
+Temporarily create a case_folders row with name "Judge of Others Work" (missing apostrophe) and confirm findCriteriaDocuments still matches it to criteria name "Judge of Others' Work"
+Confirm the warning log fires
+Remove the test row
+
+Report pass or fail for each test with specific document names and log output.
