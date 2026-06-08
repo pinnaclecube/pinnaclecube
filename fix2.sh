@@ -1,3 +1,22 @@
+[200~#!/usr/bin/env bash
+# Pinnacle3 Vercel fix #2: build the API as an esbuild bundle (no tsc) and
+# point the Vercel function at it. Run from the repo root in Replit.
+set -e
+cd "$(git rev-parse --show-toplevel)"
+echo "Applying esbuild-bundle fix..."
+rm -f api/index.ts
+
+cat > artifacts/api-server/src/serverless.ts << 'PINNACLE_EOF'
+// Serverless handler entry for Vercel. The Express app (no .listen()) is itself
+// a (req, res) handler. esbuild bundles this — WITHOUT type-checking — exactly
+// like the Replit build, so the codebase's pre-existing type errors don't block
+// deploys. api/index.js (the Vercel function) re-exports the bundled output.
+import app from "./app";
+
+export default app;
+PINNACLE_EOF
+
+cat > artifacts/api-server/build.mjs << 'PINNACLE_EOF'
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -131,3 +150,43 @@ buildAll().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+PINNACLE_EOF
+
+cat > api/index.js << 'PINNACLE_EOF'
+// Vercel serverless function for the Pinnacle³ API.
+//
+// The Express app is pre-bundled by esbuild (no type-checking, matching the
+// original Replit build) into artifacts/api-server/dist/serverless.mjs during
+// the Vercel build step. This file is plain JS so @vercel/node does not run the
+// TypeScript compiler over the server source (which has pre-existing type
+// errors). vercel.json rewrites every /api/* request to this function.
+import app from "../artifacts/api-server/dist/serverless.mjs";
+
+export default app;
+PINNACLE_EOF
+
+cat > vercel.json << 'PINNACLE_EOF'
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm install -g pnpm && pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/pinnacle run build",
+  "outputDirectory": "artifacts/pinnacle/dist/public",
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    { "path": "/api/cron/drive-channel-renewal", "schedule": "0 */12 * * *" },
+    { "path": "/api/cron/pending-grants-cleanup", "schedule": "0 */6 * * *" }
+  ]
+}
+PINNACLE_EOF
+
+echo "Done. Review with: git status && git diff --stat"
+~

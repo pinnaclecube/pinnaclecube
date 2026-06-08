@@ -1,10 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "npm install -g pnpm && pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm --filter @workspace/pinnacle run build",
+  "buildCommand": "pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/pinnacle run build",
   "outputDirectory": "artifacts/pinnacle/dist/public",
   "functions": {
-    "api/index.ts": {
+    "api/index.js": {
       "maxDuration": 60,
       "memory": 1024
     }
