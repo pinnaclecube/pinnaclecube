@@ -5,7 +5,7 @@ import { logger } from "../lib/logger";
 const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000; // run every 6 hours
 
-async function purgeExpiredPendingGrants(): Promise<void> {
+export async function purgeExpiredPendingGrants(): Promise<void> {
   const cutoff = new Date(Date.now() - FORTY_EIGHT_HOURS_MS);
   try {
     const deleted = await db

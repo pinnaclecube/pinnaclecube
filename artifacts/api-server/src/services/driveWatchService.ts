@@ -231,7 +231,7 @@ export async function syncFolderContents(driveFolderId: string): Promise<number>
 
 // ─── Channel renewal cron ─────────────────────────────────────────────────────
 
-async function renewExpiringSoonChannels(): Promise<void> {
+export async function renewExpiringSoonChannels(): Promise<void> {
   const renewBefore = new Date(Date.now() + RENEWAL_LOOKAHEAD_MS);
 
   const expiring = await db

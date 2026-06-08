@@ -30,6 +30,7 @@ import caseExhibitsRouter from "./caseExhibits";
 import actionItemsRouter from "./actionItems";
 import adminNotificationsRouter from "./adminNotifications";
 import adminReadinessRouter from "./adminReadiness";
+import cronRouter from "./cron";
 
 const router: IRouter = Router();
 
@@ -64,5 +65,6 @@ router.use(caseExhibitsRouter);
 router.use(actionItemsRouter);
 router.use(adminNotificationsRouter);
 router.use(adminReadinessRouter);
+router.use(cronRouter);
 
 export default router;

@@ -1,0 +1,780 @@
+From ea2a126365922ce7592f7905c2eef58dd3d8baa2 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 8 Jun 2026 20:06:40 +0000
+Subject: [PATCH] Migrate API foundation from Replit to Vercel serverless +
+ Supabase
+
+- Export Express app as a Vercel function (api/index.ts); keep index.ts for
+  local dev. Frontend stays same-origin (relative /api), no FE change needed.
+- Replace setInterval startup jobs with Vercel Cron endpoints
+  (/api/cron/drive-channel-renewal, /api/cron/pending-grants-cleanup,
+  /api/cron/seed), authed via CRON_SECRET; export their inner functions.
+- vercel.json: all-in serverless (SPA static + api function + crons), drop the
+  Railway split-host rewrite.
+- DB: serverless-aware pool sizing; drizzle-kit prefers DIRECT_DATABASE_URL
+  (Supabase direct 5432) while runtime uses the pooled URL.
+- Anthropic client falls back to direct ANTHROPIC_API_KEY off Replit.
+- Remove .replit/.replitignore/replit.md; refresh .env.example and claude.md.
+- Add MIGRATION.md (setup + open follow-ups: bcrypt->bcryptjs, pdfkit fonts,
+  SSE, long backfill) and a Claude Code SessionStart hook.
+
+https://claude.ai/code/session_01SapS3nBQZk4FSeyu66kZ6c
+---
+ .claude/session-start.sh                      |  22 ++++
+ .claude/settings.json                         |  14 ++
+ .env.example                                  |  35 +++--
+ .replit                                       |  51 -------
+ .replitignore                                 |   5 -
+ MIGRATION.md                                  | 124 ++++++++++++++++++
+ api/index.ts                                  |  16 +++
+ artifacts/api-server/src/routes/cron.ts       |  68 ++++++++++
+ artifacts/api-server/src/routes/index.ts      |   2 +
+ .../src/services/driveWatchService.ts         |   2 +-
+ .../src/services/pendingGrantsCleanup.ts      |   2 +-
+ claude.md                                     |  30 +++--
+ lib/db/drizzle.config.ts                      |  13 +-
+ lib/db/src/index.ts                           |  13 +-
+ lib/integrations-anthropic-ai/src/client.ts   |  23 ++--
+ replit.md                                     |  74 -----------
+ vercel.json                                   |  27 ++--
+ 17 files changed, 347 insertions(+), 174 deletions(-)
+ create mode 100755 .claude/session-start.sh
+ create mode 100644 .claude/settings.json
+ delete mode 100644 .replit
+ delete mode 100644 .replitignore
+ create mode 100644 MIGRATION.md
+ create mode 100644 api/index.ts
+ create mode 100644 artifacts/api-server/src/routes/cron.ts
+ delete mode 100644 replit.md
+
+diff --git a/.claude/session-start.sh b/.claude/session-start.sh
+new file mode 100755
+index 0000000..a955433
+--- /dev/null
++++ b/.claude/session-start.sh
+@@ -0,0 +1,22 @@
++#!/usr/bin/env bash
++# Prepares a Claude Code (web/cloud) session: install workspace deps and build
++# the composite lib type outputs so `pnpm run typecheck` works immediately.
++# Tolerant by design — a failed prep step should never block the session.
++set -u
++
++cd "$(dirname "$0")/.." || exit 0
++
++if ! command -v pnpm >/dev/null 2>&1; then
++  corepack enable >/dev/null 2>&1 || true
++fi
++
++echo "[session-start] installing dependencies…"
++pnpm install --frozen-lockfile >/dev/null 2>&1 || \
++  echo "[session-start] pnpm install reported issues (continuing)"
++
++echo "[session-start] building lib type outputs…"
++./node_modules/.bin/tsc --build lib/db lib/shared lib/api-zod >/dev/null 2>&1 || \
++  echo "[session-start] tsc --build of core libs reported issues (continuing)"
++
++echo "[session-start] ready."
++exit 0
+diff --git a/.claude/settings.json b/.claude/settings.json
+new file mode 100644
+index 0000000..efb0c98
+--- /dev/null
++++ b/.claude/settings.json
+@@ -0,0 +1,14 @@
++{
++  "hooks": {
++    "SessionStart": [
++      {
++        "hooks": [
++          {
++            "type": "command",
++            "command": "bash .claude/session-start.sh"
++          }
++        ]
++      }
++    ]
++  }
++}
+diff --git a/.env.example b/.env.example
+index a82e733..22f8bb6 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1,16 +1,30 @@
+-# ─── Database ───────────────────────────────────────────────────────────────
++# ─── Database (Supabase Postgres) ────────────────────────────────────────────
++# Runtime (serverless) MUST use the pooled connection (PgBouncer, port 6543):
++#   postgresql://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:6543/postgres
+ DATABASE_URL=
++# Migrations (drizzle-kit) MUST use the DIRECT connection (port 5432):
++#   postgresql://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:5432/postgres
++DIRECT_DATABASE_URL=
+ 
+-# ─── Session ────────────────────────────────────────────────────────────────
++# ─── Session / JWT ───────────────────────────────────────────────────────────
+ SESSION_SECRET=
++JWT_SECRET=
++JWT_EXPIRY=7d
++
++# ─── Staff tokens ────────────────────────────────────────────────────────────
++STAFF_SECRET=
++STAFF_SECRET_CHRIS=
+ 
+ # ─── Anthropic (Claude AI) ───────────────────────────────────────────────────
+-# Provided automatically by Replit AI Integrations — no key required in development
+-AI_INTEGRATIONS_ANTHROPIC_BASE_URL=
+-AI_INTEGRATIONS_ANTHROPIC_API_KEY=
++# Off Replit: set a direct key from console.anthropic.com. Leave the Replit
++# AI_INTEGRATIONS_* vars unset — the client falls back to ANTHROPIC_API_KEY.
++ANTHROPIC_API_KEY=
++# AI_INTEGRATIONS_ANTHROPIC_BASE_URL=   # Replit only
++# AI_INTEGRATIONS_ANTHROPIC_API_KEY=    # Replit only
+ 
+ # ─── Stripe ─────────────────────────────────────────────────────────────────
+ STRIPE_SECRET_KEY=
++STRIPE_PUBLISHABLE_KEY=
+ STRIPE_WEBHOOK_SECRET=
+ STRIPE_EXCELLENCE_LAB_PRICE_ID=
+ STRIPE_EVIDENCE_VAULT_PRICE_ID=
+@@ -19,18 +33,21 @@ STRIPE_EVIDENCE_VAULT_PRICE_ID=
+ GOOGLE_SERVICE_ACCOUNT_JSON=
+ GOOGLE_DRIVE_ROOT_FOLDER_ID=
+ 
+-# ─── Gmail OAuth (for email sending via Nodemailer) ──────────────────────────
++# ─── Email (Gmail OAuth via Nodemailer) ──────────────────────────────────────
+ GMAIL_USER=
+ GMAIL_CLIENT_ID=
+ GMAIL_CLIENT_SECRET=
+ GMAIL_REFRESH_TOKEN=
++# Resend (alternative email transport)
++RESEND_API_KEY=
+ 
+-# ─── JWT Auth ────────────────────────────────────────────────────────────────
+-JWT_SECRET=
+-JWT_EXPIRY=7d
++# ─── Cron (Vercel Cron auth) ─────────────────────────────────────────────────
++# Vercel sends `Authorization: Bearer <CRON_SECRET>` to scheduled endpoints.
++CRON_SECRET=
+ 
+ # ─── App ─────────────────────────────────────────────────────────────────────
+ NODE_ENV=development
++# PORT is only used by the local `pnpm dev` server; Vercel ignores it.
+ PORT=3000
+ FRONTEND_URL=http://localhost:5173
+ 
+diff --git a/.replit b/.replit
+deleted file mode 100644
+index b24522d..0000000
+--- a/.replit
++++ /dev/null
+@@ -1,51 +0,0 @@
+-modules = ["nodejs-24", "python-3.11", "postgresql-16"]
+-
+-[deployment]
+-router = "application"
+-deploymentTarget = "autoscale"
+-
+-[deployment.postBuild]
+-args = ["pnpm", "store", "prune"]
+-env = { "CI" = "true" }
+-
+-[workflows]
+-runButton = "Project"
+-
+-[agent]
+-stack = "PNPM_WORKSPACE"
+-expertMode = true
+-integrations = ["resend:1.0.0"]
+-
+-[postMerge]
+-path = "scripts/post-merge.sh"
+-timeoutMs = 20000
+-
+-[[ports]]
+-localPort = 8080
+-externalPort = 8080
+-
+-[[ports]]
+-localPort = 8081
+-externalPort = 80
+-
+-[[ports]]
+-localPort = 8082
+-externalPort = 3002
+-
+-[[ports]]
+-localPort = 19917
+-externalPort = 3000
+-
+-[[ports]]
+-localPort = 19918
+-externalPort = 3001
+-
+-[nix]
+-channel = "stable-25_05"
+-
+-[userenv]
+-
+-[userenv.shared]
+-CURRENT_DISCLAIMER_VERSION = "1.0"
+-STRIPE_PRICE_EXCELLENCE_LAB = "price_1TCnF4AEwPUC4JLmC8TygsXe"
+-STRIPE_PRICE_EVIDENCE_ENGINE = "price_1TCnGPAEwPUC4JLmhOExwZap"
+diff --git a/.replitignore b/.replitignore
+deleted file mode 100644
+index 9eb019c..0000000
+--- a/.replitignore
++++ /dev/null
+@@ -1,5 +0,0 @@
+-# The format of this file is identical to `.dockerignore`.
+-# It is used to reduce the size of deployed images to make the process of publishing faster.
+-
+-# No need to store the pnpm store twice.
+-.local
+diff --git a/MIGRATION.md b/MIGRATION.md
+new file mode 100644
+index 0000000..53e5978
+--- /dev/null
++++ b/MIGRATION.md
+@@ -0,0 +1,124 @@
++# Pinnacle³ — Replit → Vercel + Supabase Migration
++
++This document covers moving Pinnacle³ off Replit to **Vercel (all-in serverless)**
++with **Supabase Postgres**, and what still needs your hands-on setup.
++
++## What changed in the codebase (this branch)
++
++| Area | Before (Replit) | After (Vercel serverless) |
++|---|---|---|
++| API host | Long-running Express via `app.listen()` | Express app exported as a Vercel function — `api/index.ts` |
++| Startup seed | `seedReferenceData()` after `listen()` | `GET /api/cron/seed` (idempotent), run post-deploy |
++| Drive channel renewal | `setInterval` every 24h | Vercel Cron → `GET /api/cron/drive-channel-renewal` |
++| Pending-grants cleanup | `setInterval` every 6h | Vercel Cron → `GET /api/cron/pending-grants-cleanup` |
++| Cron auth | n/a (in-process) | `Authorization: Bearer $CRON_SECRET` (Vercel injects it) |
++| Database | Replit Postgres | Supabase — pooled URL at runtime, direct URL for migrations |
++| Anthropic | Replit AI proxy (`AI_INTEGRATIONS_*`) | Direct `ANTHROPIC_API_KEY` (proxy still supported as fallback) |
++| Schema deploy | Replit Publish auto-migrate | `pnpm --filter @workspace/db run push` (you/CI run it) |
++| Frontend API base | relative `/api` | unchanged — SPA + API are same origin on Vercel |
++| Replit files | `.replit`, `replit.md` | removed |
++
++`index.ts` (the `app.listen()` entry) is kept for **local dev** (`pnpm --filter
++@workspace/api-server run dev`); Vercel never uses it.
++
++## 1. Supabase
++
++1. Create a project at supabase.com. Pick a region close to your Vercel region.
++2. Project Settings → Database → **Connection string**. You need both:
++   - **Transaction pooler** (port `6543`) → `DATABASE_URL` (runtime/serverless)
++   - **Direct connection** (port `5432`) → `DIRECT_DATABASE_URL` (migrations)
++3. Push the schema from your machine (uses the direct URL automatically):
++   ```bash
++   DIRECT_DATABASE_URL="postgresql://...:5432/postgres" \
++     pnpm --filter @workspace/db run push
++   ```
++4. **Data**: Supabase starts empty. Export your Replit Postgres
++   (`pg_dump`) and restore into Supabase, or migrate the tables you need.
++
++## 2. Vercel
++
++1. Import the GitHub repo `pinnaclecube/pinnaclecube` into Vercel.
++2. Framework preset: **Other**. Leave build settings to `vercel.json` (already
++   configured: pnpm install, build the `@workspace/pinnacle` SPA, output
++   `artifacts/pinnacle/dist/public`, and the `api/index.ts` function).
++3. Add all environment variables from `.env.example` (see below) under
++   Project → Settings → Environment Variables.
++4. **Plan note:** Vercel Cron and `maxDuration: 60` need the **Pro** plan.
++   On Hobby, crons run at most once/day and functions cap at 60s.
++
++## 3. Environment variables (Vercel)
++
++Set these (see `.env.example` for the canonical list):
++
++- `DATABASE_URL` — Supabase **pooled** (6543)
++- `DIRECT_DATABASE_URL` — Supabase **direct** (5432)
++- `SESSION_SECRET`, `JWT_SECRET`, `JWT_EXPIRY`
++- `STAFF_SECRET`, `STAFF_SECRET_CHRIS`
++- `ANTHROPIC_API_KEY`
++- `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`,
++  `STRIPE_EXCELLENCE_LAB_PRICE_ID`, `STRIPE_EVIDENCE_VAULT_PRICE_ID`
++- `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_DRIVE_ROOT_FOLDER_ID`
++- `GMAIL_USER`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`
++  (and/or `RESEND_API_KEY`)
++- `CRON_SECRET` — random string; Vercel sends it as the cron bearer token
++- `CURRENT_DISCLAIMER_VERSION`
++- `NODE_ENV=production`
++
++## 4. Post-deploy: seed + webhooks
++
++1. **Seed reference data** (visa_criteria, orphaned-access fix):
++   ```bash
++   curl -H "Authorization: Bearer $CRON_SECRET" \
++     https://<your-domain>/api/cron/seed
++   ```
++2. **Stripe webhook**: point it at `https://<your-domain>/api/stripe/webhook`
++   and copy the new signing secret into `STRIPE_WEBHOOK_SECRET`. Raw-body
++   handling is already wired in `app.ts`.
++3. **Google Drive push channels**: existing channels point at the old Replit
++   URL. After deploy, re-register them at the new domain (re-run your
++   case-folder watch registration / the backfill endpoint), then confirm
++   `POST /api/drive/webhook` receives notifications.
++
++## 5. Known follow-ups / risks (not yet done)
++
++These need a live Vercel deploy to validate and may require one or two iterations:
++
++1. **`bcrypt` is a native module.** It often fails to load on Vercel's
++   serverless runtime. The fix is a drop-in swap to **`bcryptjs`** (pure JS,
++   hash-compatible — existing password hashes keep working) across the 5 import
++   sites (`services/auth.ts`, `routes/adminCases.ts`, `routes/adminInvoice.ts`,
++   `routes/adminSeed.ts`, `seed-demo.ts`). Deferred here because it changes
++   dependencies / the lockfile.
++2. **`pdfkit` fonts.** Generated PDFs need pdfkit's bundled `.afm` font data; the
++   serverless bundler may drop them. If PDF generation 500s, add the font files
++   via the function's `includeFiles`.
++3. **SSE (`/api/drive/events`, notification bells).** Serverless can't hold
++   long-lived streams. The client already polls in places; the clean fix is to
++   replace SSE with polling or **Supabase Realtime**. Until then, EventSource
++   will reconnect repeatedly without streaming.
++4. **The 5–10 min Drive backfill** (`POST /api/drive/backfill-subfolders`)
++   exceeds the function timeout. Move it to a queue (Inngest/QStash) or chunk it.
++5. **CI typecheck.** The repo has pre-existing type errors (loose `any`s in
++   several admin routes, a `p-retry` typing in the anthropic batch lib). A CI
++   gate should be added once those are triaged.
++
++## 6. Local development
++
++```bash
++pnpm install
++# API (uses index.ts + app.listen on PORT)
++PORT=3000 pnpm --filter @workspace/api-server run dev
++# SPA
++pnpm --filter @workspace/pinnacle run dev
++```
++
++## 7. Verification checklist
++
++- [ ] `pnpm --filter @workspace/db run push` succeeds against Supabase
++- [ ] Vercel build green; SPA loads at the domain
++- [ ] `GET /api/healthz` returns `{ "status": "ok" }`
++- [ ] `GET /api/cron/seed` (with bearer) seeds `visa_criteria`
++- [ ] Login / register works (watch for bcrypt errors → item 5.1)
++- [ ] Stripe test webhook delivers and grants access
++- [ ] Drive webhook fires on a file change
++- [ ] Both Vercel Cron jobs show successful runs in the dashboard
+diff --git a/api/index.ts b/api/index.ts
+new file mode 100644
+index 0000000..56af44b
+--- /dev/null
++++ b/api/index.ts
+@@ -0,0 +1,16 @@
++/**
++ * Vercel serverless entry for the Pinnacle³ API.
++ *
++ * The Express app is defined (without `.listen()`) in
++ * `artifacts/api-server/src/app.ts`. Vercel treats any file under `/api` as a
++ * serverless function; an Express app is itself a `(req, res)` handler, so we
++ * just re-export it. `vercel.json` rewrites every `/api/*` request to this
++ * function, and Express matches the original `/api/...` path internally.
++ *
++ * Startup work that used to run after `app.listen()` (seeding + the interval
++ * cron jobs) is handled out-of-band: see `artifacts/api-server/src/routes/cron.ts`
++ * and the `crons` block in `vercel.json`.
++ */
++import app from "../artifacts/api-server/src/app";
++
++export default app;
+diff --git a/artifacts/api-server/src/routes/cron.ts b/artifacts/api-server/src/routes/cron.ts
+new file mode 100644
+index 0000000..1733ae6
+--- /dev/null
++++ b/artifacts/api-server/src/routes/cron.ts
+@@ -0,0 +1,68 @@
++/**
++ * cron.ts — Pinnacle³
++ *
++ * Scheduled-job endpoints invoked by Vercel Cron (see `crons` in vercel.json).
++ *
++ * On Replit these ran as in-process `setInterval` loops started after
++ * `app.listen()`. Serverless functions are stateless and short-lived, so the
++ * same work is triggered by Vercel Cron issuing a GET request on a schedule.
++ *
++ * Vercel automatically attaches `Authorization: Bearer <CRON_SECRET>` to cron
++ * requests when the `CRON_SECRET` env var is set. We reject anything that does
++ * not carry the matching bearer so these endpoints can't be triggered publicly.
++ */
++
++import { Router, type IRouter, type Request, type Response } from "express";
++import { logger } from "../lib/logger";
++import { purgeExpiredPendingGrants } from "../services/pendingGrantsCleanup";
++import { renewExpiringSoonChannels } from "../services/driveWatchService";
++import { seedReferenceData } from "../services/seedReferenceData";
++
++const router: IRouter = Router();
++
++function isAuthorizedCron(req: Request): boolean {
++  const secret = process.env["CRON_SECRET"];
++  if (!secret) return false;
++  return req.get("authorization") === `Bearer ${secret}`;
++}
++
++/** Wrap a job so cron endpoints share auth, logging, and error handling. */
++function cronHandler(name: string, job: () => Promise<void>) {
++  return async (req: Request, res: Response) => {
++    if (!isAuthorizedCron(req)) {
++      res.status(401).json({ error: "unauthorized" });
++      return;
++    }
++    const startedAt = Date.now();
++    try {
++      await job();
++      const durationMs = Date.now() - startedAt;
++      logger.info({ job: name, durationMs }, "[cron] job completed");
++      res.json({ ok: true, job: name, durationMs });
++    } catch (err) {
++      logger.error({ err, job: name }, "[cron] job failed");
++      res.status(500).json({ ok: false, job: name, error: "job failed" });
++    }
++  };
++}
++
++// Renew Google Drive watch channels expiring within the lookahead window.
++// Was: startDriveChannelRenewal() every 24h.
++router.get(
++  "/cron/drive-channel-renewal",
++  cronHandler("drive-channel-renewal", renewExpiringSoonChannels),
++);
++
++// Purge pending access grants older than 48h.
++// Was: startPendingGrantsCleanup() every 6h.
++router.get(
++  "/cron/pending-grants-cleanup",
++  cronHandler("pending-grants-cleanup", purgeExpiredPendingGrants),
++);
++
++// Seed reference data (visa_criteria etc.) + fix orphaned access.
++// Was: run once after app.listen(). Idempotent — safe to invoke post-deploy
++// and on a schedule. Trigger manually after each deploy if you prefer.
++router.get("/cron/seed", cronHandler("seed", seedReferenceData));
++
++export default router;
+diff --git a/artifacts/api-server/src/routes/index.ts b/artifacts/api-server/src/routes/index.ts
+index adf1cd4..0a558ec 100644
+--- a/artifacts/api-server/src/routes/index.ts
++++ b/artifacts/api-server/src/routes/index.ts
+@@ -30,6 +30,7 @@ import caseExhibitsRouter from "./caseExhibits";
+ import actionItemsRouter from "./actionItems";
+ import adminNotificationsRouter from "./adminNotifications";
+ import adminReadinessRouter from "./adminReadiness";
++import cronRouter from "./cron";
+ 
+ const router: IRouter = Router();
+ 
+@@ -64,5 +65,6 @@ router.use(caseExhibitsRouter);
+ router.use(actionItemsRouter);
+ router.use(adminNotificationsRouter);
+ router.use(adminReadinessRouter);
++router.use(cronRouter);
+ 
+ export default router;
+diff --git a/artifacts/api-server/src/services/driveWatchService.ts b/artifacts/api-server/src/services/driveWatchService.ts
+index 06c6938..af7f5c9 100644
+--- a/artifacts/api-server/src/services/driveWatchService.ts
++++ b/artifacts/api-server/src/services/driveWatchService.ts
+@@ -231,7 +231,7 @@ export async function syncFolderContents(driveFolderId: string): Promise<number>
+ 
+ // ─── Channel renewal cron ─────────────────────────────────────────────────────
+ 
+-async function renewExpiringSoonChannels(): Promise<void> {
++export async function renewExpiringSoonChannels(): Promise<void> {
+   const renewBefore = new Date(Date.now() + RENEWAL_LOOKAHEAD_MS);
+ 
+   const expiring = await db
+diff --git a/artifacts/api-server/src/services/pendingGrantsCleanup.ts b/artifacts/api-server/src/services/pendingGrantsCleanup.ts
+index a52aa21..a333743 100644
+--- a/artifacts/api-server/src/services/pendingGrantsCleanup.ts
++++ b/artifacts/api-server/src/services/pendingGrantsCleanup.ts
+@@ -5,7 +5,7 @@ import { logger } from "../lib/logger";
+ const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
+ const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000; // run every 6 hours
+ 
+-async function purgeExpiredPendingGrants(): Promise<void> {
++export async function purgeExpiredPendingGrants(): Promise<void> {
+   const cutoff = new Date(Date.now() - FORTY_EIGHT_HOURS_MS);
+   try {
+     const deleted = await db
+diff --git a/claude.md b/claude.md
+index 18aefc7..0eae5b9 100644
+--- a/claude.md
++++ b/claude.md
+@@ -65,7 +65,9 @@ Package manager: **pnpm**. Never `npm install`. Never `pnpm dev` at root — use
+ | `STRIPE_SECRET_KEY` | Stripe secret key |
+ | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signature secret |
+ | `CURRENT_DISCLAIMER_VERSION` | Disclaimer version string (default `"1.0"`) |
+-| `PORT` | Assigned by workflow — never hardcode |
++| `PORT` | Local dev only (`app.listen`); Vercel ignores it |
++| `DIRECT_DATABASE_URL` | Supabase direct connection (5432) for migrations |
++| `CRON_SECRET` | Bearer token Vercel Cron sends to `/api/cron/*` |
+ 
+ ---
+ 
+@@ -795,7 +797,8 @@ pnpm run typecheck:libs     # composite lib packages only
+ ```bash
+ pnpm --filter @workspace/db run push    # push schema changes to dev DB
+ ```
+-**Production:** Schema changes deploy automatically via the Replit Publish flow. Never write custom migration scripts.
++**Production (Supabase):** run `pnpm --filter @workspace/db run push` against the
++direct connection (`DIRECT_DATABASE_URL`, port 5432). Not automatic anymore.
+ 
+ ### Adding a new staff member
+ 1. Add `STAFF_SECRET_<NAME>` to env vars
+@@ -804,6 +807,10 @@ pnpm --filter @workspace/db run push    # push schema changes to dev DB
+ ### SSE (Server-Sent Events)
+ `sseService.ts` manages active connections. Routes use `sseService.emit(profileId, event)` to push real-time updates. Client subscribes via `GET /drive/events?caseId=N`.
+ 
++⚠️ **Serverless caveat:** SSE holds a long-lived connection and does **not** work
++on Vercel functions. Replace with polling or Supabase Realtime — see
++`MIGRATION.md` §5.3. Until then EventSource reconnects without streaming.
++
+ ---
+ 
+ ## Visa Criteria Reference
+@@ -896,17 +903,24 @@ Every AI-generated content block must display a variant-specific disclaimer usin
+ 
+ ## Production
+ 
++> Migrating from Replit to **Vercel (all-in serverless) + Supabase**. See
++> `MIGRATION.md` for setup, env vars, and open follow-ups.
++
+ - **URL:** `https://pinnaclecube.com`
+-- **Deploy:** Replit Publish flow (click Deploy in UI)
+-- **Logs:** Use `fetch_deployment_logs` to inspect production logs
+-- **DB:** Read-only queries via `executeSql({ environment: "production" })`
+-- **Schema migrations:** Applied automatically by Replit Publish — never write custom migration scripts
++- **Host:** Vercel. The Express app is exported as a serverless function at
++  `api/index.ts`; `index.ts` (`app.listen`) is local-dev only.
++- **Deploy:** push to the connected branch → Vercel builds (`vercel.json`)
++- **Logs:** Vercel dashboard → Functions / Deployments → Logs
++- **DB:** Supabase. Runtime uses the **pooled** URL (`DATABASE_URL`, 6543);
++  migrations use the **direct** URL (`DIRECT_DATABASE_URL`, 5432)
++- **Schema migrations:** run `pnpm --filter @workspace/db run push` (not automatic)
++- **Scheduled jobs:** Vercel Cron → `GET /api/cron/*`, authed with `CRON_SECRET`
+ 
+ ### One-shot admin endpoints (production)
+ ```bash
+ # Backfill custom Drive subfolders into case_folders
+ curl -X POST https://pinnaclecube.com/api/drive/backfill-subfolders \
+   -H "X-Staff-Token: $STAFF_SECRET" -m 150
+-# Will time out (server runs ~5-10 min for 274+ folders) but continues server-side
+-# Check deployment logs for [driveBackfill] backfill complete
++# NOTE: serverless functions time out (60s). This 5-10 min job needs a queue or
++# chunking before it runs reliably on Vercel — see MIGRATION.md §5.4.
+ ```
+diff --git a/lib/db/drizzle.config.ts b/lib/db/drizzle.config.ts
+index dcf8b84..a510143 100644
+--- a/lib/db/drizzle.config.ts
++++ b/lib/db/drizzle.config.ts
+@@ -1,14 +1,21 @@
+ import { defineConfig } from "drizzle-kit";
+ import path from "path";
+ 
+-if (!process.env.DATABASE_URL) {
+-  throw new Error("DATABASE_URL, ensure the database is provisioned");
++// drizzle-kit issues DDL and uses prepared statements, which don't work through
++// Supabase's PgBouncer transaction pooler (port 6543). Prefer the direct
++// connection (port 5432) when available; fall back to DATABASE_URL for local dev.
++const migrationUrl = process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL;
++
++if (!migrationUrl) {
++  throw new Error(
++    "Set DIRECT_DATABASE_URL (Supabase direct, port 5432) or DATABASE_URL.",
++  );
+ }
+ 
+ export default defineConfig({
+   schema: path.join(__dirname, "./src/schema/index.ts"),
+   dialect: "postgresql",
+   dbCredentials: {
+-    url: process.env.DATABASE_URL,
++    url: migrationUrl,
+   },
+ });
+diff --git a/lib/db/src/index.ts b/lib/db/src/index.ts
+index 50cbf48..ee8ce69 100644
+--- a/lib/db/src/index.ts
++++ b/lib/db/src/index.ts
+@@ -10,7 +10,18 @@ if (!process.env.DATABASE_URL) {
+   );
+ }
+ 
+-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
++// On Vercel each serverless instance should hold very few connections and lean
++// on Supabase's PgBouncer pooler (the `...pooler.supabase.com:6543` URL) for
++// fan-out. Long-lived environments (local dev, a container host) can pool more.
++const isServerless = Boolean(process.env.VERCEL);
++
++export const pool = new Pool({
++  connectionString: process.env.DATABASE_URL,
++  max: isServerless ? 1 : 10,
++  // PgBouncer in transaction mode closes idle connections aggressively; keep our
++  // own idle timeout short so we don't reuse a server-closed socket.
++  idleTimeoutMillis: isServerless ? 10_000 : 30_000,
++});
+ export const db = drizzle(pool, { schema });
+ 
+ export * from "./schema";
+diff --git a/lib/integrations-anthropic-ai/src/client.ts b/lib/integrations-anthropic-ai/src/client.ts
+index 8de684f..ced8c77 100644
+--- a/lib/integrations-anthropic-ai/src/client.ts
++++ b/lib/integrations-anthropic-ai/src/client.ts
+@@ -1,18 +1,23 @@
+ import Anthropic from "@anthropic-ai/sdk";
+ 
+-if (!process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL) {
+-  throw new Error(
+-    "AI_INTEGRATIONS_ANTHROPIC_BASE_URL must be set. Did you forget to provision the Anthropic AI integration?",
+-  );
+-}
++// On Replit the AI_INTEGRATIONS_* vars are injected automatically and point the
++// SDK at Replit's Anthropic proxy. Off Replit (Vercel), set a direct
++// ANTHROPIC_API_KEY instead and leave the base URL unset so the SDK talks to
++// api.anthropic.com. Either configuration works.
++const apiKey =
++  process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY ??
++  process.env.ANTHROPIC_API_KEY;
+ 
+-if (!process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY) {
++if (!apiKey) {
+   throw new Error(
+-    "AI_INTEGRATIONS_ANTHROPIC_API_KEY must be set. Did you forget to provision the Anthropic AI integration?",
++    "Anthropic API key missing. Set ANTHROPIC_API_KEY (direct Anthropic API) " +
++      "or AI_INTEGRATIONS_ANTHROPIC_API_KEY (Replit AI integration).",
+   );
+ }
+ 
++const baseURL = process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL;
++
+ export const anthropic = new Anthropic({
+-  apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+-  baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
++  apiKey,
++  ...(baseURL ? { baseURL } : {}),
+ });
+diff --git a/replit.md b/replit.md
+deleted file mode 100644
+index dbaf3b7..0000000
+--- a/replit.md
++++ /dev/null
+@@ -1,74 +0,0 @@
+-# Pinnacle³ — EB-1A Immigration Consulting Platform
+-
+-## Overview
+-
+-Pinnacle³ is a premium immigration advisory coaching platform for high-achieving tech professionals. It focuses on guiding clients through the EB-1A, EB-2 NIW, and O-1A visa processes. The platform provides advisory coaching services, distinguishing itself from a traditional law firm.
+-
+-**Key capabilities include:**
+-- **Excellence Lab:** Learning courses for visa preparation.
+-- **Evidence Engine:** A system for tracking and managing supporting documentation.
+-- **Elite Blueprint:** Personalized strategy and guidance services.
+-- **AI Readiness Analysis:** An AI-powered tool to assess a client's visa readiness.
+-- **Google Drive Auto-Ingest:** Automated evidence ingestion from client Google Drive folders.
+-
+-The project's vision is to provide clarity and structured support for extraordinary talent navigating complex immigration pathways.
+-
+-## User Preferences
+-
+-- The agent should use `pnpm` for all package management commands.
+-- The agent should prioritize the use of TypeScript version 5.9.
+-- For frontend development, the agent should use React with Vite.
+-- For API development, the agent should use Express 5.
+-- The agent should use PostgreSQL with Drizzle ORM for database interactions.
+-- The agent should use Zod (`zod/v4`) and `drizzle-zod` for validation.
+-- The agent should use Orval for API codegen from an OpenAPI spec.
+-- The agent should use esbuild for CJS bundle builds.
+-- The agent should use Plus Jakarta Sans as the primary font.
+-- The agent should ensure all internal staff pages are complete at the `/internal/` path prefix.
+-- The agent should gate staff access by the `X-Staff-Token` header and the `StaffProtectedRoute` component.
+-- The agent should ensure all staff fetch calls use the `staffFetch(path, opts)` helper.
+-- The agent should ensure all protected routes enforce the disclaimer version using the `requireClientAuth` middleware.
+-- The agent should ensure the non-negotiable, non-dismissable legal footer bar is included on every page.
+-- The agent should ensure all AI output blocks display variant-specific disclaimers.
+-
+-## System Architecture
+-
+-The application is built as a monorepo using `pnpm` workspaces.
+-
+-**Technology Stack:**
+-- **Node.js:** v24
+-- **TypeScript:** v5.9
+-- **Frontend:** React + Vite (located in `artifacts/pinnacle`, preview path `/`)
+-- **Backend API:** Express 5 (located in `artifacts/api-server`, preview path `/api`)
+-- **Database:** PostgreSQL with Drizzle ORM
+-- **Validation:** Zod (`zod/v4`), `drizzle-zod`
+-- **API Codegen:** Orval (from OpenAPI specification)
+-- **Build Tool:** esbuild (for CJS bundling)
+-
+-**UI/UX and Branding:**
+-- **Brand Colors:** Primary indigo (`#1E2D6B`), accent indigo (`#3D4FA8`), superscript indigo (`#5B6BAE`). Text primary is a near-black with blue undertone (`#1A1A2E`). Background is pure white (`#FFFFFF`) for a light theme.
+-- **Font:** Plus Jakarta Sans.
+-- **Product Access Gating:** `ProductProtectedRoute` (`artifacts/pinnacle/src/components/auth/ProductProtectedRoute.tsx`) enforces access levels for product-specific routes, redirecting unpurchased users to checkout pages.
+-
+-**Technical Implementations & Features:**
+-- **Google Drive Auto-Ingest:** A poller service (`driveIngestService.ts`) automatically detects, downloads, extracts text, and inserts files from client Google Drive criterion folders as evidence records. Processing includes AI summary generation.
+-- **Stripe Integration:** Handles `Excellence Lab` and `Evidence Engine` purchases via `POST /api/stripe/checkout` and manages access granting via webhook (`POST /api/stripe/webhook`). When a prospect pays via a staff-sent invoice link, the webhook auto-creates a portal account with a temp password, links `prospectsTable.linkedProfileId`, and emails credentials — skipping the generic purchase-confirmation email. Staff invoice `success_url` is `/payment-success`.
+-- **AI Readiness Analysis:** The `GET /api/intake/analysis` endpoint uses Claude to analyze intake data, providing `overallReadiness`, `strongAreas`, `recommendedAreas`, and a `roadmap`. Results are cached.
+-- **Readiness Intake:** A 6-step wizard, including resume upload to Google Drive via `POST /api/intake/resume`.
+-- **Internal Staff Portal:** Located at `/internal/`, it provides comprehensive tools for managing cases, prospects, Elite Blueprint applications, evidence, and petition generation. Access is gated by `X-Staff-Token`. The Prospects list defaults to hiding converted prospects (toggle on page header); converted prospects with a `linkedProfileId` show a "View Case" deep-link in their detail view.
+-- **Authentication System:** JWT-based authentication stored in `localStorage['pinnacle_token']` for clients. Staff authentication uses `X-Staff-Token` in `sessionStorage`. Includes registration, login, profile management, password reset, disclaimer acceptance flow, and a first-login forced password-change flow (`mustChangePassword` column + `POST /api/auth/set-password` light-auth endpoint + `/set-password` page).
+-- **Legal/Disclaimer System:** Features `LegalFooterBar`, `AIOutputBanner`, `LessonDisclaimer`, `DocumentDisclaimer`, `AIBadge`, and `ReconsentModal` to manage legal compliance and AI disclaimers. A `DisclaimerContext` handles reconsent flow when disclaimer versions change.
+-
+-**Core Components:**
+-- **Auth Components:** `AuthContext.tsx`, `useProductAccess.ts`, `ProtectedRoute.tsx`, `StaffProtectedRoute.tsx`.
+-- **Notification Components:** `NotificationBell.tsx` (polls for unread notifications), `NotificationPanel.tsx`.
+-- **Navigation:** `Navbar.tsx` (auth-aware), `StaffNav.tsx`.
+-
+-**Database Schema:** Key tables include `profiles`, `criteria`, `evidence`, `blueprints`, `milestones`, `courses`, `lessons`, `course_progress`, `activity`, `notifications`, `readiness_intake`, `client_action_items`, `client_drive_folders`, `visa_criteria`, and `blueprints_applications`.
+-
+-## External Dependencies
+-
+-- **Stripe:** Used for processing payments for `Excellence Lab` and `Evidence Engine` products (checkout sessions and webhooks).
+-- **Google Cloud Platform (Google Drive API):** Integrated for automatic ingestion of client documents into the Evidence Engine and resume uploads.
+-- **Anthropic Claude:** Utilized for AI readiness analysis (`/api/intake/analysis`) and generating AI summaries for evidence processing.
+-- **Google Fonts:** Used to serve the "Plus Jakarta Sans" font.
+\ No newline at end of file
+diff --git a/vercel.json b/vercel.json
+index ac68158..7464fc5 100644
+--- a/vercel.json
++++ b/vercel.json
+@@ -1,17 +1,20 @@
+ {
+-  "buildCommand": "npm install -g pnpm && pnpm install --frozen-lockfile && pnpm --filter @workspace/pinnacle run build",
++  "$schema": "https://openapi.vercel.sh/vercel.json",
++  "installCommand": "npm install -g pnpm && pnpm install --frozen-lockfile",
++  "buildCommand": "pnpm --filter @workspace/pinnacle run build",
+   "outputDirectory": "artifacts/pinnacle/dist/public",
+-  "rewrites": [
+-    {
+-      "source": "/api/(.*)",
+-      "destination": "https://your-api.railway.app/api/$1"
+-    },
+-    {
+-      "source": "/(.*)",
+-      "destination": "/index.html"
++  "functions": {
++    "api/index.ts": {
++      "maxDuration": 60,
++      "memory": 1024
+     }
++  },
++  "rewrites": [
++    { "source": "/api/(.*)", "destination": "/api" },
++    { "source": "/(.*)", "destination": "/index.html" }
+   ],
+-  "env": {
+-    "NODE_ENV": "production"
+-  }
++  "crons": [
++    { "path": "/api/cron/drive-channel-renewal", "schedule": "0 */12 * * *" },
++    { "path": "/api/cron/pending-grants-cleanup", "schedule": "0 */6 * * *" }
++  ]
+ }
+-- 
+2.43.0
+

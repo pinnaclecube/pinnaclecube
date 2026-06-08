@@ -1,17 +1,20 @@
 {
-  "buildCommand": "npm install -g pnpm && pnpm install --frozen-lockfile && pnpm --filter @workspace/pinnacle run build",
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm install -g pnpm && pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm --filter @workspace/pinnacle run build",
   "outputDirectory": "artifacts/pinnacle/dist/public",
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "https://your-api.railway.app/api/$1"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 60,
+      "memory": 1024
     }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  "crons": [
+    { "path": "/api/cron/drive-channel-renewal", "schedule": "0 */12 * * *" },
+    { "path": "/api/cron/pending-grants-cleanup", "schedule": "0 */6 * * *" }
+  ]
 }
