@@ -1,0 +1,245 @@
+"id,criterion_id,profile_id,title,description,evidence_type,status,source_url,date_achieved,created_at,updated_at,file_name,extraction_status,extracted_text,extraction_json,ai_summary,ai_summary_ignored,additional_criteria_ids,primary_criteria_id"
+"1,1,1,NeurIPS 2022 Outstanding Paper Award,""Best paper award for """"Efficient Neural Architecture Search via Parameter Sharing"""" — awarded among 2,400 submissions"",award,approved,https://neurips.cc,2022-12-01,2026-04-17 15:52:58.456332+00,2026-04-17 15:52:58.456332+00,,pending,,,,f,[],"
+"2,1,1,CVPR 2023 Honorable Mention,Recognition from the IEEE Computer Society at the premier computer vision conference,award,approved,,2023-06-01,2026-04-17 15:52:58.456332+00,2026-04-17 15:52:58.456332+00,,pending,,,,f,[],"
+"3,2,1,IEEE Senior Member,Elected Senior Member of IEEE — requires 10+ years in the profession and documented contributions,membership,approved,https://ieee.org,2023-03-15,2026-04-17 15:52:58.456332+00,2026-04-17 15:52:58.456332+00,,pending,,,,f,[],"
+"4,2,1,NeurIPS Area Chair,Selected as Area Chair for NeurIPS 2023 — responsible for 40+ paper reviews in computer vision track,membership,approved,,2023-09-01,2026-04-17 15:52:58.456332+00,2026-04-17 15:52:58.456332+00,,pending,,,,f,[],"
+"5,3,1,MIT Technology Review Feature,""Profile featured in MIT Technology Review: """"The Researchers Making AI More Efficient"""""",media,approved,https://technologyreview.com,2023-02-15,2026-04-17 15:52:58.456332+00,2026-04-17 15:52:58.456332+00,,pending,,,,f,[],"
+"6,3,1,TechCrunch Interview on Neural Architecture Search,Referenced as a leading researcher in industry-wide discussion of efficient ML,media,pending,,2023-07-01,2026-04-17 15:52:58.456332+00,2026-04-17 15:52:58.456332+00,,pending,,,,f,[],"
+"7,4,1,ICML 2023 Program Committee,""Reviewer for 12 papers at ICML 2023, main conference"",judging,approved,,2023-07-01,2026-04-17 15:52:58.456332+00,2026-04-17 15:52:58.456332+00,,pending,,,,f,[],"
+"8,4,1,ICLR 2023 Reviewer,Reviewed 8 papers as part of the ICLR 2023 double-blind review process,judging,approved,,2023-05-01,2026-04-17 15:52:58.456332+00,2026-04-17 15:52:58.456332+00,,pending,,,,f,[],"
+"9,4,1,CVPR 2023 Reviewer,Program committee member reviewing submissions in the 3D scene understanding track,judging,approved,,2023-06-01,2026-04-17 15:52:58.456332+00,2026-04-17 15:52:58.456332+00,,pending,,,,f,[],"
+"10,5,1,MobileNetV4 Architecture — 2.1B downloads,Co-designed architecture adopted by 340+ products in Google Play Store. 2.1 billion model downloads documented via TensorFlow Hub analytics,contribution,approved,https://arxiv.org/abs/2404.10518,2023-11-01,2026-04-17 15:52:58.456332+00,2026-04-17 15:52:58.456332+00,,pending,,,,f,[],"
+"11,5,1,""US Patent 11,734,567: Efficient Attention Mechanism"",Patent on sparse attention mechanism now used in production at two Fortune 500 companies,contribution,approved,,2023-08-01,2026-04-17 15:52:58.456332+00,2026-04-17 15:52:58.456332+00,,pending,,,,f,[],"
+"12,6,1,CVPR 2022: Token Merging for Fast ViT,Paper on Vision Transformer acceleration with 312 citations in 18 months,publication,approved,https://arxiv.org/abs/2210.09461,2022-06-01,2026-04-17 15:52:58.456332+00,2026-04-17 15:52:58.456332+00,,pending,,,,f,[],"
+"13,6,1,NeurIPS 2022: EfficientViT Multi-Scale Linear Attention,Main conference paper with 189 citations. Implementation adopted in timm library,publication,approved,https://arxiv.org/abs/2205.14756,2022-11-01,2026-04-17 15:52:58.456332+00,2026-04-17 15:52:58.456332+00,,pending,,,,f,[],"
+"14,6,1,ICLR 2023: Scaling Laws for Efficient Transfer Learning,Accepted as spotlight paper (top 5%). 67 citations at time of filing.,publication,approved,https://openreview.net,2023-05-01,2026-04-17 15:52:58.456332+00,2026-04-17 15:52:58.456332+00,,pending,,,,f,[],"
+"15,7,1,Staff Research Scientist at DeepMind,Led team of 6 researchers as principal investigator on efficiency research program,contribution,approved,,2022-01-01,2026-04-17 15:52:58.456332+00,2026-04-17 15:52:58.456332+00,,pending,,,,f,[],"
+"16,8,1,""Total Compensation: $680,000 (2023)"",W-2 and offer letter documentation. 97th percentile per H-1B LCA database for ML Research Scientist in San Francisco,salary,approved,,2023-01-01,2026-04-17 15:52:58.456332+00,2026-04-17 15:52:58.456332+00,,pending,,,,f,[],"
+"34,0,34,NeurIPS 2023: Efficient RLHF at Scale,Peer-reviewed publication at NeurIPS 2023 Workshop. 87 citations to date. Selected as spotlight paper.,publication,strong,,2023-12-01,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-01"
+"36,0,34,ACL 2023: Cross-lingual Transfer in RLHF Systems,Full paper at ACL 2023. 52 citations. Demonstrates multilingual safety improvements.,publication,strong,,2023-07-01,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-01"
+"37,0,34,Google Spot Bonus Award 2024,Awarded Google highest discretionary bonus for exceptional contributions to Gemini safety systems.,award,strong,,2024-03-01,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-03"
+"38,0,34,Forbes 30 Under 30 — AI Category 2025,""Selected for Forbes 30 Under 30 in the Artificial Intelligence category from 25,000+ nominees."",award,strong,,2025-01-10,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-03"
+"39,0,34,MIT Technology Review Feature: AI Safety Research,Named and quoted expert in MIT Tech Review article on AI safety. Reached 450K+ readers globally.,media,strong,,2024-12-15,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-04"
+"40,0,34,NeurIPS 2024 Program Committee Reviewer,""Served as reviewer for NeurIPS 2024 — top-tier AI conference with 15,000+ submissions."",peer_review,strong,,2024-10-01,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-05"
+"41,0,34,Google L6 Compensation Package — $680K TC,Base $280K + $350K annual RSU + bonus. Documented above 90th percentile for ML engineers nationally.,high_salary,strong,,2024-01-01,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-09"
+"42,0,34,""US Patent 11,934,521 — RLHF Training System"",Granted patent on novel RLHF architecture. Named inventor. Applied in production Gemini training.,original_contributions,strong,,2024-06-20,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-08"
+"43,0,35,NeurIPS 2023 Best Paper — Multimodal Reasoning,Second author on Best Paper Award winner. 340+ citations. Invited for oral presentation.,publication,strong,,2023-12-10,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-01"
+"44,0,35,ICML 2024: Cross-Modal Attention for Vision-Language Models,Sole first-author paper at ICML 2024. Novel architecture. 89 citations in 8 months.,publication,strong,,2024-07-20,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-01"
+"45,0,35,ICML 2024 Workshop Co-Organizer — Multimodal Learning,""Co-organized Multimodal Learning Workshop at ICML 2024. 600+ attendees, 85 paper submissions."",peer_review,strong,,2024-07-01,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-05"
+"46,0,35,Wired Feature: The Researchers Making AI See,Featured in Wired magazine article on multimodal AI research. International circulation 800K+.,media,strong,,2024-09-01,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-04"
+"47,0,35,OpenAI RSI Compensation — $780K TC,Total compensation significantly above 90th percentile for research scientists nationally.,high_salary,reviewing,,2025-01-01,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-09"
+"48,0,35,Cross-Modal Attention Architecture (Open-Source),""Released novel cross-modal attention implementation. 2,400+ GitHub stars. Used in 12 research groups."",original_contributions,strong,,2024-09-15,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-08"
+"49,0,36,""US Patent 10,877,912 — Distributed Consensus Algorithm"",Granted patent on novel consensus mechanism for distributed databases. First inventor.,original_contributions,strong,,2023-01-15,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-08"
+"50,0,36,OSDI 2023: Consensus at Billion-User Scale,Full paper at OSDI 2023 — top-tier systems conference. 67 citations. Presented main track.,publication,strong,,2023-10-01,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-01"
+"51,0,36,AWS re:Invent 2022 Keynote Speaker,""Delivered keynote on distributed systems at AWS re:Invent 2022. 10,000+ in-person attendees."",media,strong,,2022-12-01,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-04"
+"52,0,36,Meta E8 Compensation — $750K TC,TC at 99th+ percentile for software engineers nationally per Levels.fyi data.,high_salary,strong,,2025-01-01,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-09"
+"53,0,36,Critical Role — $120M Infrastructure Cost Reduction,Sole architect of distributed system design saving Meta $120M annually. Documented with org attestation.,critical_role,strong,,2024-06-01,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-10"
+"54,0,38,The Economist Feature — Stripe Payments Infrastructure,Named expert in The Economist article on global fintech. Readership 1.5M internationally.,media,strong,,2024-11-01,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-04"
+"55,0,38,Forbes 30 Under 35 Finance — 2024,""Selected for Forbes 30 Under 35 in Finance category for Stripe leadership. 30,000+ nominees."",award,strong,,2024-09-15,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-03"
+"57,0,38,Fintech Innovation Awards 2024 — Judge,Served as judge for EU Fintech Innovation Awards 2024. Selected 12 winners from 340 applicants.,peer_review,strong,,2024-06-01,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-05"
+"58,0,38,Stripe Director Compensation — $620K TC,TC significantly above 90th percentile for Product Directors nationally per Radford benchmark.,high_salary,strong,,2025-01-01,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-09"
+"59,0,38,Critical Role — $50B to $500B Payments Platform Scale,Sole Director responsible for product decisions scaling Stripe core payments 10x over 3 years.,critical_role,strong,,2026-01-01,2026-04-18 00:28:10.44305+00,2026-04-18 00:28:10.44305+00,,pending,,,,f,[],EB1A-10"
+"35,0,34,ICML 2024: Reward Modeling for LLM Alignment,Full paper at ICML 2024. 124 citations. Spotlight presentation. 3rd most downloaded paper in proceedings.,publication,strong,,2024-07-15,2026-04-18 00:28:10.44305+00,2026-04-21 13:36:05.148+00,,pending,,,,f,[],EB1A-01"
+"56,0,38,Stripe Product Impact Award 2024,Awarded Stripe highest internal product recognition for leading 10x payments volume growth.,award,strong,,2024-12-01,2026-04-18 00:28:10.44305+00,2026-04-28 15:25:51.737+00,,pending,,,,f,[],EB1A-03"
+"61,0,47,Arvind Kandula Achievements in public space,,document,draft,,,2026-05-06 01:19:06.968978+00,2026-05-06 01:19:12.91+00,Arvind_Kandula_Achievements_in_public_space.docx,completed,""Achievements in public space"
+
+Arvind Kandula
+
+"Chief Technology Officer, DevCare Solutions"
+
+
+
+An accomplished author with a published book – “Leadership Alchemy: Turning Your Vision Into Results” - https://www.amazon.com/dp/B0CPXBZMWZ
+
+
+
+
+
+"Recognized and admitted into Forbes as a “Forbes Technology Council Member”, a global platform and recognized body aiming at developing and sharing knowledge and providing an opportunity to thought leaders for exploring peer topics."
+
+
+
+Public Link to the member directory: https://councils.forbes.com/u/f84cef17-7965-4b06-b0e0-c98fd65a88a1
+
+
+
+
+
+
+
+Featured in press articles and interviewed by major news outlets.
+
+Bloomberg - https://www.bloomberg.com/press-releases/2022-09-23/devcare-solutions-reveals-its-use-of-accelerated-frameworks-to-provide-business-centric-it-solutions-to-organizations
+
+Business Insider - https://markets.businessinsider.com/news/stocks/devcare-solutions-reveals-its-use-of-accelerated-frameworks-to-provide-businesscentric-it-solutions-to-organizations-1031761426
+
+Market Watch - https://www.marketwatch.com/press-release/devcare-solutions-reveals-its-use-of-accelerated-frameworks-to-provide-business-centric-it-solutions-to-organizations-2022-09-23
+
+Digital Journal - https://www.digitaljournal.com/pr/devcare-solutions-reveals-its-use-of-accelerated-frameworks-to-provide-business-centric-it-solutions-to-organizations
+
+Yahoo Finance - https://finance.yahoo.com/news/devcare-solutions-reveals-accelerated-frameworks-101800710.html
+
+
+
+Published article on Change Management
+
+https://www.linkedin.com/feed/update/urn:li:activity:7139802610047356929/
+
+
+
+
+
+Published article on Value Maturity for organizations.
+
+https://arvind-kandula.medium.com/value-maturity-to-achieve-customer-excellence-5843239e8094
+
+
+
+Published article on Serverless Architecture
+
+https://arvind-kandula.medium.com/adapting-to-serverless-architecture-6f0d209c3a26
+
+
+
+Published article on Robotic Process Automation
+
+https://arvind-kandula.medium.com/robotic-process-automation-in-healthcare-e56f2ed41bfc
+
+
+
+Published article on DevOps and DevSecOps
+
+https://arvind-kandula.medium.com/moving-from-devops-to-devsecops-c7e26f4fa438
+
+
+
+Published article on Cloud Adoption
+
+https://arvind-kandula.medium.com/welcome-to-the-cloud-era-953f57424d
+
+
+
+Published article on Conversational Technology and Chatbots
+
+https://arvind-kandula.medium.com/embracing-chatbots-in-the-insurance-industry-351c1ada335e
+
+
+
+
+
+
+
+""",,""This document presents a list of the beneficiary's professional achievements, including publication of a book, Forbes Technology Council membership, press features, and self-authored articles on various technology topics. However, the evidence does not demonstrate participation as a judge of others' work in the field, as required by the USCIS criterion. The materials shown reflect the beneficiary's own publications and recognition rather than evidence of evaluating, reviewing, or judging the work of other professionals in technology or an allied field."",f,[],EB1A-04"
+"60,0,47,Resume Arvind Kandula,,document,draft,,,2026-05-06 01:05:03.771008+00,2026-05-15 21:33:49.262+00,Resume-Arvind_Kandula.pdf,pending,"""
+
+Eeeeks 
+ 
+ 
+"An accomplished author and digital enablement and transformation visionary with 22+ years of experience, strong focus, and "
+"passion towards solving business problems and exploring opportunities through ideation, conceptualization, analysis, and "
+implementation of emerging technologies while taking organizations to next-level growth through innovation. Built cases for 
+technology establishment and adoption while working towards process maturity of the organization. 
+ 
+API and Microservices Architecture || Digital Transformation || Cloud Migration and Transformation || Cloud Adoption Strategy 
+|| Cloud Migration Patterns || Conversational Apps || AI and ML || RPA Reference Architecture and Strategy || Data Strategy || 
+Strategic Roadmap Development || Enterprise Architecture Practices || DevOps Strategy || People Management || IT Cost 
+Optimization || Proof-Of-Concept driven decision making || Mobility Solution Architecture  
+ 
+Enterprise Architecture: Target and Transition State Architectures to empower the team to maintain EA standards 
+Cloud  Adoption Strategy: Led  a  team  to  design  and  develop  the  future  state  cloud  architecture  for  an  application 
+portfolio while building a case for significant cost saving and bringing operational efficiency. 
+Artificial Intelligence: Led a team to build Conversational Apps Reference Architecture in 4 weeks’ timeline for a State 
+Government Agency. 
+CMMI: Established CMMI process maturity at DevCare Solutions and enabled the organization to achieve CMMI Maturity 
+Level 3 accreditation. Enabled multiple process dictionaries for project teams’ adoption. 
+ 
+DevCare Solutions | VP - Innovation & Technology (Chief Technology Officer) | August 2021 – Current 
+• Leading the entire technology organization consisting of more than 200+ employees. 
+• Laying annual strategy for technology enablement and upliftment. 
+• Working with the Sales team on Business Development and Sales models and approaches. 
+• Providing guidance to the Sales team on identifying potential clients. 
+• Guiding the project teams towards successful project delivery by enabling best IT Architecture practices and 
+principles. 
+• Directly leading a team for Innovation and R&D efforts by identifying common business problems and building 
+"accelerated frameworks for clients IT ecosystem, which significantly reduce the schedule and costs of project "
+implementations. 
+• Reviewing and approving project budgets. 
+• Developing and providing quarterly technology forecasted expenditure. 
+"• Establishing and monitoring CMMI process maturity guidelines and ensuring project teams meet the guidelines, "
+improving the overall organizational delivery performance. 
+ 
+Avtech Solutions Inc| Chief Architect | August 2018 – August 2021 
+• Leading day-to-day technology operations and process improvements. 
+"• Provided architecture solutions and thought leadership for several clients such as Molina Healthcare, Cardinal "
+"Health, La-Z-Boy, State of Michigan & State of Ohio  "
+• Roadmap for transforming 1700 web services to REST APIs and Microservices.  
+• Managed end-to-end pre-sales efforts for various existing and prospective clients. 
+• Led two key product development efforts (Chatbot Accelerator & API Accelerator). 
+• Project cost estimation and thereby maintaining burn charts to ensure projects remain on-track from a 
+financial and budgetary perspective. 
+ 
+State of Ohio – Job & Family Services | Sr. Enterprise Architect (Contractor) | Jan 2019 – June 2019 
+ARVIND KANDULA 
+CHIEF TECHNOLOGY OFFICER 
+“Enabling success and business value through technology focused Thought Leadership.” 
+ 
+arvind.kandula@devcare.com   | 614-822-9867 | CMMI Certified | Forbes Technology Council Member 
+Key Focus Areas & Strengths 
+Key IT & Business Leadership Accomplishments 
+Career History – Key Highlights 
+
+• Enabled API Management Platform Strategy by evaluating best fit tools and applicability to JFS. 
+• Laid the RPA adoption strategy and provided a decoupled architecture to work across most use cases. 
+• Provided end to end architecture for automated employee offboarding. 
+• Guiding the EA team with best practices for EA adoption and mentoring on ABACUS (tool for EA). 
+ 
+Voya Financial (Formerly ING) | Enterprise Architect (Contractor) | Aug 2018 - Jan 2019 
+• Responsible for overall cloud (AWS) migration strategy while leading a team of 3 architects. 
+• Provided reusable patterns for application group migration to AWS. 
+• Provided thought leadership to the team in enabling cost efficient and scalable architecture. 
+• Guided the team to adopt MVP pattern to migrate and then transform in the cloud environment. 
+• Provided future state AWS architecture by adopting native AWS offerings for operational efficiency. 
+• Enabled the team with AWS knowledge by providing insights on best practices for Cloud Architecture. 
+ 
+ Nationwide Mutual Insurance | Enterprise Systems Architect | Sep 2014 to Aug 2018 
+• Portfolio Architect for three business units responsible for effective architecture of 18 applications. 
+• Led a program of $8+ M in budget to successful architecture adoption. 
+• Guided and Mentored a team to build cloud architecture for a suite of 8 applications. 
+• Worked with a team of 5 architects towards adoption of Enterprise Architecture principles and 
+methodologies. 
+• Provided thought leadership to teams for technology adoption by building appropriate business cases. 
+"• Mentored developers, tech leads and architects to develop an architectural mindset and apply the principles. "
+• Developed deep partnerships with business to influence technology adoption. 
+• Led a team to develop proof-of-concepts for native AWS cloud adoption and conversational apps (chatbots). 
+ 
+Wells Fargo Advisors | Systems Architect (Contractor) | Sep 2013 to Sep 2014 
+"• Portfolio architect leading the customer, account, and document domains. "
+• Responsible for providing end-to-end architecture for onboarding and e-fulfillment processes. 
+• Provided end-to-end architecture of reusable document storage and e-signature processes. 
+• Guided a team of 6 developers for design and implementation of account origination web services. 
+ 
+Kony Solutions Inc | Solutions Architect | Feb 2011 to Sep 2013 
+• Responsible for leading architectures of all mobile banking programs within the organization. 
+• Provided resilient cross platform mobile architecture for 8 large scale Financial Services organizations. 
+• Provided thought leadership and consulting to senior leadership on mobile industry best practice. 
+• Guided the team to adopt API first strategy to build reusable components across mobile platforms. 
+• Recognized with the Best Mobile Architecture award from the CEO based on client feedback provided. 
+ 
+Commonwealth Bank of Australia | Integration Architect | Oct 2008 to Jan 2011 
+• Worked on the prestigious Core Banking Modernization effort and led a team of 8 service designers. 
+• Responsible for leading Account Origination and Account Maintenance SOA teams. 
+• Provided architecture for over 40 web services and ensured the team provided optimum designs. 
+• Worked with the development team/s to ensure the web services are built according to the design. 
+• Led a team of 4 service designers ensuring all design aspects are bug free. 
+• Won the CEO Best Team Award (2009)  
+ 
+Qantas Airways | Oracle EBS Team Lead – 2006 to 2008 
+Infinite Computer Solutions | Oracle Financial Analyzer Team Lead | 2003 to 2006     
+    
+ 
+Executive Masters in Business Administration | International Business Management Institute | 2021 
+Master of Information Technology | University of Sydney | 2003 
+Bachelor of Computer Applications | Osmania University | 2001 
+Graduate Diploma in Computer Applications | JNNYC | 1998 
+ 
+"Educational Milestones "",,,f,[],EB1A-02"

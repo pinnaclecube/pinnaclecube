@@ -1,0 +1,4 @@
+"id,case_setup_id,profile_id,job_id,document_type,exhibit_label,criteria_code,file_name,drive_file_id,drive_url,published_to_client,published_at,published_by,generated_at"
+"1,2,34,2,main_document,5,05,Main_05_Arjun_Krishnamurthy.pdf,1IG4Nl3D0uuGAvKdZxKGN7i8NgdNd3hcn,https://drive.google.com/file/d/1IG4Nl3D0uuGAvKdZxKGN7i8NgdNd3hcn/view?usp=drivesdk,f,,,2026-05-18 02:40:49.480145+00"
+"2,2,34,2,index_exhibit,51,05,51_Index_05.pdf,17gWnUQ-Y7_k66CBCfpVpTbQsCbFwoqUC,https://drive.google.com/file/d/17gWnUQ-Y7_k66CBCfpVpTbQsCbFwoqUC/view?usp=drivesdk,f,,,2026-05-18 02:41:56.62013+00"
+"3,2,34,3,cover_letter,,,Cover_Letter_Arjun_Krishnamurthy.pdf,1vvafs2dmbNef4mF_WLGWVqOpcvMxK3aq,https://drive.google.com/file/d/1vvafs2dmbNef4mF_WLGWVqOpcvMxK3aq/view?usp=drivesdk,f,,,2026-05-18 02:42:03.23656+00"

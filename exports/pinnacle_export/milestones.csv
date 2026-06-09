@@ -1,0 +1,6 @@
+"id,blueprint_id,title,description,due_date,completed,completed_at,sort_order,created_at"
+"1,1,Complete Evidence Vault audit,""Review all 16 evidence items, verify citations are accurate, and identify 2 weakest items to strengthen"",2025-01-31,true,,1,2026-04-17 15:53:06.121844+00"
+"2,1,Obtain expert opinion letter from distinguished researcher,Request and receive letter from a professor or senior scientist confirming extraordinary ability in computer vision,2025-02-28,false,,2,2026-04-17 15:53:06.121844+00"
+"3,1,Draft EB-1A petition cover letter,Write the narrative connecting all criteria to the extraordinary ability standard. Estimated 8-12 pages.,2025-03-15,false,,3,2026-04-17 15:53:06.121844+00"
+"4,1,Attorney review and feedback,Submit draft to immigration attorney for legal review and USCIS compliance check,2025-04-01,false,,4,2026-04-17 15:53:06.121844+00"
+"5,1,File I-140 petition,Submit I-140 with premium processing to USCIS Texas Service Center,2025-07-01,false,,5,2026-04-17 15:53:06.121844+00"

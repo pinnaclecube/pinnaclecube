@@ -1,0 +1,4 @@
+"id,profile_id,triggered_by_staff_id,case_setup_id,criteria_code,doc_subtype,status,input_payload,staff_context_input,published_to_client,published_at,error_message,created_at,completed_at"
+"1,35,staff,,,exhibit_index,pending,{},{},f,,,2026-04-28 01:41:46.595738+00,"
+"2,34,primary,2,05,criteria_exhibits,completed,{},{},f,,,2026-05-18 02:39:05.803907+00,2026-05-18 02:41:56.655+00"
+"3,34,primary,2,,cover_letter,completed,{},{},f,,,2026-05-18 02:39:38.651274+00,2026-05-18 02:42:03.27+00"

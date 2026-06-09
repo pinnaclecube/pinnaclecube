@@ -1,0 +1,1 @@
+"Error in river service (agentToolPostgreSQL - executeSqlCommand), code: EXECUTE_SQL_COMMAND_ERROR, message: Encountered an error executing SQL command: exitCode=null exitReason=signal stderr="
