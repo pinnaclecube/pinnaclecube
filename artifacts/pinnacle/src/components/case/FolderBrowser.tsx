@@ -161,58 +161,11 @@ function MimeIcon({ mimeType }: { mimeType: string }) {
   return <File className={cn(cls, "text-gray-400")} />;
 }
 
-// ─── SSE hook ─────────────────────────────────────────────────────────────────
-//
-// Opens an SSE connection via fetch() (not EventSource) so the existing
-// fetchFn — which already carries Bearer / X-Staff-Token headers — can be
-// reused without needing auth tokens in the URL query string.
-
-function useDriveSSE(caseId: number, fetchFn: FetchFn, onSync: () => void) {
-  const onSyncRef = useRef(onSync);
-  useEffect(() => { onSyncRef.current = onSync; }, [onSync]);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    let alive = true;
-
-    void (async () => {
-      try {
-        const res = await fetchFn(`/drive/events?caseId=${caseId}`, {
-          signal: ctrl.signal,
-        });
-        if (!res.ok || !res.body) return;
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buf = "";
-        let eventName = "";
-
-        while (alive) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, { stream: true });
-          const lines = buf.split("\n");
-          buf = lines.pop() ?? "";
-          for (const line of lines) {
-            if (line.startsWith("event: ")) {
-              eventName = line.slice(7).trim();
-            } else if (line.startsWith("data: ")) {
-              if (eventName === "drive_sync") onSyncRef.current();
-              eventName = "";
-            }
-          }
-        }
-      } catch {
-        // Aborted on cleanup or network error — expected
-      }
-    })();
-
-    return () => {
-      alive = false;
-      ctrl.abort();
-    };
-  }, [caseId, fetchFn]);
-}
+// Note: real-time updates were previously delivered via an SSE stream
+// (/drive/events) pushed from the Drive webhook. That path cannot work on
+// serverless (no long-lived connections, no reliable post-response work), so
+// the browser now live-syncs the open folder from Drive on open / poll / manual
+// refresh instead — see syncFolder() in FolderBrowser below.
 
 // ─── Guidance card ────────────────────────────────────────────────────────────
 
@@ -401,6 +354,7 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [folderError, setFolderError] = useState<string | null>(null);
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   // Guidance card state — tracked per folder ID
   const [dismissedFolderIds, setDismissedFolderIds] = useState<Set<number>>(new Set());
@@ -498,10 +452,38 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
     }
   }, [caseId, fetchFn]);
 
+  // Live-sync the open folder from Drive, then refetch the tree (new subfolders)
+  // and the file list (new files). This is what surfaces content uploaded
+  // directly into Google Drive. Guarded so overlapping syncs don't stack up.
+  const syncInFlightRef = useRef(false);
+
+  const syncFolder = useCallback(async (folder: CaseFolder) => {
+    if (syncInFlightRef.current) return;
+    syncInFlightRef.current = true;
+    setSyncing(true);
+    try {
+      const r = await fetchFn(`/cases/${caseId}/folders/${folder.id}/sync`, {
+        method: "POST",
+      });
+      if (r.ok) {
+        await loadFolders(true);
+        const sel = selectedFolderRef.current;
+        if (sel) await loadFiles(sel);
+        setLastSyncAt(new Date());
+      }
+    } catch {
+      // Network/Drive error — keep showing the cached contents
+    } finally {
+      syncInFlightRef.current = false;
+      setSyncing(false);
+    }
+  }, [caseId, fetchFn, loadFolders, loadFiles]);
+
   const handleSelectFolder = useCallback((folder: CaseFolder) => {
     setSelectedFolder(folder);
-    void loadFiles(folder);
-  }, [loadFiles]);
+    void loadFiles(folder);   // show cached contents instantly
+    void syncFolder(folder);  // then refresh from Drive in the background
+  }, [loadFiles, syncFolder]);
 
   const toggleExpanded = useCallback((id: number) => {
     setExpandedIds((prev) => {
@@ -511,16 +493,19 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
     });
   }, []);
 
-  // ─── SSE real-time refresh ─────────────────────────────────────────────────
+  // ─── Background polling ─────────────────────────────────────────────────────
+  // Poll the open folder so files/subfolders added directly in Google Drive
+  // appear without a manual refresh. Only runs while the tab is visible to keep
+  // Drive API usage modest.
 
-  const handleDriveSync = useCallback(() => {
-    setLastSyncAt(new Date());
-    void loadFolders(true);
-    const sel = selectedFolderRef.current;
-    if (sel) void loadFiles(sel);
-  }, [loadFolders, loadFiles]);
-
-  useDriveSSE(caseId, fetchFn, handleDriveSync);
+  useEffect(() => {
+    const POLL_MS = 30_000;
+    const id = setInterval(() => {
+      const sel = selectedFolderRef.current;
+      if (sel && document.visibilityState === "visible") void syncFolder(sel);
+    }, POLL_MS);
+    return () => clearInterval(id);
+  }, [syncFolder]);
 
   // ─── New Folder helpers ────────────────────────────────────────────────────
 
@@ -648,13 +633,22 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
 
       {/* Status bar */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b text-xs text-muted-foreground">
-        <RefreshCw className="w-3 h-3 shrink-0" />
-        <span>Real-time sync active</span>
+        <RefreshCw className={cn("w-3 h-3 shrink-0", syncing && "animate-spin")} />
+        <span>{syncing ? "Syncing with Google Drive…" : "Synced with Google Drive"}</span>
         {lastSyncAt && (
           <span className="text-[#1E2D6B] font-medium">
             · Updated {lastSyncAt.toLocaleTimeString()}
           </span>
         )}
+        <button
+          type="button"
+          onClick={() => { const s = selectedFolderRef.current; if (s) void syncFolder(s); }}
+          disabled={syncing || !selectedFolder}
+          className="ml-2 inline-flex items-center gap-1 font-medium text-[#1E2D6B] hover:text-[#3D4FA8] disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Check Google Drive for new files now"
+        >
+          Refresh
+        </button>
         {isStaff && (
           <span className="ml-auto flex items-center gap-1 text-amber-600 font-medium">
             <ShieldCheck className="w-3 h-3" />

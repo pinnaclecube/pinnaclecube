@@ -30,6 +30,7 @@ import {
   visaCriteriaTable,
 } from "@workspace/db";
 import { getDriveClient } from "../services/driveService";
+import { syncFolderContents } from "../services/driveWatchService";
 import { requireClientAuth } from "../middlewares/clientAuth";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { logger } from "../lib/logger";
@@ -383,6 +384,59 @@ router.get(
       .where(eq(caseFolderItemsTable.caseFolderId, folderId));
 
     res.json({ items });
+  },
+);
+
+// ─── POST /cases/:caseId/folders/:folderId/sync ───────────────────────────────
+// Live-syncs a single folder's contents from Google Drive into the DB mirror
+// (case_folder_items for files, case_folders for any subfolders created directly
+// in Drive), then returns a timestamp. Both the staff and member folder views
+// call this on open / refresh / poll so direct-to-Drive uploads surface without
+// depending on push webhooks or SSE (neither of which work on serverless).
+
+router.post(
+  "/cases/:caseId/folders/:folderId/sync",
+  requireAnyAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const aug = req as AugmentedRequest;
+    const caseId = parseInt(req.params.caseId as string, 10);
+    const folderId = parseInt(req.params.folderId as string, 10);
+
+    const caseRecord = await authorizeCase(aug, res, caseId);
+    if (!caseRecord) return;
+
+    if (isNaN(folderId)) {
+      res.status(400).json({ error: "Invalid folderId" });
+      return;
+    }
+
+    const folderConditions = [
+      eq(caseFoldersTable.id, folderId),
+      eq(caseFoldersTable.caseId, caseId),
+    ];
+    // Clients cannot sync staff-only folders.
+    if (aug.clientUser) {
+      folderConditions.push(eq(caseFoldersTable.staffOnly, false));
+    }
+
+    const [folder] = await db
+      .select()
+      .from(caseFoldersTable)
+      .where(and(...folderConditions))
+      .limit(1);
+
+    if (!folder) {
+      res.status(404).json({ error: "Folder not found in this case" });
+      return;
+    }
+
+    try {
+      const changed = await syncFolderContents(folder.driveId);
+      res.json({ ok: true, changed, syncedAt: new Date().toISOString() });
+    } catch (err) {
+      logger.error({ err, caseId, folderId }, "[caseFolders] live folder sync failed");
+      res.status(502).json({ error: "Drive sync failed" });
+    }
   },
 );
 

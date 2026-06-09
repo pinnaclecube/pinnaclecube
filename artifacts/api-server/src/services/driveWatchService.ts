@@ -37,14 +37,22 @@ const RENEWAL_LOOKAHEAD_MS = 48 * 60 * 60 * 1000;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getWebhookUrl(): string {
-  // REPLIT_DOMAINS is a comma-separated list; use the first (primary) domain.
-  const primary = process.env.REPLIT_DOMAINS?.split(",")[0]?.trim();
-  if (primary) return `https://${primary}/api/drive/webhook`;
-  // Fallback for local / dev environment
-  const dev = process.env.REPLIT_DEV_DOMAIN;
-  if (dev) return `https://${dev}/api/drive/webhook`;
-  throw new Error("Cannot determine webhook URL: REPLIT_DOMAINS is not set");
+function getWebhookUrl(): string | null {
+  // Prefer an explicit public base URL so this works on any host (Vercel,
+  // custom domain, etc). Falls back to Replit-provided domains, then to
+  // Vercel's per-deployment URL. Returns null when none is configured rather
+  // than throwing, so a missing webhook URL degrades to polling-based sync
+  // instead of aborting folder syncs.
+  const base =
+    process.env.PUBLIC_BASE_URL?.trim() ||
+    (process.env.REPLIT_DOMAINS?.split(",")[0]?.trim()
+      ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]!.trim()}`
+      : undefined) ||
+    (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : undefined) ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined);
+
+  if (!base) return null;
+  return `${base.replace(/\/+$/, "")}/api/drive/webhook`;
 }
 
 // ─── Watch registration ───────────────────────────────────────────────────────
@@ -62,11 +70,12 @@ export async function registerDriveWatch(
   const channelToken = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + CHANNEL_LIFETIME_MS);
 
-  let webhookUrl: string;
-  try {
-    webhookUrl = getWebhookUrl();
-  } catch (err) {
-    logger.warn({ caseId, err }, "[driveWatch] cannot register watch — webhook URL unavailable");
+  const webhookUrl = getWebhookUrl();
+  if (!webhookUrl) {
+    // No public webhook URL configured (e.g. serverless without PUBLIC_BASE_URL).
+    // Push notifications are unavailable; the app falls back to polling-based
+    // folder sync, so this is non-fatal.
+    logger.warn({ caseId }, "[driveWatch] skipping watch registration — no public webhook URL (set PUBLIC_BASE_URL to enable push)");
     return;
   }
 
