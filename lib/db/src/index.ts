@@ -4,7 +4,9 @@ import * as schema from "./schema";
 
 const { Pool } = pg;
 
-if (!process.env.DATABASE_URL) {
+const connectionString = process.env.DATABASE_URL;
+
+if (!connectionString) {
   throw new Error(
     "DATABASE_URL must be set. Did you forget to provision a database?",
   );
@@ -15,8 +17,18 @@ if (!process.env.DATABASE_URL) {
 // fan-out. Long-lived environments (local dev, a container host) can pool more.
 const isServerless = Boolean(process.env.VERCEL);
 
+// Supabase (and most managed Postgres) require TLS, but node-postgres does NOT
+// enable SSL from the connection string by default — so queries fail until we
+// turn it on explicitly. rejectUnauthorized:false avoids CA-bundle mismatches
+// with the pooler endpoint. Local non-SSL Postgres keeps SSL off.
+const needsSsl =
+  isServerless ||
+  /supabase\.(co|com|net)/.test(connectionString) ||
+  /[?&]sslmode=(require|verify-ca|verify-full|no-verify)/.test(connectionString);
+
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString,
+  ssl: needsSsl ? { rejectUnauthorized: false } : undefined,
   max: isServerless ? 1 : 10,
   // PgBouncer in transaction mode closes idle connections aggressively; keep our
   // own idle timeout short so we don't reuse a server-closed socket.
