@@ -626,6 +626,13 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
   );
   const guidanceCollapsed = !!(selectedFolder && collapsedGuidanceIds.has(selectedFolder.id));
 
+  // Child folders of the selected folder — rendered in the right panel so
+  // subfolders (incl. ones created directly in Drive) are visible and navigable
+  // without hunting for them in the left tree.
+  const childFolders = selectedFolder
+    ? folders.filter((f) => f.parentFolderId === selectedFolder.id)
+    : [];
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -837,7 +844,7 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
                 <Loader2 className="w-5 h-5 animate-spin text-[#1E2D6B]" />
               </div>
 
-            ) : items.length === 0 ? (
+            ) : childFolders.length === 0 && items.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground py-12">
                 {isDragging ? (
                   <>
@@ -888,8 +895,26 @@ export function FolderBrowser({ caseId, fetchFn, isStaff = false, readOnly = fal
                   </div>
                 )}
 
-                {/* Column headers — staff only */}
-                {isStaff && (
+                {/* Subfolders — click to open (incl. folders created in Drive) */}
+                {childFolders.map((folder) => (
+                  <button
+                    key={`folder-${folder.id}`}
+                    onClick={() => handleSelectFolder(folder)}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0 hover:bg-gray-50 transition-colors text-left"
+                    title={`Open ${folder.name}`}
+                  >
+                    <FolderTypeIcon type={folder.folderType} open={false} />
+                    <span className="flex-1 text-sm font-medium truncate text-gray-800">
+                      {folder.name}
+                    </span>
+                    {folder.staffOnly && <Lock className="w-3 h-3 text-amber-500 shrink-0" />}
+                    <span className="text-xs text-muted-foreground shrink-0">Folder</span>
+                    <ChevronRight className="w-4 h-4 text-gray-300 shrink-0" />
+                  </button>
+                ))}
+
+                {/* Column headers — staff only (files) */}
+                {isStaff && items.length > 0 && (
                   <div className="grid grid-cols-[20px_1fr_180px_88px_36px] gap-3 items-center px-4 py-2 bg-gray-50 border-b text-xs font-semibold text-gray-500 uppercase tracking-wide">
                     <span />
                     <span>Name</span>
