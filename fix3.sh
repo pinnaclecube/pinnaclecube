@@ -1,3 +1,10 @@
+[200~#!/usr/bin/env bash
+# Pinnacle3 Vercel fix #3: build the API as a CommonJS bundle and require() it.
+set -e
+cd "$(git rev-parse --show-toplevel)"
+echo "Applying CJS-bundle fix..."
+
+cat > artifacts/api-server/build.mjs << 'PINNACLE_EOF'
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -151,3 +158,20 @@ buildAll().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+PINNACLE_EOF
+
+cat > api/index.js << 'PINNACLE_EOF'
+// Vercel serverless function for the Pinnacle³ API.
+//
+// The Express app is pre-bundled by esbuild as CommonJS (no type-checking) into
+// artifacts/api-server/dist/serverless.cjs during the Vercel build step. This
+// file is plain CommonJS so Vercel (which compiles functions as CJS) can
+// require() the bundle directly — a static import/require of an ESM .mjs throws
+// ERR_REQUIRE_ESM. vercel.json rewrites every /api/* request to this function.
+const mod = require("../artifacts/api-server/dist/serverless.cjs");
+
+module.exports = mod.default || mod;
+PINNACLE_EOF
+
+echo "Done. Review: git status && git diff --stat"
+~

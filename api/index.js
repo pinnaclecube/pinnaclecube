@@ -1,10 +1,10 @@
 // Vercel serverless function for the Pinnacle³ API.
 //
-// The Express app is pre-bundled by esbuild (no type-checking, matching the
-// original Replit build) into artifacts/api-server/dist/serverless.mjs during
-// the Vercel build step. This file is plain JS so @vercel/node does not run the
-// TypeScript compiler over the server source (which has pre-existing type
-// errors). vercel.json rewrites every /api/* request to this function.
-import app from "../artifacts/api-server/dist/serverless.mjs";
+// The Express app is pre-bundled by esbuild as CommonJS (no type-checking) into
+// artifacts/api-server/dist/serverless.cjs during the Vercel build step. This
+// file is plain CommonJS so Vercel (which compiles functions as CJS) can
+// require() the bundle directly — a static import/require of an ESM .mjs throws
+// ERR_REQUIRE_ESM. vercel.json rewrites every /api/* request to this function.
+const mod = require("../artifacts/api-server/dist/serverless.cjs");
 
-export default app;
+module.exports = mod.default || mod;
