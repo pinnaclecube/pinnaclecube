@@ -46,6 +46,17 @@ export async function getUncachableResendClient(): Promise<{
   client: Resend;
   fromEmail: string;
 }> {
+  // Prefer a direct API key — works on any host (Vercel, custom domain, local).
+  // Set RESEND_API_KEY from the Resend dashboard. Falls back to the Replit
+  // Connectors integration when running on Replit (no RESEND_API_KEY set).
+  const directKey = process.env.RESEND_API_KEY?.trim();
+  if (directKey) {
+    return {
+      client: new Resend(directKey),
+      fromEmail: process.env.RESEND_FROM_EMAIL?.trim() ?? "",
+    };
+  }
+
   const { apiKey, fromEmail } = await getCredentials();
   return { client: new Resend(apiKey), fromEmail };
 }
