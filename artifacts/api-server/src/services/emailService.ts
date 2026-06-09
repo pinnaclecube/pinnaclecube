@@ -195,17 +195,42 @@ export function actionItemEmail(
   title: string,
   description: string | null,
   priority: string,
+  variant: "new" | "reminder" | "reopened" = "new",
 ): { subject: string; html: string; text: string } {
   const priorityColor = priority === "high" ? "#dc2626" : priority === "medium" ? "#d97706" : "#6b7280";
+
+  const heading =
+    variant === "reminder" ? "Reminder: action still needed"
+      : variant === "reopened" ? "A task has been reopened"
+        : "You have a new action item";
+  const lead =
+    variant === "reminder"
+      ? `Hi ${firstName}, this is a reminder about a task your advisory team needs you to complete.`
+      : variant === "reopened"
+        ? `Hi ${firstName}, your advisory team has reopened a task that needs your attention again.`
+        : `Hi ${firstName}, your advisory team has assigned you a task that requires your attention.`;
+  const subject =
+    variant === "reminder" ? `Reminder: ${title}`
+      : variant === "reopened" ? `Reopened: ${title}`
+        : `Action required: ${title}`;
+  const tag =
+    variant === "reminder" ? "REMINDER"
+      : variant === "reopened" ? "REOPENED TASK"
+        : "ACTION ITEM";
+  const textLabel =
+    variant === "reminder" ? "Reminder about a task"
+      : variant === "reopened" ? "A task has been reopened"
+        : "New action item";
+
   return {
-    subject: `Action required: ${title}`,
+    subject,
     html: layout(`
-      ${h1("You have a new action item")}
-      ${p(`Hi ${firstName}, your advisory team has assigned you a task that requires your attention.`)}
+      ${h1(heading)}
+      ${p(lead)}
       <table cellpadding="0" cellspacing="0" style="border:1px solid #e9ecef;border-radius:8px;padding:20px 24px;margin:0 0 24px;width:100%;">
         <tr><td>
           <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-            <span style="font-size:13px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;">ACTION ITEM</span>
+            <span style="font-size:13px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;">${tag}</span>
             ${badge(priority.toUpperCase(), priorityColor)}
           </div>
           <p style="margin:8px 0 0;font-size:17px;font-weight:700;color:#111827;">${title}</p>
@@ -216,7 +241,7 @@ export function actionItemEmail(
       ${divider()}
       ${p("Log in to mark this complete or ask your advisory team a question.")}
     `),
-    text: `Hi ${firstName},\n\nNew action item from your advisory team:\n\n"${title}"${description ? "\n\n" + description : ""}\n\nPriority: ${priority}\n\nLog in at ${APP_URL}/dashboard`,
+    text: `Hi ${firstName},\n\n${textLabel} from your advisory team:\n\n"${title}"${description ? "\n\n" + description : ""}\n\nPriority: ${priority}\n\nLog in at ${APP_URL}/dashboard`,
   };
 }
 

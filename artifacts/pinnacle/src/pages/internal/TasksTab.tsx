@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ChevronRight, Send, ClipboardList } from "lucide-react";
+import { Loader2, ChevronRight, Send, ClipboardList, RotateCcw } from "lucide-react";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
 import { cn } from "@/lib/utils";
 
@@ -60,14 +60,21 @@ function daysSince(dateStr: string): string {
 interface TaskCardProps {
   task: ActionItem;
   onUpdateStatus: (aid: number, status: string) => Promise<void>;
+  onAction: (aid: number, action: "resend" | "reopen") => Promise<void>;
 }
 
-function TaskCard({ task, onUpdateStatus }: TaskCardProps) {
+function TaskCard({ task, onUpdateStatus, onAction }: TaskCardProps) {
   const [busy, setBusy] = useState(false);
 
   const act = async (status: string) => {
     setBusy(true);
     try { await onUpdateStatus(task.id, status); }
+    finally { setBusy(false); }
+  };
+
+  const runAction = async (action: "resend" | "reopen") => {
+    setBusy(true);
+    try { await onAction(task.id, action); }
     finally { setBusy(false); }
   };
 
@@ -109,23 +116,34 @@ function TaskCard({ task, onUpdateStatus }: TaskCardProps) {
         )}
       </div>
 
-      {!isDimmed && (
-        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-          {task.status === "draft" && (
+      <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+        {task.status === "draft" && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs gap-1 border-[#1E2D6B]/30 text-[#1E2D6B] hover:bg-[#1E2D6B]/5"
+            disabled={busy}
+            onClick={() => act("sent")}
+          >
+            {busy
+              ? <Loader2 className="w-3 h-3 animate-spin" />
+              : <Send className="w-3 h-3" />}
+            Send to Client
+          </Button>
+        )}
+        {task.status === "sent" && (
+          <>
             <Button
               size="sm"
               variant="outline"
               className="h-7 text-xs gap-1 border-[#1E2D6B]/30 text-[#1E2D6B] hover:bg-[#1E2D6B]/5"
               disabled={busy}
-              onClick={() => act("sent")}
+              onClick={() => runAction("resend")}
+              title="Re-send the task email and notification to the client"
             >
-              {busy
-                ? <Loader2 className="w-3 h-3 animate-spin" />
-                : <Send className="w-3 h-3" />}
-              Send to Client
+              {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+              Resend
             </Button>
-          )}
-          {task.status === "sent" && (
             <Button
               size="sm"
               variant="outline"
@@ -136,7 +154,22 @@ function TaskCard({ task, onUpdateStatus }: TaskCardProps) {
               {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
               Mark Complete
             </Button>
-          )}
+          </>
+        )}
+        {(isCompleted || isCancelled) && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs gap-1 border-[#1E2D6B]/30 text-[#1E2D6B] hover:bg-[#1E2D6B]/5"
+            disabled={busy}
+            onClick={() => runAction("reopen")}
+            title="Reopen this task and notify the client"
+          >
+            {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+            Reopen
+          </Button>
+        )}
+        {!isDimmed && (
           <Button
             size="sm"
             variant="ghost"
@@ -146,8 +179,8 @@ function TaskCard({ task, onUpdateStatus }: TaskCardProps) {
           >
             Cancel
           </Button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -207,6 +240,20 @@ export function TasksTab({ userId, onSentCountChange }: TasksTabProps) {
     const r = await staffFetch(`/admin/profiles/${userId}/action-items/${aid}`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
+    });
+    const d = await r.json();
+    if (d.actionItem) {
+      setTasks((prev) => {
+        const next = prev.map((t) => (t.id === aid ? d.actionItem : t));
+        onSentCountChange(next.filter((t) => t.status === "sent").length);
+        return next;
+      });
+    }
+  }, [userId, onSentCountChange]);
+
+  const runAction = useCallback(async (aid: number, action: "resend" | "reopen") => {
+    const r = await staffFetch(`/admin/profiles/${userId}/action-items/${aid}/${action}`, {
+      method: "POST",
     });
     const d = await r.json();
     if (d.actionItem) {
@@ -311,7 +358,7 @@ export function TasksTab({ userId, onSentCountChange }: TasksTabProps) {
                 </Badge>
               </div>
               <div className="space-y-2">
-                {sent.map((t) => <TaskCard key={t.id} task={t} onUpdateStatus={updateStatus} />)}
+                {sent.map((t) => <TaskCard key={t.id} task={t} onUpdateStatus={updateStatus} onAction={runAction} />)}
               </div>
             </section>
           )}
@@ -321,7 +368,7 @@ export function TasksTab({ userId, onSentCountChange }: TasksTabProps) {
             <section>
               <h3 className="text-sm font-semibold text-foreground mb-3">Drafts</h3>
               <div className="space-y-2">
-                {drafts.map((t) => <TaskCard key={t.id} task={t} onUpdateStatus={updateStatus} />)}
+                {drafts.map((t) => <TaskCard key={t.id} task={t} onUpdateStatus={updateStatus} onAction={runAction} />)}
               </div>
             </section>
           )}
@@ -339,7 +386,7 @@ export function TasksTab({ userId, onSentCountChange }: TasksTabProps) {
               </button>
               {completedOpen && (
                 <div className="space-y-2">
-                  {completed.map((t) => <TaskCard key={t.id} task={t} onUpdateStatus={updateStatus} />)}
+                  {completed.map((t) => <TaskCard key={t.id} task={t} onUpdateStatus={updateStatus} onAction={runAction} />)}
                 </div>
               )}
             </section>
@@ -358,7 +405,7 @@ export function TasksTab({ userId, onSentCountChange }: TasksTabProps) {
               </button>
               {cancelledOpen && (
                 <div className="space-y-2">
-                  {cancelled.map((t) => <TaskCard key={t.id} task={t} onUpdateStatus={updateStatus} />)}
+                  {cancelled.map((t) => <TaskCard key={t.id} task={t} onUpdateStatus={updateStatus} onAction={runAction} />)}
                 </div>
               )}
             </section>

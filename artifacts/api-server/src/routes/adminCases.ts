@@ -26,6 +26,7 @@ import {
 } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { sendEmail, actionItemEmail, passwordResetEmail } from "../services/emailService";
+import { logActivity } from "../services/activityLogger";
 import { emitToProfile } from "../services/sseService";
 import { z } from "zod/v4";
 import bcrypt from "bcrypt";
@@ -363,6 +364,157 @@ router.patch(
         sendEmail(profile.email, actionItemEmail(firstName, updated.title, updated.description ?? null, updated.priority ?? "medium")).catch(() => {});
       }
     }
+
+    res.json({ actionItem: updated });
+  },
+);
+
+// Sends the task email (with the right variant) and pushes an in-app
+// notification for resend / reopen actions. Shared by both endpoints below.
+async function notifyClientOfTask(
+  profileId: number,
+  item: { title: string; description: string | null; priority: string | null },
+  variant: "reminder" | "reopened",
+  notificationTitle: string,
+): Promise<void> {
+  const [profile] = await db
+    .select({ email: profilesTable.email, firstName: profilesTable.firstName, name: profilesTable.name })
+    .from(profilesTable)
+    .where(eq(profilesTable.id, profileId))
+    .limit(1);
+
+  if (profile) {
+    const firstName = profile.firstName ?? profile.name?.split(" ")[0] ?? "there";
+    sendEmail(
+      profile.email,
+      actionItemEmail(firstName, item.title, item.description ?? null, item.priority ?? "medium", variant),
+    ).catch(() => {});
+  }
+
+  const [notification] = await db
+    .insert(notificationsTable)
+    .values({
+      profileId,
+      userType: "client",
+      notificationType: "action_item",
+      title: notificationTitle,
+      message: item.title,
+      priority: item.priority ?? "medium",
+    })
+    .returning();
+
+  if (notification) {
+    const [row] = await db
+      .select({ unreadCount: count() })
+      .from(notificationsTable)
+      .where(
+        and(
+          eq(notificationsTable.profileId, profileId),
+          eq(notificationsTable.userType, "client"),
+          eq(notificationsTable.status, "unread"),
+        ),
+      );
+    emitToProfile(profileId, "notification", {
+      unreadCount: Number(row?.unreadCount ?? 1),
+      notification,
+    });
+  }
+}
+
+function staffName(req: Request): string {
+  return (req as Request & { staffUser?: { name?: string } }).staffUser?.name ?? "Staff";
+}
+
+// ─── Resend an open (sent) task ──────────────────────────────────────────────
+// Re-sends the task email + notification to the client. Open tasks only.
+
+router.post(
+  "/admin/profiles/:id/action-items/:aid/resend",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const id = parseId(req.params.id);
+    const aid = parseId(req.params.aid);
+    if (!id || !aid) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+    const [item] = await db
+      .select()
+      .from(clientActionItemsTable)
+      .where(and(eq(clientActionItemsTable.id, aid), eq(clientActionItemsTable.profileId, id)))
+      .limit(1);
+
+    if (!item) { res.status(404).json({ error: "Action item not found" }); return; }
+    if (item.status !== "sent") {
+      res.status(400).json({ error: "Only open (sent) tasks can be resent" });
+      return;
+    }
+
+    const [updated] = await db
+      .update(clientActionItemsTable)
+      .set({ sentAt: new Date() })
+      .where(eq(clientActionItemsTable.id, aid))
+      .returning();
+
+    await notifyClientOfTask(id, updated, "reminder", "Task reminder");
+
+    logActivity({
+      profileId: id,
+      eventType: "action_item_resent",
+      description: `Task "${updated.title}" re-sent to client`,
+      actor: "staff",
+      actorName: staffName(req),
+      category: "tasks",
+      metadata: { actionItemId: aid, title: updated.title, priority: updated.priority },
+    });
+
+    res.json({ actionItem: updated });
+  },
+);
+
+// ─── Reopen a closed (completed / cancelled) task ────────────────────────────
+// Returns the task to "sent", clears completion timestamps, re-notifies client.
+
+router.post(
+  "/admin/profiles/:id/action-items/:aid/reopen",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const id = parseId(req.params.id);
+    const aid = parseId(req.params.aid);
+    if (!id || !aid) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+    const [item] = await db
+      .select()
+      .from(clientActionItemsTable)
+      .where(and(eq(clientActionItemsTable.id, aid), eq(clientActionItemsTable.profileId, id)))
+      .limit(1);
+
+    if (!item) { res.status(404).json({ error: "Action item not found" }); return; }
+    if (item.status !== "completed" && item.status !== "cancelled") {
+      res.status(400).json({ error: "Only closed (completed) tasks can be reopened" });
+      return;
+    }
+
+    const [updated] = await db
+      .update(clientActionItemsTable)
+      .set({
+        status: "sent",
+        sentAt: new Date(),
+        clientCompletedAt: null,
+        adminCompletedAt: null,
+      })
+      .where(eq(clientActionItemsTable.id, aid))
+      .returning();
+
+    await notifyClientOfTask(id, updated, "reopened", "Task reopened");
+
+    logActivity({
+      profileId: id,
+      eventType: "action_item_reopened",
+      description: `Task "${updated.title}" reopened`,
+      actor: "staff",
+      actorName: staffName(req),
+      category: "tasks",
+      metadata: { actionItemId: aid, title: updated.title, previousStatus: item.status },
+    });
 
     res.json({ actionItem: updated });
   },
