@@ -3,10 +3,12 @@
 Drop a file named **`venakan-logo.png`** in this directory to brand the
 generated Word (.docx) and PDF program exports (see `api/export-program.ts`).
 
-- The logo is placed on a **dark ink (`#0F172A`) banner** at the top of the
-  cover page and as a running header, so use a **white / reversed** or
-  **transparent** PNG that reads correctly on a dark background.
-- A roughly landscape logo (e.g. ~600×160 px) works best in the banner.
+- The logo is placed on a **light off-white (`#F1F5F9`) banner** with an emerald
+  accent rule, at the top of the cover page and as a running header — so a
+  **black / dark** (or transparent-background) PNG reads correctly. The official
+  black "VENAKAN — INFO SOLUTIONS" wordmark is the intended asset.
+- A roughly landscape logo (e.g. ~1000×260 px) works best in the banner.
 
 If `venakan-logo.png` is absent, exports fall back to a styled
-"Venakan **Learn**" text wordmark (ink + emerald) — no build step required.
+"VENAKAN / INFO SOLUTIONS" text wordmark (ink + emerald) — no build step
+required.

@@ -313,7 +313,9 @@ function rubricTableDocx(criteria: RubricCriterion[]): Table {
 }
 
 async function buildDocx(prog: ProgramExport, logo: Buffer | null): Promise<Buffer> {
-  // Cover banner: a dark ink "table" cell holding the logo/wordmark.
+  // Cover banner: a light (mist) band holding the black logo/wordmark, with an
+  // emerald accent rule beneath. The brand logo is black, so it sits on a light
+  // background (not a dark one) to stay visible.
   const wordmark = logo
     ? [
         new Paragraph({
@@ -322,7 +324,7 @@ async function buildDocx(prog: ProgramExport, logo: Buffer | null): Promise<Buff
             new ImageRun({
               data: logo,
               type: "png",
-              transformation: { width: 220, height: 58 },
+              transformation: { width: 240, height: 63 },
             }),
           ],
         }),
@@ -330,8 +332,17 @@ async function buildDocx(prog: ProgramExport, logo: Buffer | null): Promise<Buff
     : [
         new Paragraph({
           children: [
-            new TextRun({ text: "Venakan ", bold: true, color: WHITE, size: 40 }),
-            new TextRun({ text: "Learn", bold: true, color: "34D399", size: 40 }),
+            new TextRun({ text: "VENAKAN", bold: true, color: INK, size: 40 }),
+          ],
+        }),
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: "INFO SOLUTIONS",
+              color: EMERALD,
+              size: 20,
+              characterSpacing: 60,
+            }),
           ],
         }),
       ];
@@ -339,18 +350,18 @@ async function buildDocx(prog: ProgramExport, logo: Buffer | null): Promise<Buff
   const banner = new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
     borders: {
-      top: { style: BorderStyle.NONE, size: 0, color: INK },
-      bottom: { style: BorderStyle.NONE, size: 0, color: INK },
-      left: { style: BorderStyle.NONE, size: 0, color: INK },
-      right: { style: BorderStyle.NONE, size: 0, color: INK },
-      insideHorizontal: { style: BorderStyle.NONE, size: 0, color: INK },
-      insideVertical: { style: BorderStyle.NONE, size: 0, color: INK },
+      top: { style: BorderStyle.NONE, size: 0, color: MIST },
+      bottom: { style: BorderStyle.SINGLE, size: 18, color: EMERALD },
+      left: { style: BorderStyle.NONE, size: 0, color: MIST },
+      right: { style: BorderStyle.NONE, size: 0, color: MIST },
+      insideHorizontal: { style: BorderStyle.NONE, size: 0, color: MIST },
+      insideVertical: { style: BorderStyle.NONE, size: 0, color: MIST },
     },
     rows: [
       new TableRow({
         children: [
           new TableCell({
-            shading: { type: ShadingType.CLEAR, fill: INK },
+            shading: { type: ShadingType.CLEAR, fill: MIST },
             margins: { top: 240, bottom: 240, left: 240, right: 240 },
             children: wordmark,
           }),
@@ -505,18 +516,19 @@ async function buildDocx(prog: ProgramExport, logo: Buffer | null): Promise<Buff
     }
   }
 
-  // Running header: white/reversed logo (or wordmark) on a dark ink banner.
+  // Running header: black logo (or ink wordmark) on a plain white band with a
+  // thin emerald rule beneath.
   const headerChildren = logo
     ? [
         new ImageRun({
           data: logo,
           type: "png",
-          transformation: { width: 90, height: 24 },
+          transformation: { width: 96, height: 25 },
         }),
       ]
     : [
-        new TextRun({ text: "Venakan ", bold: true, color: WHITE, size: 16 }),
-        new TextRun({ text: "Learn", bold: true, color: "34D399", size: 16 }),
+        new TextRun({ text: "VENAKAN", bold: true, color: INK, size: 16 }),
+        new TextRun({ text: "  INFO SOLUTIONS", color: EMERALD, size: 12 }),
       ];
 
   const header = new Header({
@@ -524,18 +536,18 @@ async function buildDocx(prog: ProgramExport, logo: Buffer | null): Promise<Buff
       new Table({
         width: { size: 100, type: WidthType.PERCENTAGE },
         borders: {
-          top: { style: BorderStyle.NONE, size: 0, color: INK },
-          bottom: { style: BorderStyle.NONE, size: 0, color: INK },
-          left: { style: BorderStyle.NONE, size: 0, color: INK },
-          right: { style: BorderStyle.NONE, size: 0, color: INK },
-          insideHorizontal: { style: BorderStyle.NONE, size: 0, color: INK },
-          insideVertical: { style: BorderStyle.NONE, size: 0, color: INK },
+          top: { style: BorderStyle.NONE, size: 0, color: WHITE },
+          bottom: { style: BorderStyle.SINGLE, size: 6, color: EMERALD },
+          left: { style: BorderStyle.NONE, size: 0, color: WHITE },
+          right: { style: BorderStyle.NONE, size: 0, color: WHITE },
+          insideHorizontal: { style: BorderStyle.NONE, size: 0, color: WHITE },
+          insideVertical: { style: BorderStyle.NONE, size: 0, color: WHITE },
         },
         rows: [
           new TableRow({
             children: [
               new TableCell({
-                shading: { type: ShadingType.CLEAR, fill: INK },
+                shading: { type: ShadingType.CLEAR, fill: WHITE },
                 margins: { top: 80, bottom: 80, left: 120, right: 120 },
                 children: [new Paragraph({ children: headerChildren })],
               }),
@@ -580,17 +592,20 @@ function pdfBanner(doc: PDFKit.PDFDocument, logo: Buffer | null): void {
   const top = doc.y;
   const left = doc.page.margins.left;
   const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-  const height = 70;
+  const height = 72;
   doc.save();
-  doc.rect(left, top, width, height).fill(`#${INK}`);
+  // Light (mist) band — the brand logo is black, so keep the background light.
+  doc.rect(left, top, width, height).fill(`#${MIST}`);
+  // Emerald accent rule along the bottom of the band.
+  doc.rect(left, top + height - 3, width, 3).fill(`#${EMERALD}`);
   if (logo) {
     try {
-      doc.image(logo, left + 16, top + 16, { height: height - 32 });
+      doc.image(logo, left + 18, top + 16, { height: height - 38 });
     } catch {
-      pdfWordmark(doc, left + 16, top + 22);
+      pdfWordmark(doc, left + 18, top + 20);
     }
   } else {
-    pdfWordmark(doc, left + 16, top + 22);
+    pdfWordmark(doc, left + 18, top + 20);
   }
   doc.restore();
   doc.y = top + height + 24;
@@ -598,9 +613,12 @@ function pdfBanner(doc: PDFKit.PDFDocument, logo: Buffer | null): void {
 }
 
 function pdfWordmark(doc: PDFKit.PDFDocument, x: number, y: number): void {
-  doc.fontSize(22).font("Helvetica-Bold");
-  doc.fillColor(`#${WHITE}`).text("Venakan ", x, y, { continued: true });
-  doc.fillColor("#34D399").text("Learn", { continued: false });
+  doc.fontSize(22).font("Helvetica-Bold").fillColor(`#${INK}`).text("VENAKAN", x, y);
+  doc
+    .fontSize(10)
+    .font("Helvetica")
+    .fillColor(`#${EMERALD}`)
+    .text("INFO SOLUTIONS", x + 1, y + 26, { characterSpacing: 3 });
 }
 
 function pdfLesson(doc: PDFKit.PDFDocument, lesson: LessonBlock[]): void {
