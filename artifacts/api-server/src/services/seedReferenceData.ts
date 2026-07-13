@@ -7,6 +7,8 @@ import {
   casePetitionSetupTable,
   profilesTable,
   clientUserProductsTable,
+  degreeTypesTable,
+  contributionTypesTable,
 } from "@workspace/db";
 import { sql, eq, and, isNotNull } from "drizzle-orm";
 import { logger } from "../lib/logger";
@@ -92,6 +94,52 @@ export async function seedReferenceData(): Promise<void> {
     logger.info({ rows: VISA_CRITERIA_SEED.length }, "[seed] visa_criteria upserted");
   } catch (err) {
     logger.error({ err }, "[seed] visa_criteria seed failed");
+  }
+
+  // ── degree_types lookup (seed once, if empty) ───────────────────────────────
+  try {
+    const [dtRow] = await db.select({ count: sql<number>`count(*)::int` }).from(degreeTypesTable);
+    if ((dtRow?.count ?? 0) === 0) {
+      await db
+        .insert(degreeTypesTable)
+        .values(
+          ["PhD", "Master's", "Bachelor's", "MD", "JD", "Other"].map((name, i) => ({
+            name,
+            sortOrder: i,
+          })),
+        )
+        .onConflictDoNothing();
+      logger.info("[seed] degree_types inserted");
+    }
+  } catch (err) {
+    logger.error({ err }, "[seed] degree_types seed failed");
+  }
+
+  // ── contribution_types lookup (seed once, if empty) ─────────────────────────
+  try {
+    const [ctRow] = await db.select({ count: sql<number>`count(*)::int` }).from(contributionTypesTable);
+    if ((ctRow?.count ?? 0) === 0) {
+      await db
+        .insert(contributionTypesTable)
+        .values(
+          [
+            "Research papers / publications",
+            "Employment / professional work",
+            "Patents / inventions",
+            "Products or technology built",
+            "Judging or peer review",
+            "Awards / recognitions",
+            "Conference talks / presentations",
+            "Open-source contributions",
+            "Media coverage",
+            "Other",
+          ].map((name, i) => ({ name, sortOrder: i })),
+        )
+        .onConflictDoNothing();
+      logger.info("[seed] contribution_types inserted");
+    }
+  } catch (err) {
+    logger.error({ err }, "[seed] contribution_types seed failed");
   }
 
   try {
