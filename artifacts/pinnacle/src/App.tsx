@@ -48,6 +48,7 @@ import Courses from "@/pages/courses";
 import CourseDetail from "@/pages/course-detail";
 import ProfilePage from "@/pages/profile";
 import MyFiles from "@/pages/my-files";
+import ReferenceLetters from "@/pages/reference-letters";
 import ReadinessIntake from "@/pages/ReadinessIntake";
 import Tasks from "@/pages/tasks";
 
@@ -182,6 +183,9 @@ function Router() {
       </Route>
       <Route path="/my-files">
         <ProtectedRoute><MyFiles /></ProtectedRoute>
+      </Route>
+      <Route path="/reference-letters">
+        <ProtectedRoute><ReferenceLetters /></ProtectedRoute>
       </Route>
       <Route path="/tasks">
         <ProtectedRoute>
