@@ -16,15 +16,16 @@ import {
   ArrowLeft, Plus, Check, AlertTriangle, Lock,
   RefreshCw, ExternalLink, Loader2, CheckCircle, Clock, Zap, Activity,
   LayoutDashboard, FolderSearch, GraduationCap, ClipboardCheck,
-  FileText, Files, HardDrive, Menu, X, ClipboardList,
+  FileText, Files, HardDrive, Menu, X, ClipboardList, Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FolderBrowser } from "@/components/case/FolderBrowser";
 import { PetitionAssessmentTab } from "./PetitionAssessmentTab";
 import { ExhibitsTab } from "./ExhibitsTab";
 import { TasksTab } from "./TasksTab";
+import { ReferenceLettersTab } from "./ReferenceLettersTab";
 
-const TABS = ["Overview", "Tasks", "Evidence", "Excellence Lab", "Petition Workspace", "Petition Assessment", "Exhibits", "Documents", "Drive Folders"] as const;
+const TABS = ["Overview", "Tasks", "Evidence", "Excellence Lab", "Petition Workspace", "Petition Assessment", "Exhibits", "Documents", "Reference Letters", "Drive Folders"] as const;
 type Tab = typeof TABS[number];
 
 const HIDDEN_TABS = ["Petition Workspace"] as const;
@@ -37,6 +38,7 @@ const TAB_ICONS: Partial<Record<Tab, React.ComponentType<{ className?: string }>
   "Petition Assessment": ClipboardCheck,
   "Exhibits": FileText,
   "Documents": Files,
+  "Reference Letters": Mail,
   "Drive Folders": HardDrive,
 };
 
@@ -1021,6 +1023,7 @@ const TAB_SLUG_MAP: Record<string, Tab> = {
   "petition-assessment": "Petition Assessment",
   "exhibits": "Exhibits",
   "documents": "Documents",
+  "reference-letters": "Reference Letters",
   "drive-folders": "Drive Folders",
 };
 
@@ -1205,6 +1208,7 @@ export default function InternalCaseDetail() {
             {activeTab === "Petition Assessment" && <PetitionAssessmentTab userId={user_id} />}
             {activeTab === "Exhibits" && <ExhibitsTab userId={user_id} profileData={profileData} />}
             {activeTab === "Documents" && <DocumentsTab userId={user_id} />}
+            {activeTab === "Reference Letters" && <ReferenceLettersTab userId={user_id} />}
             {activeTab === "Drive Folders" && <DriveFoldersTab userId={user_id} />}
           </div>
         </div>
