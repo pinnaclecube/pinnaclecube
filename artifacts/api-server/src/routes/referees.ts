@@ -61,6 +61,14 @@ const LETTER_FOLDER_NAME = "Reference Letters";
 const APP_URL = process.env.FRONTEND_URL ?? "https://pinnaclecube.com";
 const SUPPORT_EMAIL = "support@pinnaclecube.com";
 
+// Builds a header-safe Content-Disposition value (RFC 6266). HTTP header values
+// must be ASCII, so we emit an ASCII fallback via `filename=` plus the full
+// UTF-8 name via `filename*=` — filenames often contain em dashes or accents.
+function attachmentDisposition(fileName: string): string {
+  const asciiFallback = fileName.replace(/[^\x20-\x7E]/g, "_").replace(/"/g, "");
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+}
+
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 type AugmentedRequest = Request & {
@@ -481,18 +489,15 @@ router.get(
     sheet.getColumn("contributions").alignment = { wrapText: true, vertical: "top" };
 
     const client = await getCaseClient(caseId);
-    const safeName = (client?.name ?? `Case ${caseId}`).replace(/[^\w .-]/g, "").trim() || `Case ${caseId}`;
-    const fileName = `Referees — ${safeName}.xlsx`;
+    const rawName = (client?.name ?? `Case ${caseId}`).trim() || `Case ${caseId}`;
+    const fileName = `Referees - ${rawName}.xlsx`;
 
     const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
     res.setHeader(
       "Content-Type",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${fileName.replace(/"/g, "")}"`,
-    );
+    res.setHeader("Content-Disposition", attachmentDisposition(fileName));
     logger.info({ caseId, count: referees.length, by: actorRole(aug) }, "[referees] exported to Excel");
     res.end(buffer);
   },
@@ -709,10 +714,7 @@ router.get(
     const fileName = letter.fileName ?? `${referee.fullName} — Reference Letter`;
     const isDocx = fileName.toLowerCase().endsWith(".docx");
     res.setHeader("Content-Type", isDocx ? DOCX_MIME : "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${fileName.replace(/"/g, "")}"`,
-    );
+    res.setHeader("Content-Disposition", attachmentDisposition(fileName));
     res.end(buffer);
   },
 );
