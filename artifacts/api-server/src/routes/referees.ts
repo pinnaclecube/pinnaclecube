@@ -120,6 +120,22 @@ function actorRole(req: AugmentedRequest): "client" | "staff" {
   return req.staffUser && !req.clientUser ? "staff" : "client";
 }
 
+// Blocks edits once a referee is locked (client confirmed its reference letter).
+// Applies to BOTH portals — staff must explicitly unlock first, no silent bypass.
+function assertNotLocked(
+  referee: typeof refereesTable.$inferSelect,
+  res: Response,
+): boolean {
+  if (referee.isLocked) {
+    res.status(403).json({
+      error: "This referee is locked because the reference letter was confirmed. Unlock it first to make changes.",
+      locked: true,
+    });
+    return false;
+  }
+  return true;
+}
+
 // ─── Validation (shared by every write path) ────────────────────────────────────
 
 const ContributionInput = z.object({
@@ -304,6 +320,7 @@ router.put(
     const refereeId = parseInt(req.params.id as string, 10);
     const existing = await loadAuthorizedReferee(aug, res, refereeId);
     if (!existing) return;
+    if (!assertNotLocked(existing, res)) return;
 
     const parsed = RefereeInput.safeParse(req.body);
     if (!parsed.success) {
@@ -349,6 +366,7 @@ router.delete(
     const refereeId = parseInt(req.params.id as string, 10);
     const existing = await loadAuthorizedReferee(aug, res, refereeId);
     if (!existing) return;
+    if (!assertNotLocked(existing, res)) return;
 
     // referee_contributions cascade-delete via FK
     await db.delete(refereesTable).where(eq(refereesTable.id, refereeId));
@@ -368,6 +386,7 @@ router.post(
     const refereeId = parseInt(req.params.id as string, 10);
     const referee = await loadAuthorizedReferee(aug, res, refereeId);
     if (!referee) return;
+    if (!assertNotLocked(referee, res)) return;
 
     const file = (req as Request & { file?: Express.Multer.File }).file;
     if (!file) {
