@@ -37,8 +37,12 @@ import {
   referenceLettersTable,
   profilesTable,
 } from "@workspace/db";
-import { getDriveClient, createDriveFolder } from "../services/driveService";
-import { sendEmail, referenceLetterReviewEmail } from "../services/emailService";
+import { getDriveClient, createDriveFolder, downloadDriveFile } from "../services/driveService";
+import {
+  sendEmail,
+  referenceLetterReviewEmail,
+  referenceLetterConfirmedStaffEmail,
+} from "../services/emailService";
 import { requireClientAuth } from "../middlewares/clientAuth";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { logger } from "../lib/logger";
@@ -52,6 +56,9 @@ const upload = multer({
 
 const CV_FOLDER_NAME = "Referee CVs";
 const LETTER_FOLDER_NAME = "Reference Letters";
+
+const APP_URL = process.env.FRONTEND_URL ?? "https://pinnaclecube.com";
+const SUPPORT_EMAIL = "support@pinnaclecube.com";
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
@@ -248,10 +255,10 @@ async function getOrCreateCaseSubfolder(
   return created.driveId;
 }
 
-// Resolves the case owner's email + first name (for client-facing emails).
+// Resolves the case owner's email, first name, and full name (for emails).
 async function getCaseClient(
   caseId: number,
-): Promise<{ email: string; firstName: string } | null> {
+): Promise<{ email: string; firstName: string; name: string } | null> {
   const [row] = await db
     .select({
       email: profilesTable.email,
@@ -263,7 +270,8 @@ async function getCaseClient(
     .where(eq(casePetitionSetupTable.id, caseId))
     .limit(1);
   if (!row) return null;
-  return { email: row.email, firstName: row.firstName ?? row.name?.split(" ")[0] ?? "there" };
+  const firstName = row.firstName ?? row.name?.split(" ")[0] ?? "there";
+  return { email: row.email, firstName, name: row.name ?? firstName };
 }
 
 // Sends the client review email for a referee's active letter. Fire-and-forget
@@ -531,6 +539,137 @@ router.post(
       cvDriveUrl: driveRes.data.webViewLink ?? null,
       referee: updated,
     });
+  },
+);
+
+// ─── Client (or staff): download the active reference letter ────────────────────
+
+router.get(
+  "/referees/:id/letter/download",
+  requireAnyAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const aug = req as AugmentedRequest;
+    const refereeId = parseInt(req.params.id as string, 10);
+    const referee = await loadAuthorizedReferee(aug, res, refereeId);
+    if (!referee) return;
+
+    const [letter] = await db
+      .select()
+      .from(referenceLettersTable)
+      .where(
+        and(
+          eq(referenceLettersTable.refereeId, refereeId),
+          eq(referenceLettersTable.isActive, true),
+        ),
+      )
+      .limit(1);
+    if (!letter) {
+      res.status(404).json({ error: "No reference letter available for this referee" });
+      return;
+    }
+
+    let buffer: Buffer;
+    try {
+      buffer = await downloadDriveFile(letter.driveFileId);
+    } catch (err) {
+      logger.error({ err, refereeId, letterId: letter.id }, "[referees] letter download failed");
+      res.status(502).json({ error: "Could not retrieve the letter from storage" });
+      return;
+    }
+
+    const fileName = letter.fileName ?? `${referee.fullName} — Reference Letter`;
+    const isDocx = fileName.toLowerCase().endsWith(".docx");
+    res.setHeader("Content-Type", isDocx ? DOCX_MIME : "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${fileName.replace(/"/g, "")}"`,
+    );
+    res.end(buffer);
+  },
+);
+
+// ─── Client: confirm the active reference letter (locks referee + letter) ───────
+
+router.post(
+  "/referees/:id/letter/confirm",
+  requireClientAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const aug = req as AugmentedRequest;
+    const refereeId = parseInt(req.params.id as string, 10);
+    const referee = await loadAuthorizedReferee(aug, res, refereeId);
+    if (!referee) return;
+
+    const [letter] = await db
+      .select()
+      .from(referenceLettersTable)
+      .where(
+        and(
+          eq(referenceLettersTable.refereeId, refereeId),
+          eq(referenceLettersTable.isActive, true),
+        ),
+      )
+      .limit(1);
+    if (!letter) {
+      res.status(404).json({ error: "No reference letter to confirm for this referee" });
+      return;
+    }
+    if (letter.status !== "pending_review") {
+      res.status(409).json({ error: "This reference letter has already been confirmed" });
+      return;
+    }
+
+    const confirmedAt = new Date();
+    // Atomic: mark the letter confirmed AND lock the referee together.
+    const updatedLetter = await db.transaction(async (tx) => {
+      const [l] = await tx
+        .update(referenceLettersTable)
+        .set({ status: "confirmed", confirmedAt, updatedAt: confirmedAt })
+        .where(eq(referenceLettersTable.id, letter.id))
+        .returning();
+      await tx
+        .update(refereesTable)
+        .set({ isLocked: true, lockedAt: confirmedAt, updatedAt: confirmedAt })
+        .where(eq(refereesTable.id, refereeId));
+      return l;
+    });
+
+    // Notify staff (support inbox) — non-fatal: never rolls back the confirmation.
+    try {
+      const [caseRow] = await db
+        .select({ profileId: casePetitionSetupTable.profileId })
+        .from(casePetitionSetupTable)
+        .where(eq(casePetitionSetupTable.id, referee.caseId))
+        .limit(1);
+      const client = await getCaseClient(referee.caseId);
+      const caseRef = client?.name ?? `Case #${referee.caseId}`;
+      const caseUrl = caseRow
+        ? `${APP_URL}/internal/case/${caseRow.profileId}`
+        : `${APP_URL}/internal/cases`;
+      await sendEmail(
+        SUPPORT_EMAIL,
+        referenceLetterConfirmedStaffEmail(
+          caseRef,
+          {
+            fullName: referee.fullName,
+            title: referee.title,
+            organization: referee.organization,
+          },
+          { version: updatedLetter.version, confirmedAt },
+          caseUrl,
+        ),
+      );
+    } catch (err) {
+      logger.error({ err, refereeId }, "[referees] confirmation staff email failed");
+    }
+
+    logger.info({ refereeId, letterId: letter.id }, "[referees] reference letter confirmed + locked");
+    const [fresh] = await db
+      .select()
+      .from(refereesTable)
+      .where(eq(refereesTable.id, refereeId))
+      .limit(1);
+    const [withRels] = await withRelations([fresh]);
+    res.json({ referee: withRels });
   },
 );
 

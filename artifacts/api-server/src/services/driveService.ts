@@ -129,3 +129,12 @@ export async function listDriveSubfolders(
       Boolean(f.id && f.name && f.mimeType && f.webViewLink),
   ) as DriveFileMetadata[];
 }
+
+// Download a Drive file's raw bytes (works for files in shared drives).
+export async function downloadDriveFile(fileId: string): Promise<Buffer> {
+  const res = await getDriveClient().files.get(
+    { supportsAllDrives: true, fileId, alt: "media" },
+    { responseType: "arraybuffer" },
+  );
+  return Buffer.from(res.data as ArrayBuffer);
+}

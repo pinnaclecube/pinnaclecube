@@ -88,6 +88,9 @@ interface RefereeFormProps {
   contributionTypes: LookupItem[];
   onSaved: (referee: Referee) => void;
   onCancel?: () => void;
+  /** When true (e.g. referee is locked), all fields are read-only and the
+   *  save action + CV upload are hidden. */
+  readOnly?: boolean;
 }
 
 const NONE = "__none__";
@@ -104,6 +107,7 @@ export function RefereeForm({
   contributionTypes,
   onSaved,
   onCancel,
+  readOnly = false,
 }: RefereeFormProps) {
   const { toast } = useToast();
 
@@ -258,35 +262,35 @@ export function RefereeForm({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <Label className="text-xs">Full name *</Label>
-            <Input value={fullName} onChange={(e) => setFullName(e.target.value)}
+            <Input value={fullName} onChange={(e) => setFullName(e.target.value)} disabled={readOnly}
               className={cn(errors.fullName && "border-red-400")} />
             {fieldError("fullName")}
           </div>
           <div>
             <Label className="text-xs">Title *</Label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)}
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} disabled={readOnly}
               className={cn(errors.title && "border-red-400")} />
             {fieldError("title")}
           </div>
           <div>
             <Label className="text-xs">Organization *</Label>
-            <Input value={organization} onChange={(e) => setOrganization(e.target.value)}
+            <Input value={organization} onChange={(e) => setOrganization(e.target.value)} disabled={readOnly}
               className={cn(errors.organization && "border-red-400")} />
             {fieldError("organization")}
           </div>
           <div>
             <Label className="text-xs">Email *</Label>
-            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={readOnly}
               className={cn(errors.email && "border-red-400")} />
             {fieldError("email")}
           </div>
           <div>
             <Label className="text-xs">Phone</Label>
-            <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <Input value={phone} onChange={(e) => setPhone(e.target.value)} disabled={readOnly} />
           </div>
           <div>
             <Label className="text-xs">Country</Label>
-            <Select value={country || NONE} onValueChange={(v) => setCountry(v === NONE ? "" : v)}>
+            <Select value={country || NONE} onValueChange={(v) => setCountry(v === NONE ? "" : v)} disabled={readOnly}>
               <SelectTrigger><SelectValue placeholder="Select a country" /></SelectTrigger>
               <SelectContent className="max-h-64">
                 <SelectItem value={NONE}>—</SelectItem>
@@ -296,7 +300,7 @@ export function RefereeForm({
           </div>
           <div>
             <Label className="text-xs">Highest degree</Label>
-            <Select value={degreeTypeId} onValueChange={setDegreeTypeId}>
+            <Select value={degreeTypeId} onValueChange={setDegreeTypeId} disabled={readOnly}>
               <SelectTrigger><SelectValue placeholder="Select a degree" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={NONE}>—</SelectItem>
@@ -306,11 +310,11 @@ export function RefereeForm({
           </div>
           <div>
             <Label className="text-xs">Field of expertise</Label>
-            <Input value={fieldOfExpertise} onChange={(e) => setFieldOfExpertise(e.target.value)} />
+            <Input value={fieldOfExpertise} onChange={(e) => setFieldOfExpertise(e.target.value)} disabled={readOnly} />
           </div>
           <div className="sm:col-span-2">
             <Label className="text-xs">LinkedIn / profile URL</Label>
-            <Input value={profileUrl} onChange={(e) => setProfileUrl(e.target.value)}
+            <Input value={profileUrl} onChange={(e) => setProfileUrl(e.target.value)} disabled={readOnly}
               placeholder="https://linkedin.com/in/…" />
           </div>
         </div>
@@ -326,16 +330,18 @@ export function RefereeForm({
             ) : (
               <span className="text-xs text-muted-foreground">No CV attached</span>
             )}
-            <label className={cn(
-              "inline-flex items-center gap-1.5 text-xs font-medium cursor-pointer rounded border px-2 py-1 transition-colors",
-              referee ? "border-[#1E2D6B]/30 text-[#1E2D6B] hover:bg-[#1E2D6B]/5" : "border-gray-200 text-gray-400 cursor-not-allowed",
-            )}>
-              {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-              {cvDriveFileId ? "Replace" : "Upload"} PDF
-              <input type="file" accept="application/pdf" className="hidden" disabled={!referee || uploading}
-                onChange={(e) => void handleCvUpload(e.target.files?.[0])} />
-            </label>
-            {!referee && <span className="text-[11px] text-muted-foreground">Save first to attach</span>}
+            {!readOnly && (
+              <label className={cn(
+                "inline-flex items-center gap-1.5 text-xs font-medium cursor-pointer rounded border px-2 py-1 transition-colors",
+                referee ? "border-[#1E2D6B]/30 text-[#1E2D6B] hover:bg-[#1E2D6B]/5" : "border-gray-200 text-gray-400 cursor-not-allowed",
+              )}>
+                {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                {cvDriveFileId ? "Replace" : "Upload"} PDF
+                <input type="file" accept="application/pdf" className="hidden" disabled={!referee || uploading}
+                  onChange={(e) => void handleCvUpload(e.target.files?.[0])} />
+              </label>
+            )}
+            {!readOnly && !referee && <span className="text-[11px] text-muted-foreground">Save first to attach</span>}
           </div>
         </div>
       </section>
@@ -344,11 +350,11 @@ export function RefereeForm({
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
           <Label className="text-sm font-normal">Has this referee confirmed willingness to provide a letter?</Label>
-          <Switch checked={willingnessConfirmed} onCheckedChange={setWillingnessConfirmed} />
+          <Switch checked={willingnessConfirmed} onCheckedChange={setWillingnessConfirmed} disabled={readOnly} />
         </div>
         <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
           <Label className="text-sm font-normal">Have you worked together directly?</Label>
-          <Switch checked={workedTogether} onCheckedChange={setWorkedTogether} />
+          <Switch checked={workedTogether} onCheckedChange={setWorkedTogether} disabled={readOnly} />
         </div>
       </section>
 
@@ -362,8 +368,8 @@ export function RefereeForm({
             const state = contribs[ct.id] ?? { checked: false, details: "" };
             return (
               <div key={ct.id} className="rounded-md border px-3 py-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox checked={state.checked}
+                <label className={cn("flex items-center gap-2", readOnly ? "cursor-default" : "cursor-pointer")}>
+                  <Checkbox checked={state.checked} disabled={readOnly}
                     onCheckedChange={(c) => setContribChecked(ct.id, c === true)} />
                   <span className="text-sm">{ct.name}</span>
                 </label>
@@ -372,6 +378,7 @@ export function RefereeForm({
                     <Textarea
                       placeholder="Provide details"
                       value={state.details}
+                      readOnly={readOnly}
                       onChange={(e) => setContribDetails(ct.id, e.target.value)}
                       className={cn("min-h-[64px] resize-none text-sm", errors[`contrib_${ct.id}`] && "border-red-400")}
                     />
@@ -385,16 +392,18 @@ export function RefereeForm({
       </section>
 
       {/* ── Actions ───────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-end gap-2 pt-1">
-        {onCancel && (
-          <Button variant="ghost" size="sm" onClick={onCancel} disabled={saving}>Cancel</Button>
-        )}
-        <Button size="sm" className="bg-[#1E2D6B] hover:bg-[#3D4FA8] gap-1.5"
-          onClick={() => void handleSave()} disabled={saving}>
-          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-          {referee ? "Save changes" : "Save referee"}
-        </Button>
-      </div>
+      {!readOnly && (
+        <div className="flex items-center justify-end gap-2 pt-1">
+          {onCancel && (
+            <Button variant="ghost" size="sm" onClick={onCancel} disabled={saving}>Cancel</Button>
+          )}
+          <Button size="sm" className="bg-[#1E2D6B] hover:bg-[#3D4FA8] gap-1.5"
+            onClick={() => void handleSave()} disabled={saving}>
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+            {referee ? "Save changes" : "Save referee"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

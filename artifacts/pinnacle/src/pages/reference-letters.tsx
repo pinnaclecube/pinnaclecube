@@ -1,23 +1,29 @@
 /**
  * reference-letters.tsx — Pinnacle³
  *
- * Client "Reference Letters" section — referee intake.
+ * Client "Reference Letters" section — referee intake + letter review.
  * Resolves the client's case via GET /cases/me, then shows repeatable referee
  * cards (each saved independently) + an "Add Referee" action.
+ *
+ * Step 2: once staff upload a reference letter it appears here for the client to
+ * download, review in detail, and confirm. Confirming locks the referee + letter.
  */
 
 import { useState, useEffect, useCallback } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
 } from "@/components/ui/alert-dialog";
 import {
   Loader2, AlertCircle, UserPlus, ChevronRight, Trash2, Mail, ShieldCheck, Users,
+  Download, Lock, FileText, CheckCircle2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 import { RefereeForm, type Referee, type LookupItem } from "@/components/referees/RefereeForm";
 
 const TOKEN_KEY = "pinnacle_token";
@@ -33,6 +39,167 @@ function clientFetch(path: string, opts: RequestInit = {}): Promise<Response> {
   });
 }
 
+// ─── Header status chip ──────────────────────────────────────────────────────────
+
+function LetterStatusChip({ referee }: { referee: Referee }) {
+  if (referee.isLocked) {
+    return (
+      <Badge variant="outline" className="text-[10px] gap-1 border-green-300 text-green-700 bg-green-50">
+        <Lock className="w-2.5 h-2.5" /> Confirmed &amp; locked
+      </Badge>
+    );
+  }
+  if (referee.activeLetter?.status === "pending_review") {
+    return (
+      <Badge variant="outline" className="text-[10px] gap-1 border-amber-300 text-amber-700 bg-amber-50">
+        <FileText className="w-2.5 h-2.5" /> Letter ready to review
+      </Badge>
+    );
+  }
+  return null;
+}
+
+// ─── Letter review / download / confirm panel ────────────────────────────────────
+
+function LetterReviewPanel({
+  referee, onSaved,
+}: {
+  referee: Referee;
+  onSaved: (r: Referee) => void;
+}) {
+  const { toast } = useToast();
+  const letter = referee.activeLetter ?? null;
+  const [downloading, setDownloading] = useState(false);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  if (!letter) return null;
+
+  const locked = !!referee.isLocked;
+  const pending = letter.status === "pending_review";
+
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      const r = await clientFetch(`/referees/${referee.id}/letter/download`);
+      if (!r.ok) {
+        const d = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? "Download failed");
+      }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = letter?.fileName ?? `${referee.fullName} — Reference Letter`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast({ title: err instanceof Error ? err.message : "Download failed", variant: "destructive" });
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  async function handleConfirm() {
+    setConfirming(true);
+    try {
+      const r = await clientFetch(`/referees/${referee.id}/letter/confirm`, { method: "POST" });
+      if (!r.ok) {
+        const d = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? "Confirmation failed");
+      }
+      const data = (await r.json()) as { referee: Referee };
+      toast({ title: "Reference letter confirmed", description: "This referee is now locked." });
+      onSaved(data.referee);
+    } catch (err) {
+      toast({ title: err instanceof Error ? err.message : "Confirmation failed", variant: "destructive" });
+    } finally {
+      setConfirming(false);
+      setConfirmOpen(false);
+    }
+  }
+
+  return (
+    <div className={cn(
+      "rounded-lg border p-4 mb-4",
+      locked ? "border-green-200 bg-green-50/60" : "border-amber-200 bg-amber-50/60",
+    )}>
+      <div className="flex items-start gap-3">
+        <div className={cn(
+          "w-9 h-9 rounded-lg flex items-center justify-center shrink-0",
+          locked ? "bg-green-100" : "bg-amber-100",
+        )}>
+          {locked ? <CheckCircle2 className="w-5 h-5 text-green-700" /> : <FileText className="w-5 h-5 text-amber-700" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-900">
+            {locked ? "Reference letter confirmed & locked" : "Your reference letter is ready to review"}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {locked
+              ? "You confirmed this letter. The referee and letter are locked — contact your advisor if a change is needed."
+              : "Download and review the letter carefully — check every fact, date, title, and the spelling of all names. Once you confirm, this referee and letter will be locked."}
+            {letter.version > 1 && <span className="ml-1 text-gray-400">(version {letter.version})</span>}
+          </p>
+
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            <Button size="sm" variant="outline" className="gap-1.5"
+              onClick={() => void handleDownload()} disabled={downloading}>
+              {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+              Download letter
+            </Button>
+          </div>
+
+          {pending && !locked && (
+            <div className="mt-4 border-t border-amber-200 pt-3">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <Checkbox checked={acknowledged}
+                  onCheckedChange={(c) => setAcknowledged(c === true)} className="mt-0.5" />
+                <span className="text-xs text-gray-700 leading-relaxed">
+                  I have downloaded and reviewed this reference letter in detail. All facts, dates, titles,
+                  and names are accurate. I understand that confirming will <strong>lock</strong> this referee
+                  and letter, and no further edits can be made.
+                </span>
+              </label>
+              <div className="flex justify-end mt-3">
+                <Button size="sm" className="bg-[#1E2D6B] hover:bg-[#3D4FA8] gap-1.5"
+                  disabled={!acknowledged || confirming}
+                  onClick={() => setConfirmOpen(true)}>
+                  <Lock className="w-3.5 h-3.5" /> Confirm &amp; lock
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <AlertDialog open={confirmOpen} onOpenChange={(o) => !o && setConfirmOpen(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm this reference letter?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Confirming locks <strong>{referee.fullName || "this referee"}</strong> and their reference
+              letter. No further edits can be made unless your advisor unlocks it. This action notifies
+              your advisory team.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={confirming}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); void handleConfirm(); }}
+              disabled={confirming} className="bg-[#1E2D6B] hover:bg-[#3D4FA8]">
+              {confirming ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
+              Confirm &amp; lock
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
 // ─── Referee card (collapsible: summary → edit form) ─────────────────────────────
 
 function RefereeCard({
@@ -46,6 +213,7 @@ function RefereeCard({
   onRequestDelete: (r: Referee) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const locked = !!referee.isLocked;
 
   return (
     <div className="rounded-lg border bg-white shadow-sm overflow-hidden">
@@ -60,6 +228,7 @@ function RefereeCard({
           </div>
         </button>
         <div className="flex items-center gap-1.5 shrink-0">
+          <LetterStatusChip referee={referee} />
           <Badge variant="outline" className={cn(
             "text-[10px] gap-1",
             referee.willingnessConfirmed ? "border-green-300 text-green-700 bg-green-50" : "border-gray-200 text-gray-500",
@@ -71,16 +240,20 @@ function RefereeCard({
             <Users className="w-2.5 h-2.5" />
             {referee.workedTogether ? "Worked together" : "Independent"}
           </Badge>
-          <button onClick={() => onRequestDelete(referee)}
-            className="p-1 text-gray-300 hover:text-red-600 transition-colors" title="Delete referee">
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          {!locked && (
+            <button onClick={() => onRequestDelete(referee)}
+              className="p-1 text-gray-300 hover:text-red-600 transition-colors" title="Delete referee">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
       {open && (
         <div className="border-t px-4 py-4">
+          <LetterReviewPanel referee={referee} onSaved={onSaved} />
           <RefereeForm caseId={caseId} fetchFn={clientFetch} referee={referee}
-            degreeTypes={degreeTypes} contributionTypes={contributionTypes} onSaved={onSaved} />
+            degreeTypes={degreeTypes} contributionTypes={contributionTypes}
+            onSaved={onSaved} readOnly={locked} />
         </div>
       )}
     </div>

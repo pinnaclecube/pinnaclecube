@@ -701,6 +701,55 @@ export function referenceLetterReviewEmail(
   };
 }
 
+// ─── Template: client confirmed reference letter (staff alert) ──────────────────
+
+export function referenceLetterConfirmedStaffEmail(
+  caseRef: string,
+  referee: { fullName: string; title: string; organization: string },
+  letter: { version: number; confirmedAt: Date },
+  caseUrl: string,
+): { subject: string; html: string; text: string } {
+  const formattedDate = letter.confirmedAt.toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/New_York",
+  });
+  return {
+    subject: `Client confirmed reference letter — ${caseRef} — ${referee.fullName}`,
+    html: layout(`
+      ${h1("A client confirmed a reference letter")}
+      ${p(`<strong>${caseRef}</strong> has reviewed and confirmed the reference letter below. The referee and letter are now <strong>locked</strong>.`)}
+      <table cellpadding="0" cellspacing="0" style="border:1px solid #e9ecef;border-radius:8px;width:100%;margin:0 0 24px;overflow:hidden;">
+        <tr style="background:#f8f9fb;">
+          <td colspan="2" style="padding:10px 16px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;">Confirmation Details</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;width:150px;">Case</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;">${caseRef}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Referee</td>
+          <td style="padding:10px 16px;font-size:14px;font-weight:600;color:#111827;border-top:1px solid #e9ecef;">${referee.fullName}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Title / Organization</td>
+          <td style="padding:10px 16px;font-size:14px;color:#111827;border-top:1px solid #e9ecef;">${referee.title}, ${referee.organization}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Letter version</td>
+          <td style="padding:10px 16px;font-size:14px;color:#111827;border-top:1px solid #e9ecef;">v${letter.version}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:13px;color:#6b7280;border-top:1px solid #e9ecef;">Confirmed at</td>
+          <td style="padding:10px 16px;font-size:14px;color:#111827;border-top:1px solid #e9ecef;">${formattedDate} ET</td>
+        </tr>
+      </table>
+      ${btn("View client case", caseUrl)}
+    `),
+    text: `Client confirmed reference letter — ${caseRef} — ${referee.fullName}\n\nCase: ${caseRef}\nReferee: ${referee.fullName} (${referee.title}, ${referee.organization})\nLetter version: v${letter.version}\nConfirmed at: ${formattedDate} ET\n\nThe referee and letter are now locked.\n\nView case: ${caseUrl}`,
+  };
+}
+
 // ─── Sender helper ─────────────────────────────────────────────────────────────
 
 export interface EmailAttachment {
