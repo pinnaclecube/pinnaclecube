@@ -20,6 +20,7 @@ import {
 import {
   Loader2, UserPlus, ChevronRight, Trash2, Pencil, ExternalLink,
   ShieldCheck, Users, Mail, Shield, Lock, Unlock, FileUp, Send, FileText,
+  FileSpreadsheet,
 } from "lucide-react";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
 import { useToast } from "@/hooks/use-toast";
@@ -281,6 +282,8 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
   const [deleting, setDeleting] = useState(false);
   const [unlockTarget, setUnlockTarget] = useState<Referee | null>(null);
   const [unlocking, setUnlocking] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const { toast } = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -345,6 +348,35 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
     }
   };
 
+  const handleExport = async () => {
+    if (caseId === null) return;
+    setExporting(true);
+    try {
+      const r = await staffFetch(`/cases/${caseId}/referees/export`);
+      if (!r.ok) {
+        const d = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? "Export failed");
+      }
+      const blob = await r.blob();
+      // Prefer the server's filename from Content-Disposition; fall back sensibly.
+      const cd = r.headers.get("Content-Disposition") ?? "";
+      const match = /filename="?([^"]+)"?/.exec(cd);
+      const fileName = match?.[1] ?? `Referees - Case ${caseId}.xlsx`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast({ title: e instanceof Error ? e.message : "Export failed", variant: "destructive" });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center h-48"><Loader2 className="w-6 h-6 animate-spin text-[#1E2D6B]" /></div>;
   }
@@ -359,10 +391,19 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
           <Mail className="w-4 h-4 text-muted-foreground" /> Reference Letters
         </h3>
         {caseId !== null && (
-          <Button size="sm" className="bg-[#1E2D6B] hover:bg-[#3D4FA8] gap-1.5"
-            onClick={() => setFormModal({ open: true, referee: null })}>
-            <UserPlus className="w-4 h-4" /> Add Referee
-          </Button>
+          <div className="flex items-center gap-2">
+            {referees.length > 0 && (
+              <Button size="sm" variant="outline" className="gap-1.5"
+                onClick={() => void handleExport()} disabled={exporting}>
+                {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+                Export to Excel
+              </Button>
+            )}
+            <Button size="sm" className="bg-[#1E2D6B] hover:bg-[#3D4FA8] gap-1.5"
+              onClick={() => setFormModal({ open: true, referee: null })}>
+              <UserPlus className="w-4 h-4" /> Add Referee
+            </Button>
+          </div>
         )}
       </div>
 

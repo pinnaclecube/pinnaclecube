@@ -25,6 +25,7 @@ import {
 import { eq, and, desc, inArray, notInArray, asc, sql } from "drizzle-orm";
 import { Readable } from "stream";
 import multer from "multer";
+import ExcelJS from "exceljs";
 import { z } from "zod/v4";
 import {
   db,
@@ -366,6 +367,134 @@ router.get(
       .orderBy(desc(refereesTable.createdAt));
 
     res.json({ referees: await withRelations(referees) });
+  },
+);
+
+// ─── Export all referees for a case to Excel (staff only) ───────────────────────
+
+function fmtDate(d: Date | string | null | undefined): string {
+  if (!d) return "";
+  const date = d instanceof Date ? d : new Date(d);
+  if (isNaN(date.getTime())) return "";
+  return date.toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/New_York",
+  });
+}
+
+function letterStatusLabel(
+  referee: { isLocked?: boolean | null; activeLetter?: { status?: string } | null },
+): string {
+  if (referee.isLocked) return "Confirmed & locked";
+  const status = referee.activeLetter?.status;
+  if (status === "pending_review") return "Pending client review";
+  if (status === "confirmed") return "Confirmed";
+  if (referee.activeLetter) return status ?? "Uploaded";
+  return "No letter";
+}
+
+router.get(
+  "/cases/:caseId/referees/export",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const aug = req as AugmentedRequest;
+    const caseId = parseInt(req.params.caseId as string, 10);
+    const caseRecord = await authorizeCase(aug, res, caseId);
+    if (!caseRecord) return;
+
+    const rows = await db
+      .select()
+      .from(refereesTable)
+      .where(eq(refereesTable.caseId, caseId))
+      .orderBy(desc(refereesTable.createdAt));
+    const referees = await withRelations(rows);
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "Pinnacle³";
+    const sheet = workbook.addWorksheet("Referees");
+
+    sheet.columns = [
+      { header: "Full Name", key: "fullName", width: 24 },
+      { header: "Title", key: "title", width: 22 },
+      { header: "Organization", key: "organization", width: 26 },
+      { header: "Email", key: "email", width: 26 },
+      { header: "Phone", key: "phone", width: 16 },
+      { header: "Country", key: "country", width: 16 },
+      { header: "Highest Degree", key: "degree", width: 16 },
+      { header: "Field of Expertise", key: "field", width: 22 },
+      { header: "Profile URL", key: "profileUrl", width: 30 },
+      { header: "Willingness Confirmed", key: "willing", width: 20 },
+      { header: "Worked Together", key: "worked", width: 16 },
+      { header: "Added By", key: "addedBy", width: 12 },
+      { header: "CV Uploaded", key: "cv", width: 12 },
+      { header: "CV Link", key: "cvLink", width: 30 },
+      { header: "Contributions", key: "contributions", width: 50 },
+      { header: "Reference Letter Status", key: "letterStatus", width: 22 },
+      { header: "Letter Version", key: "letterVersion", width: 14 },
+      { header: "Letter Link", key: "letterLink", width: 30 },
+      { header: "Letter Uploaded At", key: "letterUploadedAt", width: 22 },
+      { header: "Letter Confirmed At", key: "letterConfirmedAt", width: 22 },
+      { header: "Locked", key: "locked", width: 10 },
+      { header: "Locked At", key: "lockedAt", width: 22 },
+      { header: "Unlocked At", key: "unlockedAt", width: 22 },
+      { header: "Created At", key: "createdAt", width: 22 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+    sheet.getRow(1).alignment = { vertical: "middle" };
+    sheet.views = [{ state: "frozen", ySplit: 1 }];
+
+    for (const r of referees) {
+      const letter = r.activeLetter;
+      const contributions = r.contributions
+        .map((c) => `${c.contributionTypeName ?? `#${c.contributionTypeId}`}: ${c.details}`)
+        .join("\n");
+      sheet.addRow({
+        fullName: r.fullName,
+        title: r.title,
+        organization: r.organization,
+        email: r.email,
+        phone: r.phone ?? "",
+        country: r.country ?? "",
+        degree: r.degreeName ?? "",
+        field: r.fieldOfExpertise ?? "",
+        profileUrl: r.profileUrl ?? "",
+        willing: r.willingnessConfirmed ? "Yes" : "No",
+        worked: r.workedTogether ? "Yes" : "No",
+        addedBy: r.createdBy,
+        cv: r.cvDriveFileId ? "Yes" : "No",
+        cvLink: r.cvDriveFileId ? `https://drive.google.com/file/d/${r.cvDriveFileId}/view` : "",
+        contributions,
+        letterStatus: letterStatusLabel(r),
+        letterVersion: letter ? letter.version : "",
+        letterLink: letter
+          ? letter.driveUrl ?? `https://drive.google.com/file/d/${letter.driveFileId}/view`
+          : "",
+        letterUploadedAt: fmtDate(letter?.uploadedByStaffAt),
+        letterConfirmedAt: fmtDate(letter?.confirmedAt),
+        locked: r.isLocked ? "Yes" : "No",
+        lockedAt: fmtDate(r.lockedAt),
+        unlockedAt: fmtDate(r.unlockedAt),
+        createdAt: fmtDate(r.createdAt),
+      });
+    }
+    sheet.getColumn("contributions").alignment = { wrapText: true, vertical: "top" };
+
+    const client = await getCaseClient(caseId);
+    const safeName = (client?.name ?? `Case ${caseId}`).replace(/[^\w .-]/g, "").trim() || `Case ${caseId}`;
+    const fileName = `Referees — ${safeName}.xlsx`;
+
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${fileName.replace(/"/g, "")}"`,
+    );
+    logger.info({ caseId, count: referees.length, by: actorRole(aug) }, "[referees] exported to Excel");
+    res.end(buffer);
   },
 );
 

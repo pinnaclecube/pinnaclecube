@@ -21,6 +21,7 @@
     "cors": "^2",
     "docx": "^9.6.1",
     "drizzle-orm": "catalog:",
+    "exceljs": "^4.4.0",
     "express": "^5",
     "googleapis": "^171.4.0",
     "jsonwebtoken": "^9.0.3",
