@@ -22,7 +22,7 @@ import {
   type Response,
   type NextFunction,
 } from "express";
-import { eq, and, desc, inArray, notInArray, asc } from "drizzle-orm";
+import { eq, and, desc, inArray, notInArray, asc, sql } from "drizzle-orm";
 import { Readable } from "stream";
 import multer from "multer";
 import { z } from "zod/v4";
@@ -34,8 +34,11 @@ import {
   contributionTypesTable,
   casePetitionSetupTable,
   caseFoldersTable,
+  referenceLettersTable,
+  profilesTable,
 } from "@workspace/db";
 import { getDriveClient, createDriveFolder } from "../services/driveService";
+import { sendEmail, referenceLetterReviewEmail } from "../services/emailService";
 import { requireClientAuth } from "../middlewares/clientAuth";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { logger } from "../lib/logger";
@@ -44,10 +47,13 @@ const router: IRouter = Router();
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB
 });
 
 const CV_FOLDER_NAME = "Referee CVs";
+const LETTER_FOLDER_NAME = "Reference Letters";
+
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 type AugmentedRequest = Request & {
   clientUser?: { id: number; name: string; email: string };
@@ -186,11 +192,101 @@ async function withRelations(referees: (typeof refereesTable.$inferSelect)[]) {
   const degrees = await db.select().from(degreeTypesTable);
   const degreeName = new Map(degrees.map((d) => [d.id, d.name]));
 
+  // Active reference letter (if any) per referee — rides along so both UIs can
+  // render letter status + lock state without an extra call.
+  const letters = await db
+    .select()
+    .from(referenceLettersTable)
+    .where(
+      and(
+        inArray(referenceLettersTable.refereeId, refereeIds),
+        eq(referenceLettersTable.isActive, true),
+      ),
+    );
+  const letterByReferee = new Map(letters.map((l) => [l.refereeId, l]));
+
   return referees.map((r) => ({
     ...r,
     degreeName: r.degreeTypeId != null ? degreeName.get(r.degreeTypeId) ?? null : null,
     contributions: contributions.filter((c) => c.refereeId === r.id),
+    activeLetter: letterByReferee.get(r.id) ?? null,
   }));
+}
+
+// Finds (or creates) a named per-case Drive subfolder under the case root,
+// registering it in case_folders. Returns its Drive folder id, or null if the
+// case has no Drive root yet. Reused by CV and reference-letter uploads.
+async function getOrCreateCaseSubfolder(
+  caseId: number,
+  folderName: string,
+): Promise<string | null> {
+  const [rootFolder] = await db
+    .select()
+    .from(caseFoldersTable)
+    .where(and(eq(caseFoldersTable.caseId, caseId), eq(caseFoldersTable.folderType, "root")))
+    .limit(1);
+  if (!rootFolder) return null;
+
+  const [existing] = await db
+    .select()
+    .from(caseFoldersTable)
+    .where(and(eq(caseFoldersTable.caseId, caseId), eq(caseFoldersTable.name, folderName)))
+    .limit(1);
+  if (existing) return existing.driveId;
+
+  const created = await createDriveFolder(folderName, rootFolder.driveId);
+  await db.insert(caseFoldersTable).values({
+    caseId,
+    name: folderName,
+    folderType: "custom",
+    parentFolderId: rootFolder.id,
+    driveId: created.driveId,
+    driveUrl: created.driveUrl,
+    visaCategory: rootFolder.visaCategory,
+    staffOnly: false,
+  });
+  return created.driveId;
+}
+
+// Resolves the case owner's email + first name (for client-facing emails).
+async function getCaseClient(
+  caseId: number,
+): Promise<{ email: string; firstName: string } | null> {
+  const [row] = await db
+    .select({
+      email: profilesTable.email,
+      firstName: profilesTable.firstName,
+      name: profilesTable.name,
+    })
+    .from(casePetitionSetupTable)
+    .innerJoin(profilesTable, eq(profilesTable.id, casePetitionSetupTable.profileId))
+    .where(eq(casePetitionSetupTable.id, caseId))
+    .limit(1);
+  if (!row) return null;
+  return { email: row.email, firstName: row.firstName ?? row.name?.split(" ")[0] ?? "there" };
+}
+
+// Sends the client review email for a referee's active letter. Fire-and-forget
+// friendly: returns a warning string on failure instead of throwing.
+async function sendReviewEmail(
+  referee: typeof refereesTable.$inferSelect,
+): Promise<string | null> {
+  const client = await getCaseClient(referee.caseId);
+  if (!client) return "Could not resolve the client's email — review email not sent.";
+  try {
+    await sendEmail(
+      client.email,
+      referenceLetterReviewEmail(client.firstName, {
+        fullName: referee.fullName,
+        title: referee.title,
+        organization: referee.organization,
+      }),
+    );
+    return null;
+  } catch (err) {
+    logger.error({ err, refereeId: referee.id }, "[referees] review email failed");
+    return "The letter was saved, but the review email could not be sent. Use 'Resend review email'.";
+  }
 }
 
 // Persists the contribution set: upserts provided rows, deletes any that were
@@ -398,40 +494,11 @@ router.post(
       return;
     }
 
-    // Resolve the case's root Drive folder.
-    const [rootFolder] = await db
-      .select()
-      .from(caseFoldersTable)
-      .where(and(eq(caseFoldersTable.caseId, referee.caseId), eq(caseFoldersTable.folderType, "root")))
-      .limit(1);
-
-    if (!rootFolder) {
+    // Find (or create) the per-case "Referee CVs" subfolder.
+    const cvFolderDriveId = await getOrCreateCaseSubfolder(referee.caseId, CV_FOLDER_NAME);
+    if (!cvFolderDriveId) {
       res.status(409).json({ error: "This case has no Drive folder set up yet" });
       return;
-    }
-
-    // Find or create the per-case "Referee CVs" subfolder.
-    let [cvFolder] = await db
-      .select()
-      .from(caseFoldersTable)
-      .where(and(eq(caseFoldersTable.caseId, referee.caseId), eq(caseFoldersTable.name, CV_FOLDER_NAME)))
-      .limit(1);
-
-    if (!cvFolder) {
-      const created = await createDriveFolder(CV_FOLDER_NAME, rootFolder.driveId);
-      [cvFolder] = await db
-        .insert(caseFoldersTable)
-        .values({
-          caseId: referee.caseId,
-          name: CV_FOLDER_NAME,
-          folderType: "custom",
-          parentFolderId: rootFolder.id,
-          driveId: created.driveId,
-          driveUrl: created.driveUrl,
-          visaCategory: rootFolder.visaCategory,
-          staffOnly: false,
-        })
-        .returning();
     }
 
     // Upload the CV into the subfolder.
@@ -440,7 +507,7 @@ router.post(
       supportsAllDrives: true,
       requestBody: {
         name: `${referee.fullName} — CV.pdf`,
-        parents: [cvFolder.driveId],
+        parents: [cvFolderDriveId],
       },
       media: { mimeType: file.mimetype, body: Readable.from(file.buffer) },
       fields: "id,webViewLink",
@@ -464,6 +531,167 @@ router.post(
       cvDriveUrl: driveRes.data.webViewLink ?? null,
       referee: updated,
     });
+  },
+);
+
+// ─── Staff: upload a reference letter (PDF/DOCX) ────────────────────────────────
+
+router.post(
+  "/referees/:id/letter",
+  requireStaffAuth,
+  upload.single("file"),
+  async (req: Request, res: Response): Promise<void> => {
+    const aug = req as AugmentedRequest;
+    const refereeId = parseInt(req.params.id as string, 10);
+    const referee = await loadAuthorizedReferee(aug, res, refereeId);
+    if (!referee) return;
+    if (!assertNotLocked(referee, res)) return;
+
+    const file = (req as Request & { file?: Express.Multer.File }).file;
+    if (!file) {
+      res.status(400).json({ error: "No file uploaded" });
+      return;
+    }
+    if (file.mimetype !== "application/pdf" && file.mimetype !== DOCX_MIME) {
+      res.status(400).json({ error: "Reference letter must be a PDF or DOCX" });
+      return;
+    }
+
+    const folderDriveId = await getOrCreateCaseSubfolder(referee.caseId, LETTER_FOLDER_NAME);
+    if (!folderDriveId) {
+      res.status(409).json({ error: "This case has no Drive folder set up yet" });
+      return;
+    }
+
+    const ext = file.mimetype === "application/pdf" ? "pdf" : "docx";
+    const fileName = `${referee.fullName} — Reference Letter.${ext}`;
+
+    const drive = getDriveClient();
+    const driveRes = await drive.files.create({
+      supportsAllDrives: true,
+      requestBody: { name: fileName, parents: [folderDriveId] },
+      media: { mimeType: file.mimetype, body: Readable.from(file.buffer) },
+      fields: "id,webViewLink",
+    });
+    const driveFileId = driveRes.data.id;
+    if (!driveFileId) {
+      res.status(502).json({ error: "Drive upload returned incomplete data" });
+      return;
+    }
+
+    // Deactivate any prior active letter and insert the new one (version + 1).
+    const letter = await db.transaction(async (tx) => {
+      const [maxRow] = await tx
+        .select({ maxV: sql<number>`coalesce(max(${referenceLettersTable.version}), 0)` })
+        .from(referenceLettersTable)
+        .where(eq(referenceLettersTable.refereeId, refereeId));
+      const nextVersion = (maxRow?.maxV ?? 0) + 1;
+
+      await tx
+        .update(referenceLettersTable)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(
+          and(
+            eq(referenceLettersTable.refereeId, refereeId),
+            eq(referenceLettersTable.isActive, true),
+          ),
+        );
+
+      const [inserted] = await tx
+        .insert(referenceLettersTable)
+        .values({
+          refereeId,
+          driveFileId,
+          driveUrl: driveRes.data.webViewLink ?? null,
+          fileName,
+          version: nextVersion,
+          status: "pending_review",
+          isActive: true,
+          uploadedByStaffAt: new Date(),
+        })
+        .returning();
+      return inserted;
+    });
+
+    // Trigger the client review email — non-fatal (upload still succeeds).
+    const warning = await sendReviewEmail(referee);
+
+    logger.info(
+      { refereeId, letterId: letter.id, version: letter.version },
+      "[referees] reference letter uploaded",
+    );
+    res.status(201).json({ letter, warning });
+  },
+);
+
+// ─── Staff: resend the client review email for the active pending letter ────────
+
+router.post(
+  "/referees/:id/letter/resend-email",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const aug = req as AugmentedRequest;
+    const refereeId = parseInt(req.params.id as string, 10);
+    const referee = await loadAuthorizedReferee(aug, res, refereeId);
+    if (!referee) return;
+
+    const [letter] = await db
+      .select()
+      .from(referenceLettersTable)
+      .where(
+        and(
+          eq(referenceLettersTable.refereeId, refereeId),
+          eq(referenceLettersTable.isActive, true),
+          eq(referenceLettersTable.status, "pending_review"),
+        ),
+      )
+      .limit(1);
+    if (!letter) {
+      res.status(404).json({ error: "No pending letter to resend for this referee" });
+      return;
+    }
+
+    const warning = await sendReviewEmail(referee);
+    res.json({ ok: !warning, warning });
+  },
+);
+
+// ─── Staff: unlock a referee (re-opens edits, requires client re-confirm) ────────
+
+router.post(
+  "/referees/:id/unlock",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const aug = req as AugmentedRequest;
+    const refereeId = parseInt(req.params.id as string, 10);
+    const referee = await loadAuthorizedReferee(aug, res, refereeId);
+    if (!referee) return;
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(refereesTable)
+        .set({ isLocked: false, unlockedAt: new Date(), updatedAt: new Date() })
+        .where(eq(refereesTable.id, refereeId));
+      // Active letter returns to pending review; client must re-confirm.
+      await tx
+        .update(referenceLettersTable)
+        .set({ status: "pending_review", confirmedAt: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(referenceLettersTable.refereeId, refereeId),
+            eq(referenceLettersTable.isActive, true),
+          ),
+        );
+    });
+
+    const [updated] = await db
+      .select()
+      .from(refereesTable)
+      .where(eq(refereesTable.id, refereeId))
+      .limit(1);
+    logger.info({ refereeId, by: actorRole(aug) }, "[referees] referee unlocked");
+    const [withRels] = await withRelations([updated]);
+    res.json({ referee: withRels });
   },
 );
 

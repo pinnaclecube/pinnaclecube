@@ -37,6 +37,17 @@ export interface RefereeContribution {
   contributionTypeName?: string | null;
 }
 
+export interface ReferenceLetterMeta {
+  id: number;
+  driveFileId: string;
+  driveUrl: string | null;
+  fileName: string | null;
+  version: number;
+  status: "pending_review" | "confirmed";
+  uploadedByStaffAt: string | null;
+  confirmedAt: string | null;
+}
+
 export interface Referee {
   id: number;
   caseId: number;
@@ -53,6 +64,11 @@ export interface Referee {
   willingnessConfirmed: boolean;
   workedTogether: boolean;
   createdBy: string;
+  // Step 2 — locking + active reference letter (present on all API responses).
+  isLocked?: boolean;
+  lockedAt?: string | null;
+  unlockedAt?: string | null;
+  activeLetter?: ReferenceLetterMeta | null;
   degreeName?: string | null;
   contributions: RefereeContribution[];
 }

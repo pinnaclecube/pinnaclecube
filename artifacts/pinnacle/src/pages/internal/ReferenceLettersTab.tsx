@@ -7,7 +7,7 @@
  * shared RefereeForm inside a modal.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -19,11 +19,36 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   Loader2, UserPlus, ChevronRight, Trash2, Pencil, ExternalLink,
-  ShieldCheck, Users, Mail, Shield,
+  ShieldCheck, Users, Mail, Shield, Lock, Unlock, FileUp, Send, FileText,
 } from "lucide-react";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { RefereeForm, type Referee, type LookupItem } from "@/components/referees/RefereeForm";
+
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+function LetterChip({ referee }: { referee: Referee }) {
+  if (referee.isLocked) {
+    return (
+      <Badge variant="outline" className="text-[10px] gap-1 border-green-300 text-green-700 bg-green-50">
+        <Lock className="w-2.5 h-2.5" /> Confirmed &amp; locked
+      </Badge>
+    );
+  }
+  if (referee.activeLetter?.status === "pending_review") {
+    return (
+      <Badge variant="outline" className="text-[10px] gap-1 border-amber-300 text-amber-700 bg-amber-50">
+        <FileText className="w-2.5 h-2.5" /> Pending client review
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="text-[10px] gap-1 border-gray-200 text-gray-400">
+      No letter
+    </Badge>
+  );
+}
 
 function staffFetch(path: string, opts: RequestInit = {}) {
   return fetch(`/api${path}`, {
@@ -43,13 +68,58 @@ function driveFileUrl(fileId: string): string {
 // ─── Referee row (summary + expandable detail) ───────────────────────────────────
 
 function RefereeRow({
-  referee, onEdit, onDelete,
+  referee, onEdit, onDelete, onSaved, onRequestUnlock,
 }: {
   referee: Referee;
   onEdit: (r: Referee) => void;
   onDelete: (r: Referee) => void;
+  onSaved: (r: Referee) => void;
+  onRequestUnlock: (r: Referee) => void;
 }) {
+  const { toast } = useToast();
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<null | "upload" | "resend">(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const locked = !!referee.isLocked;
+  const letter = referee.activeLetter ?? null;
+
+  async function handleUpload(file: File | undefined) {
+    if (!file) return;
+    if (file.type !== "application/pdf" && file.type !== DOCX_MIME) {
+      toast({ title: "Letter must be a PDF or DOCX", variant: "destructive" });
+      return;
+    }
+    setBusy("upload");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const r = await staffFetch(`/referees/${referee.id}/letter`, { method: "POST", body: form });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "Upload failed");
+      toast({ title: "Reference letter uploaded — client notified to review" });
+      if (d.warning) toast({ title: d.warning, variant: "destructive" });
+      onSaved({ ...referee, activeLetter: d.letter });
+    } catch (e) {
+      toast({ title: e instanceof Error ? e.message : "Upload failed", variant: "destructive" });
+    } finally {
+      setBusy(null);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function handleResend() {
+    setBusy("resend");
+    try {
+      const r = await staffFetch(`/referees/${referee.id}/letter/resend-email`, { method: "POST" });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "Resend failed");
+      toast({ title: d.warning ?? "Review email resent", variant: d.warning ? "destructive" : undefined });
+    } catch (e) {
+      toast({ title: e instanceof Error ? e.message : "Resend failed", variant: "destructive" });
+    } finally {
+      setBusy(null);
+    }
+  }
 
   return (
     <div className="rounded-lg border bg-white">
@@ -71,6 +141,7 @@ function RefereeRow({
           </div>
         </button>
         <div className="flex items-center gap-1.5 shrink-0">
+          <LetterChip referee={referee} />
           <Badge variant="outline" className={cn(
             "text-[10px] gap-1",
             referee.willingnessConfirmed ? "border-green-300 text-green-700 bg-green-50" : "border-gray-200 text-gray-500",
@@ -82,8 +153,17 @@ function RefereeRow({
             <Users className="w-2.5 h-2.5" />
             {referee.workedTogether ? "Worked together" : "Independent"}
           </Badge>
-          <button onClick={() => onEdit(referee)} className="p-1 text-gray-400 hover:text-[#1E2D6B]" title="Edit"><Pencil className="w-3.5 h-3.5" /></button>
-          <button onClick={() => onDelete(referee)} className="p-1 text-gray-300 hover:text-red-600" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
+          {locked ? (
+            <button onClick={() => onRequestUnlock(referee)}
+              className="p-1 text-amber-500 hover:text-amber-700" title="Unlock referee">
+              <Unlock className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <>
+              <button onClick={() => onEdit(referee)} className="p-1 text-gray-400 hover:text-[#1E2D6B]" title="Edit"><Pencil className="w-3.5 h-3.5" /></button>
+              <button onClick={() => onDelete(referee)} className="p-1 text-gray-300 hover:text-red-600" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
+            </>
+          )}
         </div>
       </div>
 
@@ -120,6 +200,50 @@ function RefereeRow({
               <ExternalLink className="w-3.5 h-3.5" /> Open CV in Drive
             </a>
           )}
+
+          {/* Reference letter */}
+          <div className="pt-2 border-t">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Reference letter</p>
+            {letter ? (
+              <div className="flex items-center gap-3 flex-wrap">
+                <a href={letter.driveUrl ?? driveFileUrl(letter.driveFileId)} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1E2D6B] hover:text-[#3D4FA8]">
+                  <ExternalLink className="w-3.5 h-3.5" /> View letter in Drive
+                </a>
+                {letter.version > 1 && <span className="text-[11px] text-muted-foreground">v{letter.version}</span>}
+                <span className="text-[11px] text-muted-foreground">
+                  {locked ? "Confirmed & locked" : "Awaiting client confirmation"}
+                </span>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">No letter uploaded yet.</p>
+            )}
+
+            {locked ? (
+              <p className="text-[11px] text-amber-600 flex items-center gap-1 mt-2">
+                <Lock className="w-3 h-3" /> Locked — unlock to replace the letter or edit the referee.
+              </p>
+            ) : (
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                <label className={cn(
+                  "inline-flex items-center gap-1.5 text-xs font-medium cursor-pointer rounded border px-2 py-1 border-[#1E2D6B]/30 text-[#1E2D6B] hover:bg-[#1E2D6B]/5",
+                  busy === "upload" && "opacity-60 pointer-events-none",
+                )}>
+                  {busy === "upload" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileUp className="w-3.5 h-3.5" />}
+                  {letter ? "Replace letter" : "Upload letter"} (PDF/DOCX)
+                  <input ref={fileRef} type="file" accept="application/pdf,.docx" className="hidden"
+                    onChange={(e) => void handleUpload(e.target.files?.[0])} />
+                </label>
+                {letter?.status === "pending_review" && (
+                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={busy !== null}
+                    onClick={() => void handleResend()}>
+                    {busy === "resend" ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                    Resend review email
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -155,6 +279,8 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
   const [formModal, setFormModal] = useState<{ open: boolean; referee: Referee | null }>({ open: false, referee: null });
   const [deleteTarget, setDeleteTarget] = useState<Referee | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [unlockTarget, setUnlockTarget] = useState<Referee | null>(null);
+  const [unlocking, setUnlocking] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -206,6 +332,19 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
     }
   };
 
+  const confirmUnlock = async () => {
+    if (!unlockTarget) return;
+    setUnlocking(true);
+    try {
+      const r = await staffFetch(`/referees/${unlockTarget.id}/unlock`, { method: "POST" });
+      const d = await r.json();
+      if (r.ok && d.referee) onSaved(d.referee);
+    } finally {
+      setUnlocking(false);
+      setUnlockTarget(null);
+    }
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center h-48"><Loader2 className="w-6 h-6 animate-spin text-[#1E2D6B]" /></div>;
   }
@@ -241,7 +380,9 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
           {referees.map((r) => (
             <RefereeRow key={r.id} referee={r}
               onEdit={(ref) => setFormModal({ open: true, referee: ref })}
-              onDelete={setDeleteTarget} />
+              onDelete={setDeleteTarget}
+              onSaved={onSaved}
+              onRequestUnlock={setUnlockTarget} />
           ))}
         </div>
       )}
@@ -282,6 +423,27 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
               disabled={deleting} className="bg-red-600 hover:bg-red-700">
               {deleting ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Unlock confirm */}
+      <AlertDialog open={!!unlockTarget} onOpenChange={(o) => !o && setUnlockTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unlock this referee?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Unlocking allows edits and will require the client to re-confirm the reference
+              letter. The letter's status returns to "pending client review." Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={unlocking}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); void confirmUnlock(); }}
+              disabled={unlocking} className="bg-amber-600 hover:bg-amber-700">
+              {unlocking ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
+              Unlock
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

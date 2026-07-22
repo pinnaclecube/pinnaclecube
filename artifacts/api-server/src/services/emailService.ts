@@ -674,6 +674,33 @@ export function taskCompletedStaffAlertEmail(
   };
 }
 
+// ─── Template: reference letter ready for client review ─────────────────────────
+
+export function referenceLetterReviewEmail(
+  clientFirstName: string,
+  referee: { fullName: string; title: string; organization: string },
+): { subject: string; html: string; text: string } {
+  return {
+    subject: `Reference letter ready for your review — ${referee.fullName}`,
+    html: layout(`
+      ${h1("Your reference letter is ready to review")}
+      ${p(`Hi ${clientFirstName}, a reference letter has been prepared for the following referee and is ready for your review:`)}
+      <table cellpadding="0" cellspacing="0" style="border:1px solid #e9ecef;border-radius:8px;padding:18px 22px;margin:0 0 20px;width:100%;">
+        <tr><td>
+          <p style="margin:0;font-size:17px;font-weight:700;color:#111827;">${referee.fullName}</p>
+          <p style="margin:6px 0 0;font-size:14px;color:#374151;">${referee.title}, ${referee.organization}</p>
+        </td></tr>
+      </table>
+      ${p("Please log in to your client portal to <strong>download and review the letter in detail</strong>. Carefully check the facts, dates, titles, contribution details, and the spelling of all names.")}
+      ${p("<strong>Important:</strong> once you confirm, this reference letter <strong>and this referee's details will be locked</strong> — no further edits can be made. If anything needs correction, please contact us <strong>before</strong> confirming.")}
+      ${btn("Log in to review", `${APP_URL}/login`)}
+      ${divider()}
+      ${p("Questions? Just reply to this email — we read every one.")}
+    `),
+    text: `Hi ${clientFirstName},\n\nA reference letter is ready for your review:\n${referee.fullName} — ${referee.title}, ${referee.organization}\n\nLog in to your client portal to download and review the letter IN DETAIL — check the facts, dates, titles, contribution details, and spelling of names: ${APP_URL}/login\n\nIMPORTANT: once you confirm, this reference letter and this referee's details will be LOCKED and no further edits can be made. If anything needs correction, contact us BEFORE confirming.`,
+  };
+}
+
 // ─── Sender helper ─────────────────────────────────────────────────────────────
 
 export interface EmailAttachment {
