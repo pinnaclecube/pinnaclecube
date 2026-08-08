@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
+import { logger } from "../lib/logger";
 
 // Named staff token registry — each entry maps a STAFF_SECRET_* env var to a
 // human-readable identity attached to req.staffUser for audit purposes.
@@ -25,7 +26,7 @@ export function requireStaffAuth(
   res: Response,
   next: NextFunction,
 ): void {
-  const provided = req.headers["x-staff-token"] as string | undefined;
+  const provided = req.cookies?.pinnacle_staff_token as string | undefined;
 
   if (!provided) {
     res.status(403).json({ error: "Invalid staff token" });
