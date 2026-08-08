@@ -233,53 +233,36 @@ export function TasksTab({ userId, onSentCountChange }: TasksTabProps) {
         setNewDesc("");
         setNewPriority("medium");
       }
-    } finally { setSaving(false); }
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const updateStatus = useCallback(async (aid: number, status: string) => {
-    const r = await staffFetch(`/admin/profiles/${userId}/action-items/${aid}`, {
+  const updateStatus = async (aid: number, status: string) => {
+    await staffFetch(`/admin/profiles/${userId}/action-items/${aid}`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
     });
-    const d = await r.json();
-    if (d.actionItem) {
-      setTasks((prev) => {
-        const next = prev.map((t) => (t.id === aid ? d.actionItem : t));
-        onSentCountChange(next.filter((t) => t.status === "sent").length);
-        return next;
-      });
-    }
-  }, [userId, onSentCountChange]);
+    await fetchTasks();
+  };
 
-  const runAction = useCallback(async (aid: number, action: "resend" | "reopen") => {
-    const r = await staffFetch(`/admin/profiles/${userId}/action-items/${aid}/${action}`, {
+  const performAction = async (aid: number, action: "resend" | "reopen") => {
+    await staffFetch(`/admin/profiles/${userId}/action-items/${aid}/${action}`, {
       method: "POST",
     });
-    const d = await r.json();
-    if (d.actionItem) {
-      setTasks((prev) => {
-        const next = prev.map((t) => (t.id === aid ? d.actionItem : t));
-        onSentCountChange(next.filter((t) => t.status === "sent").length);
-        return next;
-      });
-    }
-  }, [userId, onSentCountChange]);
+    await fetchTasks();
+  };
 
-  const sent = tasks.filter((t) => t.status === "sent");
-  const drafts = tasks.filter((t) => t.status === "draft");
-  const completed = tasks.filter((t) => t.status === "completed");
-  const cancelled = tasks.filter((t) => t.status === "cancelled");
+  const draftTasks = tasks.filter((t) => t.status === "draft");
+  const sentTasks = tasks.filter((t) => t.status === "sent");
+  const completedTasks = tasks.filter((t) => t.status === "completed");
+  const cancelledTasks = tasks.filter((t) => t.status === "cancelled");
 
   return (
-    <div className="space-y-6 max-w-3xl">
-
-      {/* ── Create form ─────────────────────────────────────────────────── */}
+    <div className="space-y-6">
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <ClipboardList className="w-4 h-4 text-muted-foreground" />
-            Assign New Task
-          </CardTitle>
+        <CardHeader>
+          <CardTitle className="text-base">Create New Task</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <Input
@@ -288,129 +271,116 @@ export function TasksTab({ userId, onSentCountChange }: TasksTabProps) {
             onChange={(e) => setNewTitle(e.target.value)}
           />
           <Textarea
-            placeholder="Describe what the client needs to do..."
+            placeholder="Description (optional)"
             value={newDesc}
             onChange={(e) => setNewDesc(e.target.value)}
-            className="min-h-[72px] resize-none"
+            rows={2}
           />
-
-          {/* Priority toggle group */}
-          <div className="flex gap-1.5">
-            {(["low", "medium", "high"] as const).map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setNewPriority(p)}
-                className={cn(
-                  "flex-1 py-1.5 text-xs font-medium rounded border transition-colors capitalize",
-                  newPriority === p
-                    ? p === "high"
-                      ? "bg-red-50 border-red-400 text-red-700"
-                      : p === "medium"
-                        ? "bg-amber-50 border-amber-400 text-amber-700"
-                        : "bg-gray-100 border-gray-400 text-gray-700"
-                    : "border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600",
-                )}
-              >
-                {p}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium">Priority:</label>
+            <select
+              value={newPriority}
+              onChange={(e) => setNewPriority(e.target.value as "low" | "medium" | "high")}
+              className="text-sm border rounded px-2 py-1"
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
           </div>
-
           <div className="flex gap-2">
             <Button
+              onClick={() => createTask("draft")}
+              disabled={saving || !newTitle.trim()}
               variant="outline"
               size="sm"
-              disabled={!newTitle.trim() || saving}
-              onClick={() => createTask("draft")}
             >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               Save as Draft
             </Button>
             <Button
-              size="sm"
-              className="bg-[#1E2D6B] hover:bg-[#3D4FA8] gap-1.5"
-              disabled={!newTitle.trim() || saving}
               onClick={() => createTask("sent")}
+              disabled={saving || !newTitle.trim()}
+              size="sm"
             >
-              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              <Send className="w-3.5 h-3.5" />
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               Send to Client
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* ── Task list ───────────────────────────────────────────────────── */}
-      {tasks.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground text-sm">
-          No tasks yet. Use the form above to assign work to this client.
+      {draftTasks.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <ClipboardList className="w-4 h-4" />
+            Drafts ({draftTasks.length})
+          </h3>
+          {draftTasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              onUpdateStatus={updateStatus}
+              onAction={performAction}
+            />
+          ))}
         </div>
-      ) : (
-        <div className="space-y-6">
+      )}
 
-          {/* Awaiting Client */}
-          {sent.length > 0 && (
-            <section>
-              <div className="flex items-center gap-2 mb-3">
-                <h3 className="text-sm font-semibold text-foreground">Awaiting Client</h3>
-                <Badge className="bg-red-500 text-white border-0 text-xs px-1.5 py-0.5 leading-none rounded-full h-auto">
-                  {sent.length}
-                </Badge>
-              </div>
-              <div className="space-y-2">
-                {sent.map((t) => <TaskCard key={t.id} task={t} onUpdateStatus={updateStatus} onAction={runAction} />)}
-              </div>
-            </section>
-          )}
+      {sentTasks.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Send className="w-4 h-4" />
+            Active Tasks ({sentTasks.length})
+          </h3>
+          {sentTasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              onUpdateStatus={updateStatus}
+              onAction={performAction}
+            />
+          ))}
+        </div>
+      )}
 
-          {/* Drafts */}
-          {drafts.length > 0 && (
-            <section>
-              <h3 className="text-sm font-semibold text-foreground mb-3">Drafts</h3>
-              <div className="space-y-2">
-                {drafts.map((t) => <TaskCard key={t.id} task={t} onUpdateStatus={updateStatus} onAction={runAction} />)}
-              </div>
-            </section>
-          )}
+      {completedTasks.length > 0 && (
+        <div className="space-y-2">
+          <button
+            onClick={() => setCompletedOpen(!completedOpen)}
+            className="text-sm font-semibold flex items-center gap-2 text-muted-foreground hover:text-foreground"
+          >
+            <ChevronRight className={cn("w-4 h-4 transition-transform", completedOpen && "rotate-90")} />
+            Completed ({completedTasks.length})
+          </button>
+          {completedOpen && completedTasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              onUpdateStatus={updateStatus}
+              onAction={performAction}
+            />
+          ))}
+        </div>
+      )}
 
-          {/* Completed (collapsible, collapsed by default) */}
-          {completed.length > 0 && (
-            <section>
-              <button
-                type="button"
-                onClick={() => setCompletedOpen((v) => !v)}
-                className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors mb-3"
-              >
-                <ChevronRight className={cn("w-4 h-4 transition-transform", completedOpen && "rotate-90")} />
-                Completed ({completed.length})
-              </button>
-              {completedOpen && (
-                <div className="space-y-2">
-                  {completed.map((t) => <TaskCard key={t.id} task={t} onUpdateStatus={updateStatus} onAction={runAction} />)}
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* Cancelled (collapsible, collapsed by default) */}
-          {cancelled.length > 0 && (
-            <section>
-              <button
-                type="button"
-                onClick={() => setCancelledOpen((v) => !v)}
-                className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors mb-3"
-              >
-                <ChevronRight className={cn("w-4 h-4 transition-transform", cancelledOpen && "rotate-90")} />
-                Cancelled ({cancelled.length})
-              </button>
-              {cancelledOpen && (
-                <div className="space-y-2">
-                  {cancelled.map((t) => <TaskCard key={t.id} task={t} onUpdateStatus={updateStatus} onAction={runAction} />)}
-                </div>
-              )}
-            </section>
-          )}
-
+      {cancelledTasks.length > 0 && (
+        <div className="space-y-2">
+          <button
+            onClick={() => setCancelledOpen(!cancelledOpen)}
+            className="text-sm font-semibold flex items-center gap-2 text-muted-foreground hover:text-foreground"
+          >
+            <ChevronRight className={cn("w-4 h-4 transition-transform", cancelledOpen && "rotate-90")} />
+            Cancelled ({cancelledTasks.length})
+          </button>
+          {cancelledOpen && cancelledTasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              onUpdateStatus={updateStatus}
+              onAction={performAction}
+            />
+          ))}
         </div>
       )}
     </div>
