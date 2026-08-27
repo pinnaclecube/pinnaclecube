@@ -15,7 +15,11 @@ router.post("/", async (req: Request, res: Response): Promise<void> => {
   };
 
   // Validate required fields
-  if (!email || !password || !firstName || !lastName) {
+  if (!email) {
+    res.status(400).json({ error: "Email and password are required" });
+    return;
+  }
+  if (!password || !firstName || !lastName) {
     res.status(400).json({
       error: "Missing required fields",
       required: ["email", "password", "firstName", "lastName"],
