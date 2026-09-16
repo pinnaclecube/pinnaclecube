@@ -1,5 +1,6 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
@@ -25,7 +26,8 @@ app.use(
     },
   }),
 );
-app.use(cors());
+app.use(cors({ origin: process.env.FRONTEND_URL ?? true, credentials: true }));
+app.use(cookieParser(process.env.SESSION_SECRET));
 // Stripe webhook needs the raw body BEFORE the json parser consumes it
 app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
 app.use(express.json({ limit: "50mb" }));
