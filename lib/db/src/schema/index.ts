@@ -11,6 +11,7 @@ export * from "./prospects";
 export * from "./ai_features";
 export * from "./internal";
 export * from "./lesson_definitions";
+export * from "./staff_sessions";
 export * from "./visa_criteria";
 export * from "./petition";
 export * from "./applications";

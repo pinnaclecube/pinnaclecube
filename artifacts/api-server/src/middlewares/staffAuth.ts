@@ -1,54 +1,25 @@
 import type { Request, Response, NextFunction } from "express";
+import { validateStaffSession } from "../services/auth";
 
-// Named staff token registry — each entry maps a STAFF_SECRET_* env var to a
-// human-readable identity attached to req.staffUser for audit purposes.
-// Add new staff members by adding a new STAFF_SECRET_<NAME> env var and
-// registering it here.
-function buildTokenRegistry(): Record<string, { id: string; name: string }> {
-  const registry: Record<string, { id: string; name: string }> = {};
-
-  // Primary admin token
-  if (process.env.STAFF_SECRET) {
-    registry[process.env.STAFF_SECRET] = { id: "primary", name: "Admin" };
-  }
-
-  // Chris Coleman
-  if (process.env.STAFF_SECRET_CHRIS) {
-    registry[process.env.STAFF_SECRET_CHRIS] = { id: "chris", name: "Chris Coleman" };
-  }
-
-  return registry;
-}
-
-export function requireStaffAuth(
+export async function requireStaffAuth(
   req: Request,
   res: Response,
   next: NextFunction,
-): void {
-  const provided = req.headers["x-staff-token"] as string | undefined;
+): Promise<void> {
+  const sessionToken = req.cookies?.staff_session;
 
-  if (!provided) {
-    res.status(403).json({ error: "Invalid staff token" });
+  if (!sessionToken) {
+    res.status(403).json({ error: "Staff authentication required" });
     return;
   }
 
-  const registry = buildTokenRegistry();
+  const staffUser = await validateStaffSession(sessionToken);
 
-  if (Object.keys(registry).length === 0) {
-    res.status(503).json({ error: "Staff authentication is not configured" });
+  if (!staffUser) {
+    res.status(403).json({ error: "Invalid or expired staff session" });
     return;
   }
 
-  const match = registry[provided];
-  if (!match) {
-    res.status(403).json({ error: "Invalid staff token" });
-    return;
-  }
-
-  (req as Request & { staffUser: { id: string; role: string; name: string } }).staffUser = {
-    id: match.id,
-    role: "admin",
-    name: match.name,
-  };
+  (req as Request & { staffUser: { id: string; role: string; name: string } }).staffUser = staffUser;
   next();
 }

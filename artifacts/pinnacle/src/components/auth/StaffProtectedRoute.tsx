@@ -1,29 +1,59 @@
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-const STAFF_TOKEN_KEY = "pinnacle_staff_token";
 
 interface StaffProtectedRouteProps {
   children: ReactNode;
 }
 
 export function StaffProtectedRoute({ children }: StaffProtectedRouteProps) {
-  const [stored, setStored] = useState(() => sessionStorage.getItem(STAFF_TOKEN_KEY));
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    fetch("/api/auth/staff/validate", { credentials: "include" })
+      .then((res) => res.json())
+      .then((data) => setAuthenticated(data.authenticated ?? false))
+      .catch(() => setAuthenticated(false));
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    sessionStorage.setItem(STAFF_TOKEN_KEY, input.trim());
-    setStored(input.trim());
-    setError("");
+
+    try {
+      const res = await fetch("/api/auth/staff/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: input.trim() }),
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error ?? "Invalid token");
+        return;
+      }
+
+      setAuthenticated(true);
+      setError("");
+    } catch {
+      setError("Login failed");
+    }
   };
 
-  if (!stored) {
+  if (authenticated === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  if (!authenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <Card className="w-full max-w-sm">
@@ -55,8 +85,4 @@ export function StaffProtectedRoute({ children }: StaffProtectedRouteProps) {
   }
 
   return <>{children}</>;
-}
-
-export function getStaffToken(): string | null {
-  return sessionStorage.getItem(STAFF_TOKEN_KEY);
 }

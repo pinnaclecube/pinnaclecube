@@ -10,6 +10,9 @@ import {
   generateToken,
   verifyToken,
   stripPassword,
+  generateStaffSessionToken,
+  validateStaffSession,
+  cleanupExpiredStaffSessions,
 } from "../services/auth";
 import { requireClientAuth } from "../middlewares/clientAuth";
 import { sendEmail, welcomeEmail, passwordResetRequestEmail, prospectAccountCreatedEmail, paymentReceivedStaffAlertEmail } from "../services/emailService";
@@ -684,6 +687,85 @@ router.post("/auth/session-auto-login", async (req, res) => {
     requiresReconsent,
     user: stripPassword(profile),
   });
+});
+
+// ─── POST /api/auth/staff/login ──────────────────────────────────────────────
+// Validates a STAFF_SECRET_* env var and sets an HttpOnly cookie with a
+// short-lived session token.
+function buildTokenRegistry(): Record<string, { id: string; name: string }> {
+  const registry: Record<string, { id: string; name: string }> = {};
+
+  if (process.env.STAFF_SECRET) {
+    registry[process.env.STAFF_SECRET] = { id: "primary", name: "Admin" };
+  }
+
+  if (process.env.STAFF_SECRET_CHRIS) {
+    registry[process.env.STAFF_SECRET_CHRIS] = { id: "chris", name: "Chris Coleman" };
+  }
+
+  return registry;
+}
+
+router.post("/auth/staff/login", async (req, res): Promise<void> => {
+  const { token } = req.body as { token?: string };
+  if (!token) {
+    res.status(400).json({ error: "token is required" });
+    return;
+  }
+
+  const registry = buildTokenRegistry();
+  if (Object.keys(registry).length === 0) {
+    res.status(503).json({ error: "Staff authentication is not configured" });
+    return;
+  }
+
+  const match = registry[token];
+  if (!match) {
+    res.status(403).json({ error: "Invalid staff token" });
+    return;
+  }
+
+  await cleanupExpiredStaffSessions();
+
+  const sessionToken = await generateStaffSessionToken(match.id, match.name);
+
+  const ttl = parseInt(process.env.STAFF_TOKEN_TTL ?? "900", 10) * 1000;
+
+  res.cookie("staff_session", sessionToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: ttl,
+  });
+
+  res.json({ success: true, staffUser: { id: match.id, name: match.name, role: "admin" } });
+});
+
+// ─── POST /api/auth/staff/logout ─────────────────────────────────────────────
+router.post("/auth/staff/logout", (req, res): void => {
+  res.clearCookie("staff_session", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+  });
+  res.json({ success: true });
+});
+
+// ─── GET /api/auth/staff/validate ────────────────────────────────────────────
+router.get("/auth/staff/validate", async (req, res): Promise<void> => {
+  const sessionToken = req.cookies?.staff_session;
+  if (!sessionToken) {
+    res.status(403).json({ authenticated: false });
+    return;
+  }
+
+  const staffUser = await validateStaffSession(sessionToken);
+  if (!staffUser) {
+    res.status(403).json({ authenticated: false });
+    return;
+  }
+
+  res.json({ authenticated: true, staffUser });
 });
 
 export default router;
