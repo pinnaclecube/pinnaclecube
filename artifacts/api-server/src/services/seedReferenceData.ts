@@ -9,6 +9,9 @@ import {
   clientUserProductsTable,
   degreeTypesTable,
   contributionTypesTable,
+  employmentTypesTable,
+  criticalityLevelsTable,
+  projectDocumentCategoriesTable,
 } from "@workspace/db";
 import { sql, eq, and, isNotNull } from "drizzle-orm";
 import { logger } from "../lib/logger";
@@ -140,6 +143,72 @@ export async function seedReferenceData(): Promise<void> {
     }
   } catch (err) {
     logger.error({ err }, "[seed] contribution_types seed failed");
+  }
+
+  // ── employment_types lookup (seed once, if empty) ───────────────────────────
+  try {
+    const [etRow] = await db.select({ count: sql<number>`count(*)::int` }).from(employmentTypesTable);
+    if ((etRow?.count ?? 0) === 0) {
+      await db
+        .insert(employmentTypesTable)
+        .values(
+          ["Full-time", "Contractor", "Freelancer", "Founder", "Other"].map((name, i) => ({
+            name,
+            sortOrder: i,
+          })),
+        )
+        .onConflictDoNothing();
+      logger.info("[seed] employment_types inserted");
+    }
+  } catch (err) {
+    logger.error({ err }, "[seed] employment_types seed failed");
+  }
+
+  // ── criticality_levels lookup (seed once, if empty) ─────────────────────────
+  try {
+    const [clRow] = await db.select({ count: sql<number>`count(*)::int` }).from(criticalityLevelsTable);
+    if ((clRow?.count ?? 0) === 0) {
+      await db
+        .insert(criticalityLevelsTable)
+        .values(
+          ["Mission-Critical", "High", "Medium", "Low"].map((name, i) => ({
+            name,
+            sortOrder: i,
+          })),
+        )
+        .onConflictDoNothing();
+      logger.info("[seed] criticality_levels inserted");
+    }
+  } catch (err) {
+    logger.error({ err }, "[seed] criticality_levels seed failed");
+  }
+
+  // ── project_document_categories lookup (seed once, if empty) ────────────────
+  try {
+    const [pdcRow] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(projectDocumentCategoriesTable);
+    if ((pdcRow?.count ?? 0) === 0) {
+      await db
+        .insert(projectDocumentCategoriesTable)
+        .values(
+          [
+            "Dashboard / metrics screenshot",
+            "Report",
+            "Client validation / testimonial",
+            "Architecture document",
+            "Internal RFC / design doc",
+            "Press / public mention",
+            "Award / commendation",
+            "Contract / agreement",
+            "Other",
+          ].map((name, i) => ({ name, sortOrder: i })),
+        )
+        .onConflictDoNothing();
+      logger.info("[seed] project_document_categories inserted");
+    }
+  } catch (err) {
+    logger.error({ err }, "[seed] project_document_categories seed failed");
   }
 
   try {
