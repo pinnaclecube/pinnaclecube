@@ -32,6 +32,7 @@ import adminNotificationsRouter from "./adminNotifications";
 import adminReadinessRouter from "./adminReadiness";
 import cronRouter from "./cron";
 import refereesRouter from "./referees";
+import projectsRouter from "./projects";
 
 const router: IRouter = Router();
 
@@ -68,5 +69,6 @@ router.use(adminNotificationsRouter);
 router.use(adminReadinessRouter);
 router.use(cronRouter);
 router.use(refereesRouter);
+router.use(projectsRouter);
 
 export default router;
