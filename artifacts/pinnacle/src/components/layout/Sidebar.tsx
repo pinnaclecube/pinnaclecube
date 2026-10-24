@@ -1,14 +1,15 @@
 import { Link, useLocation } from "wouter";
-import { 
-  LayoutDashboard, 
-  Target, 
-  FolderLock, 
-  FileCheck2, 
-  Map, 
+import {
+  LayoutDashboard,
+  Target,
+  FolderLock,
+  FileCheck2,
+  Map,
   GraduationCap,
   FolderArchive,
   ClipboardCheck,
   Mail,
+  FolderKanban,
 } from "lucide-react";
 import { Logo } from "../ui/logo";
 
@@ -18,6 +19,7 @@ const navItems = [
   { href: "/tasks", label: "My Tasks", icon: ClipboardCheck },
   { href: "/evidence", label: "Evidence Engine", icon: FolderLock },
   { href: "/my-files", label: "Case Files", icon: FolderArchive },
+  { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/reference-letters", label: "Reference Letters", icon: Mail },
   { href: "/criteria", label: "Criteria Exhibit", icon: FileCheck2 },
   { href: "/blueprint", label: "Elite Blueprint", icon: Map },
