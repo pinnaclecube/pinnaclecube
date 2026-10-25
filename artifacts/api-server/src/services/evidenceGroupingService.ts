@@ -258,13 +258,17 @@ async function persist(
           description: g.description?.trim() || null,
           criterionFolder: g.criterion_folder ?? null,
           createdBy: "ai",
-          status: "suggested",
+          status: "confirmed", // hybrid: AI groups are auto-confirmed so clients see
+                               // them immediately; staff can edit/merge/dissolve later.
           aiRationale: g.rationale?.trim() || null,
         })
         .returning();
-      await tx.insert(evidenceGroupSuggestionsTable).values(
-        fileIds.map((fileId) => ({ groupId: group.id, fileId, isAddToConfirmed: false })),
-      );
+      // Assign the member files directly (only those still ungrouped), exactly as
+      // the staff "confirm" action does — no suggestion queue for new AI groups.
+      await tx
+        .update(caseFolderItemsTable)
+        .set({ groupId: group.id })
+        .where(and(inArray(caseFolderItemsTable.id, fileIds), isNull(caseFolderItemsTable.groupId)));
       newGroups++;
     }
 
