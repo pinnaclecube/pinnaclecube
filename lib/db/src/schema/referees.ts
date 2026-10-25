@@ -61,6 +61,8 @@ export const refereesTable = pgTable("referees", {
   // Step 3 — shared context (where referee and applicant worked together).
   sharedOrganization: text("shared_organization"),
   sharedPeriod: text("shared_period"),
+  // Step 4 — lifetime count of client-triggered letter generations (for the cap).
+  clientGenerationCount: integer("client_generation_count").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -173,3 +175,31 @@ export const insertRefereeEvidenceSchema = createInsertSchema(refereeEvidenceTab
 });
 export type RefereeEvidence = typeof refereeEvidenceTable.$inferSelect;
 export type InsertRefereeEvidence = z.infer<typeof insertRefereeEvidenceSchema>;
+
+// ─── Letter drafts (Step 4 — AI-generated reference letter drafts) ───────────────
+// Versioned per referee; prior draft becomes 'superseded' on each new generation.
+// Staff finalize renders the current draft to DOCX and splices into the Step 2
+// upload flow (pending_review → review email → confirm → lock).
+
+export const letterDraftsTable = pgTable("letter_drafts", {
+  id: serial("id").primaryKey(),
+  refereeId: integer("referee_id")
+    .notNull()
+    .references(() => refereesTable.id, { onDelete: "cascade" }),
+  version: integer("version").notNull(),
+  content: text("content").notNull(), // letter body in markdown
+  generatedBy: text("generated_by").notNull(), // 'client' | 'staff'
+  feedbackProvided: text("feedback_provided"), // change-request text that drove this version
+  wasManuallyEdited: boolean("was_manually_edited").notNull().default(false),
+  status: text("status").notNull().default("draft"), // 'draft' | 'finalized' | 'superseded'
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const insertLetterDraftSchema = createInsertSchema(letterDraftsTable).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type LetterDraft = typeof letterDraftsTable.$inferSelect;
+export type InsertLetterDraft = z.infer<typeof insertLetterDraftSchema>;
