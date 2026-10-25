@@ -33,6 +33,7 @@ import adminReadinessRouter from "./adminReadiness";
 import cronRouter from "./cron";
 import refereesRouter from "./referees";
 import projectsRouter from "./projects";
+import evidenceRegistryRouter from "./evidenceRegistry";
 
 const router: IRouter = Router();
 
@@ -70,5 +71,6 @@ router.use(adminReadinessRouter);
 router.use(cronRouter);
 router.use(refereesRouter);
 router.use(projectsRouter);
+router.use(evidenceRegistryRouter);
 
 export default router;

@@ -16,6 +16,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { logger } from "../lib/logger";
 import { purgeExpiredPendingGrants } from "../services/pendingGrantsCleanup";
 import { renewExpiringSoonChannels } from "../services/driveWatchService";
+import { syncActiveCasesEvidence } from "../services/evidenceSyncService";
 import { seedReferenceData } from "../services/seedReferenceData";
 
 const router: IRouter = Router();
@@ -64,5 +65,12 @@ router.get(
 // Was: run once after app.listen(). Idempotent — safe to invoke post-deploy
 // and on a schedule. Trigger manually after each deploy if you prefer.
 router.get("/cron/seed", cronHandler("seed", seedReferenceData));
+
+// Reconcile each case's Evidence/ subtree into the DB registry (safety-net;
+// Drive webhooks are the primary real-time trigger). Respects the per-case throttle.
+router.get(
+  "/cron/evidence-sync",
+  cronHandler("evidence-sync", syncActiveCasesEvidence),
+);
 
 export default router;

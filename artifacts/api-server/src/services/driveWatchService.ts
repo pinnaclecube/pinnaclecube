@@ -13,7 +13,7 @@
  */
 
 import crypto from "crypto";
-import { eq, lt } from "drizzle-orm";
+import { eq, lt, and, notInArray, sql } from "drizzle-orm";
 import {
   db,
   caseFoldersTable,
@@ -147,6 +147,7 @@ export async function syncFolderContents(driveFolderId: string): Promise<number>
   // ── 1. Sync non-folder files (existing logic unchanged) ───────────────────
 
   const files = await listDriveFolderFiles(driveFolderId);
+  const now = new Date();
   let upsertCount = 0;
 
   for (const file of files) {
@@ -159,16 +160,34 @@ export async function syncFolderContents(driveFolderId: string): Promise<number>
         mimeType: file.mimeType,
         driveUrl: file.webViewLink,
         addedBySource: "drive",
+        syncedAt: now,
+        isDeletedInDrive: false,
       })
       .onConflictDoUpdate({
         target: caseFolderItemsTable.driveId,
         set: {
           name: file.name,
           driveUrl: file.webViewLink,
+          syncedAt: now,
+          isDeletedInDrive: false,
         },
       });
     upsertCount++;
   }
+
+  // Soft-delete rows for files no longer present in this Drive folder — keep the
+  // rows so any referee mappings survive. We never hard-delete here.
+  const presentIds = files.map((f) => f.id);
+  await db
+    .update(caseFolderItemsTable)
+    .set({ isDeletedInDrive: true, syncedAt: now })
+    .where(
+      and(
+        eq(caseFolderItemsTable.caseFolderId, folder.id),
+        eq(caseFolderItemsTable.isDeletedInDrive, false),
+        presentIds.length > 0 ? notInArray(caseFolderItemsTable.driveId, presentIds) : sql`true`,
+      ),
+    );
 
   // ── 2. Detect and persist subfolders created directly in Drive ────────────
 
