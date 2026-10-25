@@ -17,6 +17,7 @@ import { logger } from "../lib/logger";
 import { purgeExpiredPendingGrants } from "../services/pendingGrantsCleanup";
 import { renewExpiringSoonChannels } from "../services/driveWatchService";
 import { syncActiveCasesEvidence } from "../services/evidenceSyncService";
+import { drainLetterGenerationQueue } from "../services/letterGenerationWorker";
 import { seedReferenceData } from "../services/seedReferenceData";
 
 const router: IRouter = Router();
@@ -71,6 +72,15 @@ router.get("/cron/seed", cronHandler("seed", seedReferenceData));
 router.get(
   "/cron/evidence-sync",
   cronHandler("evidence-sync", syncActiveCasesEvidence),
+);
+
+// Drain the reference-letter generation queue (async drafts). Each run processes
+// a few jobs within the function budget; scheduled frequently for near-real-time.
+router.get(
+  "/cron/letter-generation",
+  cronHandler("letter-generation", async () => {
+    await drainLetterGenerationQueue();
+  }),
 );
 
 export default router;

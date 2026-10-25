@@ -20,15 +20,16 @@ import {
   type Response,
   type NextFunction,
 } from "express";
-import { eq, and, ne, desc } from "drizzle-orm";
+import { eq, and, ne, desc, inArray } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   db,
   refereesTable,
   letterDraftsTable,
+  letterGenerationJobsTable,
   casePetitionSetupTable,
 } from "@workspace/db";
-import { checkEligibility, generateLetterDraft } from "../services/letterGenerationService";
+import { checkEligibility } from "../services/letterGenerationService";
 import { markdownToLetterDocx } from "../services/letterDocxService";
 import { ingestReferenceLetter, LetterIngestError } from "./referees";
 import { requireClientAuth } from "../middlewares/clientAuth";
@@ -99,6 +100,17 @@ async function currentDraft(refereeId: number) {
   return row ?? null;
 }
 
+// The most recent generation job for a referee, if any.
+async function latestJob(refereeId: number) {
+  const [row] = await db
+    .select()
+    .from(letterGenerationJobsTable)
+    .where(eq(letterGenerationJobsTable.refereeId, refereeId))
+    .orderBy(desc(letterGenerationJobsTable.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
 // ─── Generate / regenerate ───────────────────────────────────────────────────────
 
 const GenerateInput = z.object({ feedback: z.string().trim().nullish() });
@@ -135,12 +147,23 @@ router.post(
     const parsed = GenerateInput.safeParse(req.body ?? {});
     const feedback = parsed.success ? parsed.data.feedback ?? null : null;
 
-    let draft;
+    // Already queued or in-flight? (the partial unique index also guards this.)
+    const existing = await latestJob(refereeId);
+    if (existing && (existing.status === "queued" || existing.status === "processing")) {
+      res.status(409).json({ error: "A draft is already being generated for this referee.", status: existing.status });
+      return;
+    }
+
     try {
-      draft = await generateLetterDraft(referee, { feedback, generatedBy });
+      await db.insert(letterGenerationJobsTable).values({
+        refereeId,
+        status: "queued",
+        requestedBy: generatedBy,
+        feedback,
+      });
     } catch (err) {
-      logger.error({ err, refereeId }, "[letterDrafts] generation failed");
-      res.status(502).json({ error: "Letter generation failed. Please try again." });
+      logger.error({ err, refereeId }, "[letterDrafts] enqueue failed");
+      res.status(409).json({ error: "A draft is already being generated for this referee." });
       return;
     }
 
@@ -154,7 +177,8 @@ router.post(
       remainingClientGenerations = Math.max(0, CLIENT_GENERATION_CAP - (updated?.count ?? CLIENT_GENERATION_CAP));
     }
 
-    res.status(201).json({ draft, remainingClientGenerations });
+    logger.info({ refereeId, by: generatedBy }, "[letterDrafts] generation queued");
+    res.status(202).json({ status: "queued", remainingClientGenerations });
   },
 );
 
@@ -173,9 +197,17 @@ router.get(
     const elig = await checkEligibility(referee);
     const staff = isStaff(aug);
 
+    const job = await latestJob(refereeId);
+    // Surface an in-flight queue state; a failed job is only "pending" until the
+    // user is shown it once (we report it, the UI clears on next generate).
+    const generation = job
+      ? { status: job.status, error: job.status === "failed" ? job.error : null, requestedAt: job.createdAt }
+      : null;
+
     const body: Record<string, unknown> = {
       draft,
       eligibility: elig,
+      generation,
     };
 
     if (staff) {
@@ -347,7 +379,16 @@ router.get(
         clientRequestedChanges: r.generatedBy === "client" && !!r.feedbackProvided && r.status !== "finalized",
       });
     }
-    res.json({ statuses });
+
+    // In-flight generation jobs (queued/processing) per referee for live chips.
+    const jobRows = await db
+      .select({ refereeId: letterGenerationJobsTable.refereeId, status: letterGenerationJobsTable.status })
+      .from(letterGenerationJobsTable)
+      .innerJoin(refereesTable, eq(refereesTable.id, letterGenerationJobsTable.refereeId))
+      .where(and(eq(refereesTable.caseId, caseId), inArray(letterGenerationJobsTable.status, ["queued", "processing"])));
+    const generating = jobRows.map((j) => ({ refereeId: j.refereeId, status: j.status }));
+
+    res.json({ statuses, generating });
   },
 );
 

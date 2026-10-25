@@ -701,6 +701,26 @@ export function referenceLetterReviewEmail(
   };
 }
 
+// ─── Template: AI reference letter draft ready (client) ─────────────────────────
+
+export function referenceLetterDraftReadyEmail(
+  clientFirstName: string,
+  refereeName: string,
+): { subject: string; html: string; text: string } {
+  return {
+    subject: `Your reference letter draft is ready — ${refereeName}`,
+    html: layout(`
+      ${h1("A reference letter draft is ready")}
+      ${p(`Hi ${clientFirstName}, the draft reference letter for <strong>${refereeName}</strong> has been generated and is ready to view in your portal.`)}
+      ${p("Our team will review and finalize it before it is sent to you for confirmation. You can view the current draft now.")}
+      ${btn("View your reference letters", `${APP_URL}/reference-letters`)}
+      ${divider()}
+      ${p("Questions? Just reply to this email — we read every one.")}
+    `),
+    text: `Hi ${clientFirstName},\n\nThe draft reference letter for ${refereeName} is ready to view in your portal. Our team will review and finalize it before it is sent to you for confirmation.\n\nView it at ${APP_URL}/reference-letters`,
+  };
+}
+
 // ─── Template: client confirmed reference letter (staff alert) ──────────────────
 
 export function referenceLetterConfirmedStaffEmail(
