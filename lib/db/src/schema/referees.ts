@@ -12,6 +12,7 @@ import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { casePetitionSetupTable } from "./petition";
+import { caseFolderItemsTable } from "./drive";
 
 // ─── Lookup: degree types ───────────────────────────────────────────────────────
 
@@ -57,6 +58,9 @@ export const refereesTable = pgTable("referees", {
   isLocked: boolean("is_locked").notNull().default(false),
   lockedAt: timestamp("locked_at", { withTimezone: true }),
   unlockedAt: timestamp("unlocked_at", { withTimezone: true }),
+  // Step 3 — shared context (where referee and applicant worked together).
+  sharedOrganization: text("shared_organization"),
+  sharedPeriod: text("shared_period"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -136,3 +140,36 @@ export const insertReferenceLetterSchema = createInsertSchema(referenceLettersTa
 });
 export type ReferenceLetter = typeof referenceLettersTable.$inferSelect;
 export type InsertReferenceLetter = z.infer<typeof insertReferenceLetterSchema>;
+
+// ─── Referee ↔ Evidence file mapping (Step 3 — mirrors referee_projects) ─────────
+// Maps a referee to a specific evidence file (a case_folder_items row in the
+// case's Evidence/ subtree) they can attest to. Input for AI letter generation.
+
+export const refereeEvidenceTable = pgTable(
+  "referee_evidence",
+  {
+    id: serial("id").primaryKey(),
+    refereeId: integer("referee_id")
+      .notNull()
+      .references(() => refereesTable.id, { onDelete: "cascade" }),
+    evidenceFileId: integer("evidence_file_id")
+      .notNull()
+      .references(() => caseFolderItemsTable.id, { onDelete: "cascade" }),
+    displayLabel: text("display_label").notNull(),
+    attestationNotes: text("attestation_notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqueRefereeEvidence: unique("referee_evidence_referee_file_unique").on(
+      t.refereeId,
+      t.evidenceFileId,
+    ),
+  }),
+);
+
+export const insertRefereeEvidenceSchema = createInsertSchema(refereeEvidenceTable).omit({
+  id: true,
+  createdAt: true,
+});
+export type RefereeEvidence = typeof refereeEvidenceTable.$inferSelect;
+export type InsertRefereeEvidence = z.infer<typeof insertRefereeEvidenceSchema>;

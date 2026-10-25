@@ -65,7 +65,28 @@ export const caseFolderItemsTable = pgTable("case_folder_items", {
   addedBySource: addedBySourceEnum("added_by_source").notNull().default("drive"),
   addedByProfileId: integer("added_by_profile_id").references(() => profilesTable.id, { onDelete: "set null" }),
   addedByLabel: text("added_by_label"),
+  // Step 3 — evidence registry. Normalized criterion key derived from the parent
+  // subfolder name at sync time ('unclassified' at the Evidence root / unknown
+  // subfolders). is_staff_only is NOT stored here — it is derived from the parent
+  // folder's staff_only so it stays a single source of truth.
+  criterionFolder: text("criterion_folder"),
+  isDeletedInDrive: boolean("is_deleted_in_drive").notNull().default(false),
+  syncedAt: timestamp("synced_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ─── drive_sync_state (per-case evidence-sync throttle + page token) ─────────────
+
+export const driveSyncStateTable = pgTable("drive_sync_state", {
+  id: serial("id").primaryKey(),
+  caseId: integer("case_id")
+    .notNull()
+    .references(() => casePetitionSetupTable.id, { onDelete: "cascade" })
+    .unique(),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+  drivePageToken: text("drive_page_token"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
 // ─── drive_watch_channels ─────────────────────────────────────────────────────
@@ -116,8 +137,15 @@ export const insertCaseFolderItemSchema = createInsertSchema(caseFolderItemsTabl
   createdAt: true,
 });
 
+export const insertDriveSyncStateSchema = createInsertSchema(driveSyncStateTable).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export type InsertCaseFolder = z.infer<typeof insertCaseFolderSchema>;
 export type CaseFolder = typeof caseFoldersTable.$inferSelect;
 export type InsertCaseFolderItem = z.infer<typeof insertCaseFolderItemSchema>;
 export type CaseFolderItem = typeof caseFolderItemsTable.$inferSelect;
 export type DriveWatchChannel = typeof driveWatchChannelsTable.$inferSelect;
+export type DriveSyncState = typeof driveSyncStateTable.$inferSelect;
