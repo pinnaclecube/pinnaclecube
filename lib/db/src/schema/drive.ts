@@ -76,6 +76,10 @@ export const caseFolderItemsTable = pgTable("case_folder_items", {
   // FK to evidence_groups(id) ON DELETE SET NULL is declared in the DDL (kept out of
   // the Drizzle reference to avoid a schema import cycle).
   groupId: integer("group_id"),
+  // Step 5 — set when the AI grouping job has considered this file in a batch.
+  // null = not yet reviewed. Lets large backlogs be grouped in bounded batches
+  // without re-processing files the AI chose to leave ungrouped.
+  groupingReviewedAt: timestamp("grouping_reviewed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -9,7 +9,7 @@
 
 import { eq, and, asc, lt, sql, desc } from "drizzle-orm";
 import { db, evidenceGroupingJobsTable } from "@workspace/db";
-import { runGroupingForCase, ungroupedFileCount } from "./evidenceGroupingService";
+import { runGroupingForCase, pendingGroupingFileCount } from "./evidenceGroupingService";
 import { logger } from "../lib/logger";
 
 const AUTO_UNGROUPED_THRESHOLD = 10;
@@ -82,6 +82,19 @@ export async function drainEvidenceGroupingQueue(
         .set({ status: "done", newGroups: counts.newGroups, addSuggestions: counts.addSuggestions, completedAt: new Date(), error: null })
         .where(eq(evidenceGroupingJobsTable.id, job.id));
       processed++;
+      // Large backlog: this run handled one batch. If files still await grouping,
+      // queue the next batch so the backlog is worked through across cron ticks.
+      // Files just reviewed are excluded, so this always makes progress (no loop).
+      try {
+        if (await pendingGroupingFileCount(job.caseId) > 0) {
+          await db
+            .insert(evidenceGroupingJobsTable)
+            .values({ caseId: job.caseId, status: "queued", requestedBy: "auto" })
+            .onConflictDoNothing();
+        }
+      } catch (err) {
+        logger.warn({ err, caseId: job.caseId }, "[evidenceGroupingWorker] follow-up enqueue failed");
+      }
     } catch (err) {
       logger.error({ err, jobId: job.id, caseId: job.caseId }, "[evidenceGroupingWorker] job failed");
       await db
@@ -105,7 +118,7 @@ export async function drainEvidenceGroupingQueue(
 // after an evidence sync. Never throws.
 export async function maybeAutoEnqueueGrouping(caseId: number): Promise<void> {
   try {
-    const ungrouped = await ungroupedFileCount(caseId);
+    const ungrouped = await pendingGroupingFileCount(caseId);
     if (ungrouped < AUTO_UNGROUPED_THRESHOLD) return;
 
     // Skip if an active job already exists, or one completed recently with nothing

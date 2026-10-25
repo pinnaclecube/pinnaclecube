@@ -8,7 +8,7 @@
  * staff confirm. Reuses the Step 4 extraction utility and the getAI() pattern.
  */
 
-import { eq, and, inArray, isNull } from "drizzle-orm";
+import { eq, and, inArray, isNull, asc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod/v4";
 import {
@@ -23,8 +23,12 @@ import { getEvidenceSubtreeFolders } from "./evidenceSyncService";
 import { logger } from "../lib/logger";
 
 const MODEL = "claude-sonnet-4-5";
-const MAX_TOKENS = 4000;
+const MAX_TOKENS = 6000;
 const SNIPPET_CHARS = 300;
+// Files are grouped in bounded batches so a single run (prompt + generation) stays
+// well under the model timeout and the 60s function budget. A large backlog is
+// worked through across cron ticks; files already considered are marked reviewed.
+const GROUPING_BATCH_SIZE = 40;
 const EXTRACT_FILE_CAP = 40;        // bound downloads per run (filenames are sent for all)
 const EXTRACT_CONCURRENCY = 6;
 const EXTRACT_BUDGET_MS = 20000;    // stop downloading once this much time is spent on extraction
@@ -87,6 +91,8 @@ async function assembleInput(caseId: number) {
   const subtree = await getEvidenceSubtreeFolders(caseId);
   const folderIds = subtree.map((f) => f.id);
 
+  // One bounded batch of not-yet-reviewed ungrouped files, ordered by criterion so
+  // related files land in the same batch (groups never span criteria anyway).
   const ungrouped: UngroupedFile[] =
     folderIds.length === 0
       ? []
@@ -99,8 +105,15 @@ async function assembleInput(caseId: number) {
                 inArray(caseFolderItemsTable.caseFolderId, folderIds),
                 eq(caseFolderItemsTable.isDeletedInDrive, false),
                 isNull(caseFolderItemsTable.groupId),
+                isNull(caseFolderItemsTable.groupingReviewedAt),
               ),
             )
+            .orderBy(
+              asc(caseFolderItemsTable.criterionFolder),
+              asc(caseFolderItemsTable.createdAt),
+              asc(caseFolderItemsTable.id),
+            )
+            .limit(GROUPING_BATCH_SIZE)
         ).map((f) => ({
           id: f.id,
           name: f.name,
@@ -283,6 +296,16 @@ async function persist(
         .onConflictDoNothing();
       addSuggestions += fileIds.length;
     }
+
+    // Mark every file in this batch as reviewed (grouped or left ungrouped) so the
+    // next batch advances to new files instead of re-processing these.
+    const batchIds = [...input.ungroupedIds];
+    if (batchIds.length > 0) {
+      await tx
+        .update(caseFolderItemsTable)
+        .set({ groupingReviewedAt: new Date() })
+        .where(inArray(caseFolderItemsTable.id, batchIds));
+    }
   });
 
   return { newGroups, addSuggestions };
@@ -314,4 +337,38 @@ export async function ungroupedFileCount(caseId: number): Promise<number> {
       isNull(caseFolderItemsTable.groupId),
     ));
   return rows.length;
+}
+
+// Count of files still awaiting grouping (ungrouped AND not yet reviewed). Drives
+// both the auto-trigger threshold and the worker's "queue the next batch" decision.
+export async function pendingGroupingFileCount(caseId: number): Promise<number> {
+  const subtree = await getEvidenceSubtreeFolders(caseId);
+  const folderIds = subtree.map((f) => f.id);
+  if (folderIds.length === 0) return 0;
+  const rows = await db
+    .select({ id: caseFolderItemsTable.id })
+    .from(caseFolderItemsTable)
+    .where(and(
+      inArray(caseFolderItemsTable.caseFolderId, folderIds),
+      eq(caseFolderItemsTable.isDeletedInDrive, false),
+      isNull(caseFolderItemsTable.groupId),
+      isNull(caseFolderItemsTable.groupingReviewedAt),
+    ));
+  return rows.length;
+}
+
+// Reset the reviewed marker for a case's ungrouped files so grouping reconsiders
+// everything (used by the manual "Suggest groups" action).
+export async function resetGroupingReview(caseId: number): Promise<void> {
+  const subtree = await getEvidenceSubtreeFolders(caseId);
+  const folderIds = subtree.map((f) => f.id);
+  if (folderIds.length === 0) return;
+  await db
+    .update(caseFolderItemsTable)
+    .set({ groupingReviewedAt: null })
+    .where(and(
+      inArray(caseFolderItemsTable.caseFolderId, folderIds),
+      eq(caseFolderItemsTable.isDeletedInDrive, false),
+      isNull(caseFolderItemsTable.groupId),
+    ));
 }

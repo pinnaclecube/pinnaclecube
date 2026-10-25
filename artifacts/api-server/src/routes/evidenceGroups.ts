@@ -32,6 +32,7 @@ import {
   getEvidenceSubtreeFolders,
   criterionKeyForFolderName,
 } from "../services/evidenceSyncService";
+import { resetGroupingReview } from "../services/evidenceGroupingService";
 import { requireClientAuth } from "../middlewares/clientAuth";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { logger } from "../lib/logger";
@@ -405,6 +406,9 @@ router.post(
       .where(and(eq(evidenceGroupingJobsTable.caseId, caseId), inArray(evidenceGroupingJobsTable.status, ["queued", "processing"])))
       .limit(1);
     if (existing) { res.status(200).json({ job: existing, alreadyRunning: true }); return; }
+
+    // Manual trigger reconsiders every ungrouped file (clears batch review markers).
+    await resetGroupingReview(caseId);
 
     const [job] = await db
       .insert(evidenceGroupingJobsTable)
