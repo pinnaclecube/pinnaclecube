@@ -17,4 +17,5 @@ export * from "./applications";
 export * from "./drive";
 export * from "./referees";
 export * from "./projects";
+export * from "./evidence_groups";
 export * from "./newsletters";

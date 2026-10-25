@@ -72,6 +72,10 @@ export const caseFolderItemsTable = pgTable("case_folder_items", {
   criterionFolder: text("criterion_folder"),
   isDeletedInDrive: boolean("is_deleted_in_drive").notNull().default(false),
   syncedAt: timestamp("synced_at", { withTimezone: true }),
+  // Step 5 — evidence groups. A file belongs to at most one group; null = ungrouped.
+  // FK to evidence_groups(id) ON DELETE SET NULL is declared in the DDL (kept out of
+  // the Drizzle reference to avoid a schema import cycle).
+  groupId: integer("group_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
