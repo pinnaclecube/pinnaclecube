@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { RefereeForm, type Referee, type LookupItem } from "@/components/referees/RefereeForm";
 import { RefereeMappingPanel } from "@/components/referees/RefereeMappingPanel";
+import { LetterDraftPanel } from "@/components/referees/LetterDraftPanel";
 
 const TOKEN_KEY = "pinnacle_token";
 
@@ -257,6 +258,7 @@ function RefereeCard({
             onSaved={onSaved} readOnly={locked} />
           <RefereeMappingPanel refereeId={referee.id} caseId={caseId} fetchFn={clientFetch}
             workedTogether={!!referee.workedTogether} readOnly={locked} />
+          <LetterDraftPanel refereeId={referee.id} fetchFn={clientFetch} readOnly={locked} />
         </div>
       )}
     </div>
