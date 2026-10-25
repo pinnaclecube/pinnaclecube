@@ -35,6 +35,7 @@ import refereesRouter from "./referees";
 import projectsRouter from "./projects";
 import evidenceRegistryRouter from "./evidenceRegistry";
 import letterDraftsRouter from "./letterDrafts";
+import evidenceGroupsRouter from "./evidenceGroups";
 
 const router: IRouter = Router();
 
@@ -74,5 +75,6 @@ router.use(refereesRouter);
 router.use(projectsRouter);
 router.use(evidenceRegistryRouter);
 router.use(letterDraftsRouter);
+router.use(evidenceGroupsRouter);
 
 export default router;

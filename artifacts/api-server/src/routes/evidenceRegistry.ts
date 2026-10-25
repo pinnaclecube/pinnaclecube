@@ -30,7 +30,8 @@ import {
   refereesTable,
   caseProjectsTable,
   refereeProjectsTable,
-  refereeEvidenceTable,
+  evidenceGroupsTable,
+  refereeEvidenceGroupsTable,
   projectDocumentsTable,
   referenceLettersTable,
 } from "@workspace/db";
@@ -285,23 +286,34 @@ async function mappingsFor(referee: typeof refereesTable.$inferSelect) {
     .innerJoin(caseProjectsTable, eq(caseProjectsTable.id, refereeProjectsTable.projectId))
     .where(eq(refereeProjectsTable.refereeId, referee.id));
 
-  const evidence = await db
+  const groups = await db
     .select({
-      evidenceFileId: refereeEvidenceTable.evidenceFileId,
-      displayLabel: refereeEvidenceTable.displayLabel,
-      attestationNotes: refereeEvidenceTable.attestationNotes,
-      fileName: caseFolderItemsTable.name,
-      criterion: caseFolderItemsTable.criterionFolder,
+      evidenceGroupId: refereeEvidenceGroupsTable.evidenceGroupId,
+      attestationNotes: refereeEvidenceGroupsTable.attestationNotes,
+      name: evidenceGroupsTable.name,
+      description: evidenceGroupsTable.description,
+      criterion: evidenceGroupsTable.criterionFolder,
     })
-    .from(refereeEvidenceTable)
-    .innerJoin(caseFolderItemsTable, eq(caseFolderItemsTable.id, refereeEvidenceTable.evidenceFileId))
-    .where(eq(refereeEvidenceTable.refereeId, referee.id));
+    .from(refereeEvidenceGroupsTable)
+    .innerJoin(evidenceGroupsTable, eq(evidenceGroupsTable.id, refereeEvidenceGroupsTable.evidenceGroupId))
+    .where(eq(refereeEvidenceGroupsTable.refereeId, referee.id));
+
+  // Member counts for the mapped groups.
+  const countByGroup = new Map<number, number>();
+  if (groups.length > 0) {
+    const rows = await db
+      .select({ groupId: caseFolderItemsTable.groupId, n: sql<number>`count(*)::int` })
+      .from(caseFolderItemsTable)
+      .where(inArray(caseFolderItemsTable.groupId, groups.map((g) => g.evidenceGroupId)))
+      .groupBy(caseFolderItemsTable.groupId);
+    for (const r of rows) if (r.groupId != null) countByGroup.set(r.groupId, r.n);
+  }
 
   return {
     sharedOrganization: referee.sharedOrganization,
     sharedPeriod: referee.sharedPeriod,
     projects,
-    evidence,
+    groups: groups.map((g) => ({ ...g, memberCount: countByGroup.get(g.evidenceGroupId) ?? 0 })),
   };
 }
 
@@ -335,11 +347,11 @@ router.get(
       .groupBy(refereeProjectsTable.refereeId);
 
     const evCounts = await db
-      .select({ refereeId: refereeEvidenceTable.refereeId, n: sql<number>`count(*)::int` })
-      .from(refereeEvidenceTable)
-      .innerJoin(refereesTable, eq(refereesTable.id, refereeEvidenceTable.refereeId))
+      .select({ refereeId: refereeEvidenceGroupsTable.refereeId, n: sql<number>`count(*)::int` })
+      .from(refereeEvidenceGroupsTable)
+      .innerJoin(refereesTable, eq(refereesTable.id, refereeEvidenceGroupsTable.refereeId))
       .where(eq(refereesTable.caseId, caseId))
-      .groupBy(refereeEvidenceTable.refereeId);
+      .groupBy(refereeEvidenceGroupsTable.refereeId);
 
     const map = new Map<number, { refereeId: number; projects: number; evidence: number }>();
     for (const r of projCounts) map.set(r.refereeId, { refereeId: r.refereeId, projects: r.n, evidence: 0 });
@@ -365,11 +377,22 @@ const MappingInput = z.object({
       }),
     )
     .default([]),
-  evidence: z
+  // Confirmed evidence groups the referee can attest to.
+  groups: z
     .array(
       z.object({
-        evidenceFileId: z.number().int().positive(),
-        displayLabel: z.string().trim().min(1, "A label is required for each selected item"),
+        evidenceGroupId: z.number().int().positive(),
+        attestationNotes: z.string().trim().nullish(),
+      }),
+    )
+    .default([]),
+  // Individually selected UNGROUPED files — each auto-wrapped into a confirmed
+  // singleton group named from the label (one mapping model downstream).
+  individualFiles: z
+    .array(
+      z.object({
+        fileId: z.number().int().positive(),
+        label: z.string().trim().min(1, "A label is required for each selected file"),
         attestationNotes: z.string().trim().nullish(),
       }),
     )
@@ -400,14 +423,17 @@ router.put(
       return;
     }
     const data = parsed.data;
+    const createdBy = isStaff(aug) ? "staff" : "client";
 
-    // Dedupe (unique constraints); last occurrence wins.
+    // Dedupe.
     const projectMap = new Map(data.projects.map((p) => [p.projectId, p]));
-    const evidenceMap = new Map(data.evidence.map((e) => [e.evidenceFileId, e]));
+    const groupMap = new Map(data.groups.map((g) => [g.evidenceGroupId, g]));
+    const fileMap = new Map(data.individualFiles.map((f) => [f.fileId, f]));
     const projectIds = [...projectMap.keys()];
-    const evidenceIds = [...evidenceMap.keys()];
+    const groupIds = [...groupMap.keys()];
+    const fileIds = [...fileMap.keys()];
 
-    // Validate projects belong to the referee's case.
+    // Validate projects belong to the case.
     if (projectIds.length > 0) {
       const valid = await db
         .select({ id: caseProjectsTable.id })
@@ -419,27 +445,43 @@ router.put(
       }
     }
 
-    // Validate evidence files: same case, not staff-only, not deleted.
-    if (evidenceIds.length > 0) {
+    // Validate groups: confirmed + in this case.
+    if (groupIds.length > 0) {
+      const valid = await db
+        .select({ id: evidenceGroupsTable.id })
+        .from(evidenceGroupsTable)
+        .where(and(
+          eq(evidenceGroupsTable.caseId, referee.caseId),
+          eq(evidenceGroupsTable.status, "confirmed"),
+          inArray(evidenceGroupsTable.id, groupIds),
+        ));
+      if (valid.length !== groupIds.length) {
+        res.status(400).json({ error: "One or more evidence groups are invalid or not confirmed for this case" });
+        return;
+      }
+    }
+
+    // Validate individual files: ungrouped, in case, not staff-only, not deleted.
+    const fileMeta = new Map<number, { criterion: string | null }>();
+    if (fileIds.length > 0) {
       const valid = await db
         .select({
           id: caseFolderItemsTable.id,
           caseId: caseFoldersTable.caseId,
           staffOnly: caseFoldersTable.staffOnly,
           deleted: caseFolderItemsTable.isDeletedInDrive,
+          groupId: caseFolderItemsTable.groupId,
+          criterion: caseFolderItemsTable.criterionFolder,
         })
         .from(caseFolderItemsTable)
         .innerJoin(caseFoldersTable, eq(caseFoldersTable.id, caseFolderItemsTable.caseFolderId))
-        .where(inArray(caseFolderItemsTable.id, evidenceIds));
-      const okIds = new Set(
-        valid
-          .filter((v) => v.caseId === referee.caseId && !v.staffOnly && !v.deleted)
-          .map((v) => v.id),
-      );
-      if (okIds.size !== evidenceIds.length) {
-        res.status(400).json({ error: "One or more evidence files are invalid, staff-only, or not in this case" });
+        .where(inArray(caseFolderItemsTable.id, fileIds));
+      const ok = valid.filter((v) => v.caseId === referee.caseId && !v.staffOnly && !v.deleted && v.groupId == null);
+      if (ok.length !== fileIds.length) {
+        res.status(400).json({ error: "One or more files are invalid, staff-only, already grouped, or not in this case" });
         return;
       }
+      for (const v of ok) fileMeta.set(v.id, { criterion: v.criterion });
     }
 
     await db.transaction(async (tx) => {
@@ -463,17 +505,30 @@ router.put(
         );
       }
 
-      await tx.delete(refereeEvidenceTable).where(eq(refereeEvidenceTable.refereeId, refereeId));
-      if (evidenceMap.size > 0) {
-        await tx.insert(refereeEvidenceTable).values(
-          [...evidenceMap.values()].map((e) => ({
-            refereeId,
-            evidenceFileId: e.evidenceFileId,
-            displayLabel: e.displayLabel.trim(),
-            attestationNotes: e.attestationNotes?.trim() || null,
-          })),
-        );
+      // Auto-wrap each individually selected file into a confirmed singleton group.
+      const singletonMappings: { groupId: number; notes: string | null }[] = [];
+      for (const f of fileMap.values()) {
+        const [group] = await tx
+          .insert(evidenceGroupsTable)
+          .values({
+            caseId: referee.caseId,
+            name: f.label.trim().slice(0, 200),
+            criterionFolder: fileMeta.get(f.fileId)?.criterion ?? null,
+            createdBy,
+            status: "confirmed",
+          })
+          .returning();
+        await tx.update(caseFolderItemsTable).set({ groupId: group.id }).where(eq(caseFolderItemsTable.id, f.fileId));
+        singletonMappings.push({ groupId: group.id, notes: f.attestationNotes?.trim() || null });
       }
+
+      // Replace the referee's group mappings with groups[] + the new singletons.
+      await tx.delete(refereeEvidenceGroupsTable).where(eq(refereeEvidenceGroupsTable.refereeId, refereeId));
+      const rows = [
+        ...[...groupMap.values()].map((g) => ({ refereeId, evidenceGroupId: g.evidenceGroupId, attestationNotes: g.attestationNotes?.trim() || null })),
+        ...singletonMappings.map((s) => ({ refereeId, evidenceGroupId: s.groupId, attestationNotes: s.notes })),
+      ];
+      if (rows.length > 0) await tx.insert(refereeEvidenceGroupsTable).values(rows);
     });
 
     const [fresh] = await db
@@ -482,7 +537,7 @@ router.put(
       .where(eq(refereesTable.id, refereeId))
       .limit(1);
     logger.info(
-      { refereeId, projects: projectMap.size, evidence: evidenceMap.size, by: isStaff(aug) ? "staff" : "client" },
+      { refereeId, projects: projectMap.size, groups: groupMap.size, individualFiles: fileMap.size, by: createdBy },
       "[evidence] referee mappings saved",
     );
     res.json({ mappings: await mappingsFor(fresh) });
