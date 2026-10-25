@@ -804,6 +804,82 @@ router.post(
   },
 );
 
+// ─── Shared: ingest a reference-letter file into Drive + the Step 2 flow ────────
+// Used by the staff manual-upload endpoint AND Step 4 finalize. Uploads the buffer
+// to the case's Reference Letters folder, deactivates any prior active letter,
+// inserts the new version (status 'pending_review'), and triggers the client
+// review email. Throws typed errors (httpStatus) on folder/Drive failures.
+
+export class LetterIngestError extends Error {
+  httpStatus: number;
+  constructor(message: string, httpStatus: number) {
+    super(message);
+    this.httpStatus = httpStatus;
+  }
+}
+
+export async function ingestReferenceLetter(
+  referee: typeof refereesTable.$inferSelect,
+  buffer: Buffer,
+  mimeType: string,
+): Promise<{ letter: typeof referenceLettersTable.$inferSelect; warning: string | null }> {
+  const folderDriveId = await getOrCreateCaseSubfolder(referee.caseId, LETTER_FOLDER_NAME);
+  if (!folderDriveId) {
+    throw new LetterIngestError("This case has no Drive folder set up yet", 409);
+  }
+
+  const ext = mimeType === "application/pdf" ? "pdf" : "docx";
+  const fileName = `${referee.fullName} — Reference Letter.${ext}`;
+
+  const drive = getDriveClient();
+  const driveRes = await drive.files.create({
+    supportsAllDrives: true,
+    requestBody: { name: fileName, parents: [folderDriveId] },
+    media: { mimeType, body: Readable.from(buffer) },
+    fields: "id,webViewLink",
+  });
+  const driveFileId = driveRes.data.id;
+  if (!driveFileId) {
+    throw new LetterIngestError("Drive upload returned incomplete data", 502);
+  }
+
+  const letter = await db.transaction(async (tx) => {
+    const [maxRow] = await tx
+      .select({ maxV: sql<number>`coalesce(max(${referenceLettersTable.version}), 0)` })
+      .from(referenceLettersTable)
+      .where(eq(referenceLettersTable.refereeId, referee.id));
+    const nextVersion = (maxRow?.maxV ?? 0) + 1;
+
+    await tx
+      .update(referenceLettersTable)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(referenceLettersTable.refereeId, referee.id),
+          eq(referenceLettersTable.isActive, true),
+        ),
+      );
+
+    const [inserted] = await tx
+      .insert(referenceLettersTable)
+      .values({
+        refereeId: referee.id,
+        driveFileId,
+        driveUrl: driveRes.data.webViewLink ?? null,
+        fileName,
+        version: nextVersion,
+        status: "pending_review",
+        isActive: true,
+        uploadedByStaffAt: new Date(),
+      })
+      .returning();
+    return inserted;
+  });
+
+  const warning = await sendReviewEmail(referee);
+  return { letter, warning };
+}
+
 // ─── Staff: upload a reference letter (PDF/DOCX) ────────────────────────────────
 
 router.post(
@@ -827,70 +903,22 @@ router.post(
       return;
     }
 
-    const folderDriveId = await getOrCreateCaseSubfolder(referee.caseId, LETTER_FOLDER_NAME);
-    if (!folderDriveId) {
-      res.status(409).json({ error: "This case has no Drive folder set up yet" });
-      return;
+    let result;
+    try {
+      result = await ingestReferenceLetter(referee, file.buffer, file.mimetype);
+    } catch (err) {
+      if (err instanceof LetterIngestError) {
+        res.status(err.httpStatus).json({ error: err.message });
+        return;
+      }
+      throw err;
     }
-
-    const ext = file.mimetype === "application/pdf" ? "pdf" : "docx";
-    const fileName = `${referee.fullName} — Reference Letter.${ext}`;
-
-    const drive = getDriveClient();
-    const driveRes = await drive.files.create({
-      supportsAllDrives: true,
-      requestBody: { name: fileName, parents: [folderDriveId] },
-      media: { mimeType: file.mimetype, body: Readable.from(file.buffer) },
-      fields: "id,webViewLink",
-    });
-    const driveFileId = driveRes.data.id;
-    if (!driveFileId) {
-      res.status(502).json({ error: "Drive upload returned incomplete data" });
-      return;
-    }
-
-    // Deactivate any prior active letter and insert the new one (version + 1).
-    const letter = await db.transaction(async (tx) => {
-      const [maxRow] = await tx
-        .select({ maxV: sql<number>`coalesce(max(${referenceLettersTable.version}), 0)` })
-        .from(referenceLettersTable)
-        .where(eq(referenceLettersTable.refereeId, refereeId));
-      const nextVersion = (maxRow?.maxV ?? 0) + 1;
-
-      await tx
-        .update(referenceLettersTable)
-        .set({ isActive: false, updatedAt: new Date() })
-        .where(
-          and(
-            eq(referenceLettersTable.refereeId, refereeId),
-            eq(referenceLettersTable.isActive, true),
-          ),
-        );
-
-      const [inserted] = await tx
-        .insert(referenceLettersTable)
-        .values({
-          refereeId,
-          driveFileId,
-          driveUrl: driveRes.data.webViewLink ?? null,
-          fileName,
-          version: nextVersion,
-          status: "pending_review",
-          isActive: true,
-          uploadedByStaffAt: new Date(),
-        })
-        .returning();
-      return inserted;
-    });
-
-    // Trigger the client review email — non-fatal (upload still succeeds).
-    const warning = await sendReviewEmail(referee);
 
     logger.info(
-      { refereeId, letterId: letter.id, version: letter.version },
+      { refereeId, letterId: result.letter.id, version: result.letter.version },
       "[referees] reference letter uploaded",
     );
-    res.status(201).json({ letter, warning });
+    res.status(201).json({ letter: result.letter, warning: result.warning });
   },
 );
 

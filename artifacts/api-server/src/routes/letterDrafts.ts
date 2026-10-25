@@ -29,6 +29,8 @@ import {
   casePetitionSetupTable,
 } from "@workspace/db";
 import { checkEligibility, generateLetterDraft } from "../services/letterGenerationService";
+import { markdownToLetterDocx } from "../services/letterDocxService";
+import { ingestReferenceLetter, LetterIngestError } from "./referees";
 import { requireClientAuth } from "../middlewares/clientAuth";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { logger } from "../lib/logger";
@@ -36,6 +38,7 @@ import { logger } from "../lib/logger";
 const router: IRouter = Router();
 
 const CLIENT_GENERATION_CAP = 3;
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 type AugmentedRequest = Request & {
   clientUser?: { id: number; name: string; email: string };
@@ -223,6 +226,73 @@ router.put(
 
     logger.info({ refereeId, draftId: draft.id }, "[letterDrafts] draft manually edited");
     res.json({ draft: updated });
+  },
+);
+
+// ─── Staff: finalize (render DOCX → Step 2 upload flow) ──────────────────────────
+
+router.post(
+  "/referees/:id/letter-draft/finalize",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const aug = req as AugmentedRequest;
+    const refereeId = parseInt(req.params.id as string, 10);
+    const referee = await loadAuthorizedReferee(aug, res, refereeId);
+    if (!referee) return;
+
+    const draft = await currentDraft(refereeId);
+    if (!draft) {
+      res.status(404).json({ error: "No draft to finalize for this referee" });
+      return;
+    }
+    if (draft.status === "finalized") {
+      res.status(409).json({ error: "This draft has already been finalized" });
+      return;
+    }
+
+    // Eligibility gate (also blocks when a letter is already pending/confirmed).
+    const elig = await checkEligibility(referee);
+    if (!elig.ok) {
+      res.status(400).json({ error: "Cannot finalize yet", reasons: elig.reasons });
+      return;
+    }
+
+    // Render the markdown draft to a professional DOCX.
+    let buffer: Buffer;
+    try {
+      buffer = await markdownToLetterDocx(draft.content);
+    } catch (err) {
+      logger.error({ err, refereeId }, "[letterDrafts] DOCX render failed");
+      res.status(500).json({ error: "Could not render the letter document" });
+      return;
+    }
+
+    // Splice into the SAME Step 2 upload path (Drive upload + reference_letters
+    // row 'pending_review' + client review email).
+    let result;
+    try {
+      result = await ingestReferenceLetter(referee, buffer, DOCX_MIME);
+    } catch (err) {
+      if (err instanceof LetterIngestError) {
+        res.status(err.httpStatus).json({ error: err.message });
+        return;
+      }
+      logger.error({ err, refereeId }, "[letterDrafts] finalize upload failed");
+      res.status(502).json({ error: "Could not upload the finalized letter" });
+      return;
+    }
+
+    const [finalized] = await db
+      .update(letterDraftsTable)
+      .set({ status: "finalized", updatedAt: new Date() })
+      .where(eq(letterDraftsTable.id, draft.id))
+      .returning();
+
+    logger.info(
+      { refereeId, draftId: draft.id, letterId: result.letter.id, version: result.letter.version },
+      "[letterDrafts] draft finalized → reference letter created",
+    );
+    res.status(201).json({ letter: result.letter, draft: finalized, warning: result.warning });
   },
 );
 
