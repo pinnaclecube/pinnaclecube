@@ -20,7 +20,7 @@ import {
   type Response,
   type NextFunction,
 } from "express";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   db,
@@ -314,6 +314,41 @@ router.get(
     const referee = await loadAuthorizedReferee(aug, res, refereeId);
     if (!referee) return;
     res.json({ mappings: await mappingsFor(referee) });
+  },
+);
+
+// Per-referee mapping counts for a case (summary indicators) — one request.
+router.get(
+  "/cases/:caseId/referee-mapping-counts",
+  requireAnyAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const aug = req as AugmentedRequest;
+    const caseId = parseInt(req.params.caseId as string, 10);
+    const caseRecord = await authorizeCase(aug, res, caseId);
+    if (!caseRecord) return;
+
+    const projCounts = await db
+      .select({ refereeId: refereeProjectsTable.refereeId, n: sql<number>`count(*)::int` })
+      .from(refereeProjectsTable)
+      .innerJoin(refereesTable, eq(refereesTable.id, refereeProjectsTable.refereeId))
+      .where(eq(refereesTable.caseId, caseId))
+      .groupBy(refereeProjectsTable.refereeId);
+
+    const evCounts = await db
+      .select({ refereeId: refereeEvidenceTable.refereeId, n: sql<number>`count(*)::int` })
+      .from(refereeEvidenceTable)
+      .innerJoin(refereesTable, eq(refereesTable.id, refereeEvidenceTable.refereeId))
+      .where(eq(refereesTable.caseId, caseId))
+      .groupBy(refereeEvidenceTable.refereeId);
+
+    const map = new Map<number, { refereeId: number; projects: number; evidence: number }>();
+    for (const r of projCounts) map.set(r.refereeId, { refereeId: r.refereeId, projects: r.n, evidence: 0 });
+    for (const r of evCounts) {
+      const cur = map.get(r.refereeId) ?? { refereeId: r.refereeId, projects: 0, evidence: 0 };
+      cur.evidence = r.n;
+      map.set(r.refereeId, cur);
+    }
+    res.json({ counts: [...map.values()] });
   },
 );
 

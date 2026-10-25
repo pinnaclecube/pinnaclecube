@@ -56,7 +56,7 @@ function snapshot(
 }
 
 export function RefereeMappingPanel({
-  refereeId, caseId, fetchFn, workedTogether, readOnly = false, staff = false,
+  refereeId, caseId, fetchFn, workedTogether, readOnly = false, staff = false, onSaved,
 }: {
   refereeId: number;
   caseId: number;
@@ -64,6 +64,7 @@ export function RefereeMappingPanel({
   workedTogether: boolean;
   readOnly?: boolean;
   staff?: boolean;
+  onSaved?: (counts: { projects: number; evidence: number }) => void;
 }) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
@@ -158,8 +159,10 @@ export function RefereeMappingPanel({
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Save failed");
-      applyMapping(d.mappings as MappingData, projects, groups);
+      const fresh = d.mappings as MappingData;
+      applyMapping(fresh, projects, groups);
       setShowErrors(false);
+      onSaved?.({ projects: fresh.projects.length, evidence: fresh.evidence.length });
       toast({ title: "Mapping saved" });
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : "Save failed", variant: "destructive" });

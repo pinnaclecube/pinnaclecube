@@ -20,12 +20,13 @@ import {
 import {
   Loader2, UserPlus, ChevronRight, Trash2, Pencil, ExternalLink,
   ShieldCheck, Users, Mail, Shield, Lock, Unlock, FileUp, Send, FileText,
-  FileSpreadsheet,
+  FileSpreadsheet, HandHeart,
 } from "lucide-react";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { RefereeForm, type Referee, type LookupItem } from "@/components/referees/RefereeForm";
+import { RefereeMappingPanel } from "@/components/referees/RefereeMappingPanel";
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
@@ -69,13 +70,16 @@ function driveFileUrl(fileId: string): string {
 // ─── Referee row (summary + expandable detail) ───────────────────────────────────
 
 function RefereeRow({
-  referee, onEdit, onDelete, onSaved, onRequestUnlock,
+  referee, caseId, mappingCount, onEdit, onDelete, onSaved, onRequestUnlock, onMappingSaved,
 }: {
   referee: Referee;
+  caseId: number;
+  mappingCount?: { projects: number; evidence: number };
   onEdit: (r: Referee) => void;
   onDelete: (r: Referee) => void;
   onSaved: (r: Referee) => void;
   onRequestUnlock: (r: Referee) => void;
+  onMappingSaved: (refereeId: number, counts: { projects: number; evidence: number }) => void;
 }) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -154,6 +158,12 @@ function RefereeRow({
             <Users className="w-2.5 h-2.5" />
             {referee.workedTogether ? "Worked together" : "Independent"}
           </Badge>
+          {mappingCount && (mappingCount.projects > 0 || mappingCount.evidence > 0) && (
+            <Badge variant="outline" className="text-[10px] gap-1 border-[#1E2D6B]/20 text-[#1E2D6B] bg-[#1E2D6B]/5">
+              <HandHeart className="w-2.5 h-2.5" />
+              {mappingCount.projects} project{mappingCount.projects !== 1 ? "s" : ""} · {mappingCount.evidence} evidence item{mappingCount.evidence !== 1 ? "s" : ""}
+            </Badge>
+          )}
           {locked ? (
             <button onClick={() => onRequestUnlock(referee)}
               className="p-1 text-amber-500 hover:text-amber-700" title="Unlock referee">
@@ -245,6 +255,16 @@ function RefereeRow({
               </div>
             )}
           </div>
+
+          <RefereeMappingPanel
+            refereeId={referee.id}
+            caseId={caseId}
+            fetchFn={staffFetch}
+            workedTogether={!!referee.workedTogether}
+            readOnly={locked}
+            staff
+            onSaved={(counts) => onMappingSaved(referee.id, counts)}
+          />
         </div>
       )}
     </div>
@@ -283,6 +303,7 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
   const [unlockTarget, setUnlockTarget] = useState<Referee | null>(null);
   const [unlocking, setUnlocking] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [mappingCounts, setMappingCounts] = useState<Record<number, { projects: number; evidence: number }>>({});
   const { toast } = useToast();
 
   const load = useCallback(async () => {
@@ -298,14 +319,20 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
       }
       setCaseId(resolvedCaseId);
 
-      const [dt, ct, refs] = await Promise.all([
+      const [dt, ct, refs, counts] = await Promise.all([
         staffFetch("/lookups/degree-types").then((r) => r.json()),
         staffFetch("/lookups/contribution-types").then((r) => r.json()),
         staffFetch(`/cases/${resolvedCaseId}/referees`).then((r) => r.json()),
+        staffFetch(`/cases/${resolvedCaseId}/referee-mapping-counts`).then((r) => r.json()).catch(() => ({ counts: [] })),
       ]);
       setDegreeTypes(dt.degreeTypes ?? []);
       setContributionTypes(ct.contributionTypes ?? []);
       setReferees(refs.referees ?? []);
+      const cmap: Record<number, { projects: number; evidence: number }> = {};
+      for (const c of (counts.counts ?? []) as { refereeId: number; projects: number; evidence: number }[]) {
+        cmap[c.refereeId] = { projects: c.projects, evidence: c.evidence };
+      }
+      setMappingCounts(cmap);
     } catch {
       setError("Something went wrong loading referees. Please try again.");
     } finally {
@@ -419,11 +446,13 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
       ) : (
         <div className="space-y-2">
           {referees.map((r) => (
-            <RefereeRow key={r.id} referee={r}
+            <RefereeRow key={r.id} referee={r} caseId={caseId as number}
+              mappingCount={mappingCounts[r.id]}
               onEdit={(ref) => setFormModal({ open: true, referee: ref })}
               onDelete={setDeleteTarget}
               onSaved={onSaved}
-              onRequestUnlock={setUnlockTarget} />
+              onRequestUnlock={setUnlockTarget}
+              onMappingSaved={(id, counts) => setMappingCounts((prev) => ({ ...prev, [id]: counts }))} />
           ))}
         </div>
       )}
