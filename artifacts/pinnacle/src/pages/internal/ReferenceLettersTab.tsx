@@ -20,13 +20,16 @@ import {
 import {
   Loader2, UserPlus, ChevronRight, Trash2, Pencil, ExternalLink,
   ShieldCheck, Users, Mail, Shield, Lock, Unlock, FileUp, Send, FileText,
-  FileSpreadsheet, HandHeart,
+  FileSpreadsheet, HandHeart, Sparkles, MessageSquare,
 } from "lucide-react";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { RefereeForm, type Referee, type LookupItem } from "@/components/referees/RefereeForm";
 import { RefereeMappingPanel } from "@/components/referees/RefereeMappingPanel";
+import { LetterDraftPanel } from "@/components/referees/LetterDraftPanel";
+
+interface DraftStatus { status: "draft" | "finalized"; version: number; clientRequestedChanges: boolean }
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
@@ -70,16 +73,18 @@ function driveFileUrl(fileId: string): string {
 // ─── Referee row (summary + expandable detail) ───────────────────────────────────
 
 function RefereeRow({
-  referee, caseId, mappingCount, onEdit, onDelete, onSaved, onRequestUnlock, onMappingSaved,
+  referee, caseId, mappingCount, draftStatus, onEdit, onDelete, onSaved, onRequestUnlock, onMappingSaved, onDraftChanged,
 }: {
   referee: Referee;
   caseId: number;
   mappingCount?: { projects: number; evidence: number };
+  draftStatus?: DraftStatus;
   onEdit: (r: Referee) => void;
   onDelete: (r: Referee) => void;
   onSaved: (r: Referee) => void;
   onRequestUnlock: (r: Referee) => void;
   onMappingSaved: (refereeId: number, counts: { projects: number; evidence: number }) => void;
+  onDraftChanged: () => void;
 }) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -162,6 +167,20 @@ function RefereeRow({
             <Badge variant="outline" className="text-[10px] gap-1 border-[#1E2D6B]/20 text-[#1E2D6B] bg-[#1E2D6B]/5">
               <HandHeart className="w-2.5 h-2.5" />
               {mappingCount.projects} project{mappingCount.projects !== 1 ? "s" : ""} · {mappingCount.evidence} evidence item{mappingCount.evidence !== 1 ? "s" : ""}
+            </Badge>
+          )}
+          <Badge variant="outline" className={cn(
+            "text-[10px] gap-1",
+            draftStatus?.status === "finalized" ? "border-green-300 text-green-700 bg-green-50"
+              : draftStatus?.status === "draft" ? "border-violet-300 text-violet-700 bg-violet-50"
+                : "border-gray-200 text-gray-400",
+          )}>
+            <Sparkles className="w-2.5 h-2.5" />
+            {draftStatus?.status === "finalized" ? "Finalized" : draftStatus?.status === "draft" ? `Draft v${draftStatus.version}` : "No draft"}
+          </Badge>
+          {draftStatus?.clientRequestedChanges && (
+            <Badge variant="outline" className="text-[10px] gap-1 border-amber-300 text-amber-700 bg-amber-50">
+              <MessageSquare className="w-2.5 h-2.5" /> Client requested changes
             </Badge>
           )}
           {locked ? (
@@ -265,6 +284,14 @@ function RefereeRow({
             staff
             onSaved={(counts) => onMappingSaved(referee.id, counts)}
           />
+
+          <LetterDraftPanel
+            refereeId={referee.id}
+            fetchFn={staffFetch}
+            readOnly={locked}
+            staff
+            onFinalized={onDraftChanged}
+          />
         </div>
       )}
     </div>
@@ -304,6 +331,7 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
   const [unlocking, setUnlocking] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [mappingCounts, setMappingCounts] = useState<Record<number, { projects: number; evidence: number }>>({});
+  const [draftStatuses, setDraftStatuses] = useState<Record<number, DraftStatus>>({});
   const { toast } = useToast();
 
   const load = useCallback(async () => {
@@ -319,11 +347,12 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
       }
       setCaseId(resolvedCaseId);
 
-      const [dt, ct, refs, counts] = await Promise.all([
+      const [dt, ct, refs, counts, drafts] = await Promise.all([
         staffFetch("/lookups/degree-types").then((r) => r.json()),
         staffFetch("/lookups/contribution-types").then((r) => r.json()),
         staffFetch(`/cases/${resolvedCaseId}/referees`).then((r) => r.json()),
         staffFetch(`/cases/${resolvedCaseId}/referee-mapping-counts`).then((r) => r.json()).catch(() => ({ counts: [] })),
+        staffFetch(`/cases/${resolvedCaseId}/referee-draft-status`).then((r) => r.json()).catch(() => ({ statuses: [] })),
       ]);
       setDegreeTypes(dt.degreeTypes ?? []);
       setContributionTypes(ct.contributionTypes ?? []);
@@ -333,6 +362,11 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
         cmap[c.refereeId] = { projects: c.projects, evidence: c.evidence };
       }
       setMappingCounts(cmap);
+      const dmap: Record<number, DraftStatus> = {};
+      for (const s of (drafts.statuses ?? []) as ({ refereeId: number } & DraftStatus)[]) {
+        dmap[s.refereeId] = { status: s.status, version: s.version, clientRequestedChanges: s.clientRequestedChanges };
+      }
+      setDraftStatuses(dmap);
     } catch {
       setError("Something went wrong loading referees. Please try again.");
     } finally {
@@ -448,11 +482,13 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
           {referees.map((r) => (
             <RefereeRow key={r.id} referee={r} caseId={caseId as number}
               mappingCount={mappingCounts[r.id]}
+              draftStatus={draftStatuses[r.id]}
               onEdit={(ref) => setFormModal({ open: true, referee: ref })}
               onDelete={setDeleteTarget}
               onSaved={onSaved}
               onRequestUnlock={setUnlockTarget}
-              onMappingSaved={(id, counts) => setMappingCounts((prev) => ({ ...prev, [id]: counts }))} />
+              onMappingSaved={(id, counts) => setMappingCounts((prev) => ({ ...prev, [id]: counts }))}
+              onDraftChanged={() => void load()} />
           ))}
         </div>
       )}

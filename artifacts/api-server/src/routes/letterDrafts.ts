@@ -296,4 +296,59 @@ router.post(
   },
 );
 
+// ─── Per-referee current draft status for a case (row chips) ─────────────────────
+
+router.get(
+  "/cases/:caseId/referee-draft-status",
+  requireAnyAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const aug = req as AugmentedRequest;
+    const caseId = parseInt(req.params.caseId as string, 10);
+    if (isNaN(caseId)) {
+      res.status(400).json({ error: "Invalid caseId" });
+      return;
+    }
+    const [caseRecord] = await db
+      .select()
+      .from(casePetitionSetupTable)
+      .where(eq(casePetitionSetupTable.id, caseId))
+      .limit(1);
+    if (!caseRecord) {
+      res.status(404).json({ error: "Case not found" });
+      return;
+    }
+    if (aug.clientUser && caseRecord.profileId !== aug.clientUser.id) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    const rows = await db
+      .select({
+        refereeId: letterDraftsTable.refereeId,
+        status: letterDraftsTable.status,
+        version: letterDraftsTable.version,
+        generatedBy: letterDraftsTable.generatedBy,
+        feedbackProvided: letterDraftsTable.feedbackProvided,
+      })
+      .from(letterDraftsTable)
+      .innerJoin(refereesTable, eq(refereesTable.id, letterDraftsTable.refereeId))
+      .where(and(eq(refereesTable.caseId, caseId), ne(letterDraftsTable.status, "superseded")))
+      .orderBy(desc(letterDraftsTable.version));
+
+    const seen = new Set<number>();
+    const statuses = [];
+    for (const r of rows) {
+      if (seen.has(r.refereeId)) continue;
+      seen.add(r.refereeId);
+      statuses.push({
+        refereeId: r.refereeId,
+        status: r.status,
+        version: r.version,
+        clientRequestedChanges: r.generatedBy === "client" && !!r.feedbackProvided && r.status !== "finalized",
+      });
+    }
+    res.json({ statuses });
+  },
+);
+
 export default router;
