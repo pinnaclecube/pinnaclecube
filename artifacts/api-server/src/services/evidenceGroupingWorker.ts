@@ -7,25 +7,53 @@
  * files and none has been grouped since.
  */
 
-import { eq, and, asc, sql, desc } from "drizzle-orm";
+import { eq, and, asc, lt, sql, desc } from "drizzle-orm";
 import { db, evidenceGroupingJobsTable } from "@workspace/db";
 import { runGroupingForCase, ungroupedFileCount } from "./evidenceGroupingService";
 import { logger } from "../lib/logger";
 
 const AUTO_UNGROUPED_THRESHOLD = 10;
+// A job stuck in 'processing' past this long was killed mid-run (the serverless
+// function timed out before it could write a terminal status). Such jobs are
+// reclaimed and retried; a live run can never exceed the 60s function budget, so
+// this threshold never steals an in-flight job.
+const STALE_PROCESSING_MS = 3 * 60 * 1000;
+const MAX_ATTEMPTS = 3;
+
+// SQL predicate for a claimable job: freshly queued, or a stale 'processing' job
+// (killed mid-run) that still has attempts left.
+function claimable(threshold: Date) {
+  return sql`(${evidenceGroupingJobsTable.status} = 'queued') OR (${evidenceGroupingJobsTable.status} = 'processing' AND ${evidenceGroupingJobsTable.startedAt} < ${threshold} AND ${evidenceGroupingJobsTable.attempts} < ${MAX_ATTEMPTS})`;
+}
+
+// Give up on jobs that stayed stuck across MAX_ATTEMPTS runs — mark them failed so
+// the case is no longer wedged by the one-active-per-case index.
+async function failExhaustedStaleJobs(threshold: Date): Promise<void> {
+  await db
+    .update(evidenceGroupingJobsTable)
+    .set({ status: "failed", error: "grouping did not complete (timed out or crashed) after repeated attempts", completedAt: new Date() })
+    .where(and(
+      eq(evidenceGroupingJobsTable.status, "processing"),
+      lt(evidenceGroupingJobsTable.startedAt, threshold),
+      sql`${evidenceGroupingJobsTable.attempts} >= ${MAX_ATTEMPTS}`,
+    ));
+}
 
 async function claimNextJob(): Promise<typeof evidenceGroupingJobsTable.$inferSelect | null> {
+  const threshold = new Date(Date.now() - STALE_PROCESSING_MS);
   const candidates = await db
     .select({ id: evidenceGroupingJobsTable.id })
     .from(evidenceGroupingJobsTable)
-    .where(eq(evidenceGroupingJobsTable.status, "queued"))
+    .where(claimable(threshold))
     .orderBy(asc(evidenceGroupingJobsTable.createdAt))
     .limit(5);
   for (const c of candidates) {
+    // Atomic claim: re-check the same predicate so two workers can't both take it
+    // (claiming sets started_at = now, which fails a concurrent stale re-check).
     const [claimed] = await db
       .update(evidenceGroupingJobsTable)
       .set({ status: "processing", startedAt: new Date(), attempts: sql`${evidenceGroupingJobsTable.attempts} + 1` })
-      .where(and(eq(evidenceGroupingJobsTable.id, c.id), eq(evidenceGroupingJobsTable.status, "queued")))
+      .where(and(eq(evidenceGroupingJobsTable.id, c.id), claimable(threshold)))
       .returning();
     if (claimed) return claimed;
   }
@@ -40,6 +68,9 @@ export async function drainEvidenceGroupingQueue(
   const start = Date.now();
   let processed = 0;
   let failed = 0;
+
+  // Retire jobs that have exhausted their attempts so they stop blocking the case.
+  await failExhaustedStaleJobs(new Date(Date.now() - STALE_PROCESSING_MS));
 
   while (processed + failed < maxJobs && Date.now() - start < budgetMs) {
     const job = await claimNextJob();

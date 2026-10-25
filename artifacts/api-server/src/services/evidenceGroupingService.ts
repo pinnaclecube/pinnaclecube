@@ -25,8 +25,13 @@ import { logger } from "../lib/logger";
 const MODEL = "claude-sonnet-4-5";
 const MAX_TOKENS = 4000;
 const SNIPPET_CHARS = 300;
-const EXTRACT_FILE_CAP = 60;   // bound downloads per run (filenames are sent for all)
+const EXTRACT_FILE_CAP = 40;        // bound downloads per run (filenames are sent for all)
 const EXTRACT_CONCURRENCY = 6;
+const EXTRACT_BUDGET_MS = 20000;    // stop downloading once this much time is spent on extraction
+const MODEL_TIMEOUT_MS = 35000;     // first model attempt
+const MODEL_RETRY_TIMEOUT_MS = 18000; // parse-retry attempt
+// The whole run must finish inside the serverless function's maxDuration (60s):
+// bounded extraction + one bounded model call + a short parse-retry leaves margin.
 const PDF = "application/pdf";
 const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
@@ -106,8 +111,12 @@ async function assembleInput(caseId: number) {
         }));
 
   // Snippets for up to EXTRACT_FILE_CAP PDF/DOCX files (names are sent for all).
+  // Bounded by a wall-clock budget so downloads can never consume the whole
+  // function timeout — files not reached in time are sent name-only.
   const extractable = ungrouped.filter((f) => f.mimeType === PDF || f.mimeType === DOCX).slice(0, EXTRACT_FILE_CAP);
+  const extractStart = Date.now();
   await withConcurrency(extractable, EXTRACT_CONCURRENCY, async (f) => {
+    if (Date.now() - extractStart > EXTRACT_BUDGET_MS) return; // out of budget → name-only
     const s = await extractSnippet(f.driveId, f.mimeType, f.name);
     if (s) f.snippet = s;
   });
@@ -182,21 +191,28 @@ function buildUserMessage(input: Awaited<ReturnType<typeof assembleInput>>): str
 
 async function callModel(userMessage: string): Promise<GroupingResultT> {
   const ai = getAI();
-  const run = async () => {
-    const res = await ai.messages.create({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userMessage }],
-    });
+  const run = async (timeoutMs: number) => {
+    const res = await ai.messages.create(
+      {
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: "user", content: userMessage }],
+      },
+      { timeout: timeoutMs, maxRetries: 0 },
+    );
     const raw = res.content.map((b: { type: string; text?: string }) => (b.type === "text" ? b.text ?? "" : "")).join("");
     return GroupingResult.parse(extractJson(raw));
   };
   try {
-    return await run();
+    return await run(MODEL_TIMEOUT_MS);
   } catch (err) {
+    // Only retry parse/validation failures. A transport error or timeout won't be
+    // fixed by an immediate retry and would risk overrunning the function budget —
+    // fail fast and let the worker re-queue the job on the next cron tick.
+    if (err instanceof Anthropic.APIError) throw err;
     logger.warn({ err }, "[evidenceGrouping] first parse failed — retrying once");
-    return await run();
+    return await run(MODEL_RETRY_TIMEOUT_MS);
   }
 }
 
