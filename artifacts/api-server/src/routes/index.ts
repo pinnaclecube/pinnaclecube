@@ -34,6 +34,7 @@ import cronRouter from "./cron";
 import refereesRouter from "./referees";
 import projectsRouter from "./projects";
 import evidenceRegistryRouter from "./evidenceRegistry";
+import letterDraftsRouter from "./letterDrafts";
 
 const router: IRouter = Router();
 
@@ -72,5 +73,6 @@ router.use(cronRouter);
 router.use(refereesRouter);
 router.use(projectsRouter);
 router.use(evidenceRegistryRouter);
+router.use(letterDraftsRouter);
 
 export default router;
