@@ -1,14 +1,15 @@
 /**
  * letterContextService.ts — Pinnacle³
  *
- * Step 4 — assembles everything the AI needs to draft a referee's reference
+ * Step 4/5 — assembles everything the AI needs to draft a referee's reference
  * letter: applicant profile, referee intake + contributions, mapped projects
- * (all completed sections), and mapped evidence (with text extracted from the
- * file itself). Reuses extractText + downloadDriveFile. Never fails the whole
- * assembly on an extraction error — logs and falls back to label + notes.
+ * (all completed sections), and mapped evidence GROUPS (each expanded to all of
+ * its member files, with text extracted from the files themselves). Reuses
+ * extractText + downloadDriveFile. Never fails the whole assembly on an
+ * extraction error — logs and falls back to the group framing + notes.
  */
 
-import { eq, inArray } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import {
   db,
   refereesTable,
@@ -17,7 +18,8 @@ import {
   degreeTypesTable,
   caseProjectsTable,
   refereeProjectsTable,
-  refereeEvidenceTable,
+  evidenceGroupsTable,
+  refereeEvidenceGroupsTable,
   caseFolderItemsTable,
   casePetitionSetupTable,
   profilesTable,
@@ -31,6 +33,7 @@ import { criterionDisplayName } from "./evidenceSyncService";
 import { logger } from "../lib/logger";
 
 const PER_FILE_WORD_CAP = 3000;
+const PER_GROUP_WORD_BUDGET = 5000; // per mapped group, within the total below
 const TOTAL_EVIDENCE_WORD_BUDGET = 24000; // truncate evidence first, never project/intake
 
 // Ordered [column, label] for the project documentation sections (1–9).
@@ -107,8 +110,9 @@ export interface LetterContext {
     attestationNotes: string | null;
   }[];
   evidence: {
-    displayLabel: string; criterion: string; attestationNotes: string | null;
-    fileName: string; extractedText: string | null; extractionFailed: boolean;
+    groupName: string; description: string | null; criterion: string;
+    attestationNotes: string | null;
+    members: { fileName: string; extractedText: string | null; extractionFailed: boolean }[];
   }[];
 }
 
@@ -188,45 +192,78 @@ export async function buildLetterContext(refereeId: number): Promise<LetterConte
     };
   });
 
-  // ── Mapped evidence (with text extraction, budgeted) ─────────────────────────
-  const evRows = await db
+  // ── Mapped evidence GROUPS (each expanded to all member files, budgeted) ─────
+  const groupRows = await db
     .select({
-      displayLabel: refereeEvidenceTable.displayLabel,
-      attestationNotes: refereeEvidenceTable.attestationNotes,
-      driveId: caseFolderItemsTable.driveId,
-      fileName: caseFolderItemsTable.name,
-      mimeType: caseFolderItemsTable.mimeType,
-      criterion: caseFolderItemsTable.criterionFolder,
+      groupId: evidenceGroupsTable.id,
+      groupName: evidenceGroupsTable.name,
+      description: evidenceGroupsTable.description,
+      criterion: evidenceGroupsTable.criterionFolder,
+      attestationNotes: refereeEvidenceGroupsTable.attestationNotes,
     })
-    .from(refereeEvidenceTable)
-    .innerJoin(caseFolderItemsTable, eq(caseFolderItemsTable.id, refereeEvidenceTable.evidenceFileId))
-    .where(eq(refereeEvidenceTable.refereeId, refereeId));
+    .from(refereeEvidenceGroupsTable)
+    .innerJoin(evidenceGroupsTable, eq(evidenceGroupsTable.id, refereeEvidenceGroupsTable.evidenceGroupId))
+    .where(eq(refereeEvidenceGroupsTable.refereeId, refereeId));
 
-  // Per-file cap shrinks as the number of mapped files grows (evidence truncates
-  // first, never project/referee data).
-  const perFileCap = evRows.length > 0
-    ? Math.min(PER_FILE_WORD_CAP, Math.floor(TOTAL_EVIDENCE_WORD_BUDGET / evRows.length))
-    : PER_FILE_WORD_CAP;
+  // Member files for all mapped groups (one query), keyed by group.
+  const groupIds = groupRows.map((g) => g.groupId);
+  const memberRows = groupIds.length > 0
+    ? await db
+        .select({
+          groupId: caseFolderItemsTable.groupId,
+          driveId: caseFolderItemsTable.driveId,
+          fileName: caseFolderItemsTable.name,
+          mimeType: caseFolderItemsTable.mimeType,
+        })
+        .from(caseFolderItemsTable)
+        .where(and(
+          inArray(caseFolderItemsTable.groupId, groupIds),
+          eq(caseFolderItemsTable.isDeletedInDrive, false),
+        ))
+    : [];
+  const membersByGroup = new Map<number, typeof memberRows>();
+  for (const m of memberRows) {
+    if (m.groupId == null) continue;
+    const arr = membersByGroup.get(m.groupId) ?? [];
+    arr.push(m);
+    membersByGroup.set(m.groupId, arr);
+  }
+
+  // Each group gets up to PER_GROUP_WORD_BUDGET, but the groups together stay
+  // within TOTAL_EVIDENCE_WORD_BUDGET (evidence truncates first, never
+  // project/referee data). Within a group the budget is split across members.
+  const perGroupBudget = groupRows.length > 0
+    ? Math.min(PER_GROUP_WORD_BUDGET, Math.floor(TOTAL_EVIDENCE_WORD_BUDGET / groupRows.length))
+    : PER_GROUP_WORD_BUDGET;
 
   const evidence: LetterContext["evidence"] = [];
-  for (const e of evRows) {
-    let extractedText: string | null = null;
-    let extractionFailed = false;
-    try {
-      const buffer = await downloadDriveFile(e.driveId);
-      const text = await extractText(buffer, e.mimeType, e.fileName);
-      extractedText = text && text.trim() ? truncateWords(text, perFileCap) : null;
-    } catch (err) {
-      extractionFailed = true;
-      logger.error({ err, refereeId, fileName: e.fileName }, "[letterContext] evidence extraction failed — using label + notes only");
+  for (const g of groupRows) {
+    const members = membersByGroup.get(g.groupId) ?? [];
+    const perMemberCap = members.length > 0
+      ? Math.min(PER_FILE_WORD_CAP, Math.floor(perGroupBudget / members.length))
+      : PER_FILE_WORD_CAP;
+
+    const extractedMembers: LetterContext["evidence"][number]["members"] = [];
+    for (const m of members) {
+      let extractedText: string | null = null;
+      let extractionFailed = false;
+      try {
+        const buffer = await downloadDriveFile(m.driveId);
+        const text = await extractText(buffer, m.mimeType, m.fileName);
+        extractedText = text && text.trim() ? truncateWords(text, perMemberCap) : null;
+      } catch (err) {
+        extractionFailed = true;
+        logger.error({ err, refereeId, groupId: g.groupId, fileName: m.fileName }, "[letterContext] evidence extraction failed — using group framing + notes only");
+      }
+      extractedMembers.push({ fileName: m.fileName, extractedText, extractionFailed });
     }
+
     evidence.push({
-      displayLabel: e.displayLabel,
-      criterion: criterionDisplayName(e.criterion ?? "unclassified"),
-      attestationNotes: e.attestationNotes,
-      fileName: e.fileName,
-      extractedText,
-      extractionFailed,
+      groupName: g.groupName,
+      description: g.description,
+      criterion: criterionDisplayName(g.criterion ?? "unclassified"),
+      attestationNotes: g.attestationNotes,
+      members: extractedMembers,
     });
   }
 
@@ -291,13 +328,22 @@ export function serializeLetterContext(ctx: LetterContext): string {
     if (p.attestationNotes) lines.push(`What this referee can attest to on this project: ${p.attestationNotes}`);
   });
 
-  lines.push("\n=== MAPPED EVIDENCE ===");
+  lines.push("\n=== MAPPED EVIDENCE GROUPS ===");
   if (!ctx.evidence.length) lines.push("(none mapped)");
   ctx.evidence.forEach((e, i) => {
-    lines.push(`\n[Evidence ${i + 1}] ${e.displayLabel}  (criterion: ${e.criterion})`);
-    if (e.attestationNotes) lines.push(`What this referee can attest to: ${e.attestationNotes}`);
-    if (e.extractedText) lines.push(`Extracted content:\n${e.extractedText}`);
-    else lines.push(e.extractionFailed ? "(file text could not be extracted — rely on the label and notes above)" : "(no extractable text)");
+    lines.push(`\n[Evidence group ${i + 1}] ${e.groupName}  (criterion: ${e.criterion})`);
+    if (e.description) lines.push(`Group description: ${e.description}`);
+    if (e.attestationNotes) lines.push(`What this referee can attest to about this group: ${e.attestationNotes}`);
+    if (!e.members.length) {
+      lines.push("(no files in this group)");
+      return;
+    }
+    lines.push(`Supporting documents in this group (${e.members.length}):`);
+    e.members.forEach((m, j) => {
+      lines.push(`\n  (${i + 1}.${j + 1}) ${m.fileName}`);
+      if (m.extractedText) lines.push(`  Extracted content:\n${m.extractedText}`);
+      else lines.push(m.extractionFailed ? "  (file text could not be extracted — rely on the group framing and notes above)" : "  (no extractable text)");
+    });
   });
 
   return lines.join("\n");
