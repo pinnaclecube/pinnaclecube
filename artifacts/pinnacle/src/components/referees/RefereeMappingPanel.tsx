@@ -1,13 +1,19 @@
 /**
  * RefereeMappingPanel.tsx — Pinnacle³
  *
- * Step 3 — "What can this referee attest to?" Maps a referee to the case's
- * projects and evidence files (+ shared worked-together context). Shared by the
- * client portal and the staff portal (each passes its own fetchFn). Input for
- * AI letter generation in Step 4.
+ * Step 3/5 — "What can this referee attest to?" Maps a referee to the case's
+ * projects and confirmed evidence GROUPS (+ shared worked-together context).
+ * Shared by the client portal and the staff portal (each passes its own fetchFn).
+ * Input for AI letter generation in Step 6.
+ *
+ * Evidence is organized as curated groups (Step 5). The referee is mapped to
+ * confirmed groups; the group name/description is the attestation label, so there
+ * is no per-item label on grouped evidence. An "Individual documents" subsection
+ * lets the user attach a still-ungrouped file by giving it a short label — that
+ * becomes a confirmed singleton group on save (server-side).
  *
  * Loads: GET /referees/:id/mappings, GET /cases/:caseId/projects,
- *        GET /cases/:caseId/evidence-files
+ *        GET /cases/:caseId/evidence-groups
  * Saves: PUT /referees/:id/mappings (single full-replace).
  * Read-only when the referee is locked (consistent with Step 2).
  */
@@ -22,38 +28,49 @@ import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from "@/components/ui/accordion";
 import {
-  Loader2, Check, HandHeart, FolderKanban, FileText, Download, RefreshCw,
-  AlertCircle, Lock, Shield,
+  Loader2, Check, HandHeart, FolderKanban, Layers, FileText, Download, RefreshCw,
+  AlertCircle, Lock, Shield, ChevronRight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { criterionLabel } from "@/lib/criterion";
 
 type FetchFn = (path: string, opts?: RequestInit) => Promise<Response>;
 
 interface ProjectOption { id: number; title: string; organization: string | null }
-interface EvidenceFile {
+interface EvidenceFileLite {
   id: number; fileName: string; mimeType: string; driveUrl: string;
   criterion: string; isStaffOnly: boolean;
 }
-interface EvidenceGroup { criterion: string; label: string; files: EvidenceFile[] }
+interface ConfirmedGroup {
+  id: number; name: string; description: string | null; criterion: string | null;
+  createdBy: string; members: EvidenceFileLite[];
+}
 
 interface MappingData {
   sharedOrganization: string | null;
   sharedPeriod: string | null;
   projects: { projectId: number; attestationNotes: string | null }[];
-  evidence: { evidenceFileId: number; displayLabel: string; attestationNotes: string | null }[];
+  groups: {
+    evidenceGroupId: number; attestationNotes: string | null;
+    name: string; description: string | null; criterion: string | null; memberCount: number;
+  }[];
 }
 
 type ProjSel = Record<number, { checked: boolean; notes: string }>;
-type EvSel = Record<number, { checked: boolean; label: string; notes: string }>;
+type GrpSel = Record<number, { checked: boolean; notes: string }>;
+type FileSel = Record<number, { checked: boolean; label: string; notes: string }>;
 
 function snapshot(
-  org: string, period: string, proj: ProjSel, ev: EvSel,
+  org: string, period: string, proj: ProjSel, grp: GrpSel, file: FileSel,
 ): string {
   const p = Object.entries(proj).filter(([, v]) => v.checked).map(([id, v]) => `${id}:${v.notes}`).sort();
-  const e = Object.entries(ev).filter(([, v]) => v.checked).map(([id, v]) => `${id}:${v.label}:${v.notes}`).sort();
-  return JSON.stringify({ org, period, p, e });
+  const g = Object.entries(grp).filter(([, v]) => v.checked).map(([id, v]) => `${id}:${v.notes}`).sort();
+  const f = Object.entries(file).filter(([, v]) => v.checked).map(([id, v]) => `${id}:${v.label}:${v.notes}`).sort();
+  return JSON.stringify({ org, period, p, g, f });
 }
+
+const criterionKey = (c: string | null | undefined) => c || "unclassified";
 
 export function RefereeMappingPanel({
   refereeId, caseId, fetchFn, workedTogether, readOnly = false, staff = false, onSaved,
@@ -70,50 +87,69 @@ export function RefereeMappingPanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [groups, setGroups] = useState<EvidenceGroup[]>([]);
+  const [confirmedGroups, setConfirmedGroups] = useState<ConfirmedGroup[]>([]);
+  const [ungrouped, setUngrouped] = useState<EvidenceFileLite[]>([]);
   const [sharedOrg, setSharedOrg] = useState("");
   const [sharedPeriod, setSharedPeriod] = useState("");
   const [projSel, setProjSel] = useState<ProjSel>({});
-  const [evSel, setEvSel] = useState<EvSel>({});
+  const [grpSel, setGrpSel] = useState<GrpSel>({});
+  const [fileSel, setFileSel] = useState<FileSel>({});
+  const [openMembers, setOpenMembers] = useState<Record<number, boolean>>({});
   const [savedSnap, setSavedSnap] = useState("");
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [showErrors, setShowErrors] = useState(false);
 
-  const applyMapping = useCallback((mapping: MappingData, projList: ProjectOption[], grps: EvidenceGroup[]) => {
-    setSharedOrg(mapping.sharedOrganization ?? "");
-    setSharedPeriod(mapping.sharedPeriod ?? "");
-    const pNotes = new Map(mapping.projects.map((p) => [p.projectId, p.attestationNotes ?? ""]));
-    const ps: ProjSel = {};
-    for (const p of projList) ps[p.id] = { checked: pNotes.has(p.id), notes: pNotes.get(p.id) ?? "" };
-    setProjSel(ps);
-    const eMap = new Map(mapping.evidence.map((e) => [e.evidenceFileId, e]));
-    const es: EvSel = {};
-    for (const g of grps) for (const f of g.files) {
-      const m = eMap.get(f.id);
-      es[f.id] = { checked: !!m, label: m?.displayLabel ?? "", notes: m?.attestationNotes ?? "" };
-    }
-    setEvSel(es);
-    setSavedSnap(snapshot(mapping.sharedOrganization ?? "", mapping.sharedPeriod ?? "", ps, es));
-  }, []);
+  const applyMapping = useCallback(
+    (mapping: MappingData, projList: ProjectOption[], grps: ConfirmedGroup[], ungr: EvidenceFileLite[]) => {
+      setSharedOrg(mapping.sharedOrganization ?? "");
+      setSharedPeriod(mapping.sharedPeriod ?? "");
+
+      const pNotes = new Map(mapping.projects.map((p) => [p.projectId, p.attestationNotes ?? ""]));
+      const ps: ProjSel = {};
+      for (const p of projList) ps[p.id] = { checked: pNotes.has(p.id), notes: pNotes.get(p.id) ?? "" };
+      setProjSel(ps);
+
+      const gNotes = new Map(mapping.groups.map((g) => [g.evidenceGroupId, g.attestationNotes ?? ""]));
+      const gs: GrpSel = {};
+      for (const g of grps) gs[g.id] = { checked: gNotes.has(g.id), notes: gNotes.get(g.id) ?? "" };
+      setGrpSel(gs);
+
+      // Ungrouped files always start unchecked — once attached they become
+      // confirmed singleton groups and no longer appear here.
+      const fs: FileSel = {};
+      for (const f of ungr) fs[f.id] = { checked: false, label: "", notes: "" };
+      setFileSel(fs);
+
+      setSavedSnap(snapshot(mapping.sharedOrganization ?? "", mapping.sharedPeriod ?? "", ps, gs, fs));
+    },
+    [],
+  );
 
   const load = useCallback(async (refresh = false) => {
     if (refresh) setSyncing(true); else setLoading(true);
     setError(null);
     try {
-      const [mapRes, projRes, evRes] = await Promise.all([
+      // On an explicit refresh, force a Drive sync first (this also auto-enqueues
+      // the AI grouping job server-side); then reload groups.
+      if (refresh) {
+        await fetchFn(`/cases/${caseId}/evidence-files?refresh=1`).catch(() => undefined);
+      }
+      const [mapRes, projRes, grpRes] = await Promise.all([
         fetchFn(`/referees/${refereeId}/mappings`).then((r) => r.json()),
         fetchFn(`/cases/${caseId}/projects`).then((r) => r.json()),
-        fetchFn(`/cases/${caseId}/evidence-files${refresh ? "?refresh=1" : ""}`).then((r) => r.json()),
+        fetchFn(`/cases/${caseId}/evidence-groups`).then((r) => r.json()),
       ]);
       const projList: ProjectOption[] = (projRes.projects ?? []).map((p: ProjectOption) => ({
         id: p.id, title: p.title, organization: p.organization,
       }));
-      const grps: EvidenceGroup[] = evRes.groups ?? [];
+      const grps: ConfirmedGroup[] = grpRes.confirmed ?? [];
+      const ungr: EvidenceFileLite[] = grpRes.ungrouped ?? [];
       setProjects(projList);
-      setGroups(grps);
-      applyMapping(mapRes.mappings as MappingData, projList, grps);
+      setConfirmedGroups(grps);
+      setUngrouped(ungr);
+      applyMapping(mapRes.mappings as MappingData, projList, grps, ungr);
     } catch {
       setError("Could not load this referee's mapping. Please try again.");
     } finally {
@@ -125,19 +161,35 @@ export function RefereeMappingPanel({
   useEffect(() => { void load(false); }, [load]);
 
   const dirty = useMemo(
-    () => snapshot(sharedOrg, sharedPeriod, projSel, evSel) !== savedSnap,
-    [sharedOrg, sharedPeriod, projSel, evSel, savedSnap],
+    () => snapshot(sharedOrg, sharedPeriod, projSel, grpSel, fileSel) !== savedSnap,
+    [sharedOrg, sharedPeriod, projSel, grpSel, fileSel, savedSnap],
   );
 
   const missingLabels = useMemo(
-    () => Object.values(evSel).some((v) => v.checked && !v.label.trim()),
-    [evSel],
+    () => Object.values(fileSel).some((v) => v.checked && !v.label.trim()),
+    [fileSel],
   );
+
+  // Organize confirmed groups + ungrouped files by criterion for display.
+  const byCriterion = useMemo(() => {
+    const m = new Map<string, { groups: ConfirmedGroup[]; files: EvidenceFileLite[] }>();
+    const slot = (k: string) => {
+      if (!m.has(k)) m.set(k, { groups: [], files: [] });
+      return m.get(k)!;
+    };
+    for (const g of confirmedGroups) slot(criterionKey(g.criterion)).groups.push(g);
+    for (const f of ungrouped) slot(criterionKey(f.criterion)).files.push(f);
+    return [...m.entries()].sort(([a], [b]) => {
+      if (a === "unclassified") return 1;
+      if (b === "unclassified") return -1;
+      return criterionLabel(a).localeCompare(criterionLabel(b));
+    });
+  }, [confirmedGroups, ungrouped]);
 
   async function handleSave() {
     if (missingLabels) {
       setShowErrors(true);
-      toast({ title: "Each selected evidence item needs a label", variant: "destructive" });
+      toast({ title: "Each attached individual document needs a short label", variant: "destructive" });
       return;
     }
     setSaving(true);
@@ -148,9 +200,12 @@ export function RefereeMappingPanel({
         projects: Object.entries(projSel)
           .filter(([, v]) => v.checked)
           .map(([id, v]) => ({ projectId: Number(id), attestationNotes: v.notes.trim() || null })),
-        evidence: Object.entries(evSel)
+        groups: Object.entries(grpSel)
           .filter(([, v]) => v.checked)
-          .map(([id, v]) => ({ evidenceFileId: Number(id), displayLabel: v.label.trim(), attestationNotes: v.notes.trim() || null })),
+          .map(([id, v]) => ({ evidenceGroupId: Number(id), attestationNotes: v.notes.trim() || null })),
+        individualFiles: Object.entries(fileSel)
+          .filter(([, v]) => v.checked)
+          .map(([id, v]) => ({ fileId: Number(id), label: v.label.trim(), attestationNotes: v.notes.trim() || null })),
       };
       const r = await fetchFn(`/referees/${refereeId}/mappings`, {
         method: "PUT",
@@ -160,9 +215,10 @@ export function RefereeMappingPanel({
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Save failed");
       const fresh = d.mappings as MappingData;
-      applyMapping(fresh, projects, groups);
+      // Reload so freshly created singleton groups appear as confirmed groups.
+      await load(false);
       setShowErrors(false);
-      onSaved?.({ projects: fresh.projects.length, evidence: fresh.evidence.length });
+      onSaved?.({ projects: fresh.projects.length, evidence: fresh.groups.length });
       toast({ title: "Mapping saved" });
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : "Save failed", variant: "destructive" });
@@ -171,7 +227,7 @@ export function RefereeMappingPanel({
     }
   }
 
-  async function handleDownload(f: EvidenceFile) {
+  async function handleDownload(f: { id: number; fileName: string }) {
     setDownloadingId(f.id);
     try {
       const r = await fetchFn(`/evidence-files/${f.id}/download`);
@@ -191,8 +247,10 @@ export function RefereeMappingPanel({
 
   const setProj = (id: number, patch: Partial<{ checked: boolean; notes: string }>) =>
     setProjSel((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
-  const setEv = (id: number, patch: Partial<{ checked: boolean; label: string; notes: string }>) =>
-    setEvSel((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  const setGrp = (id: number, patch: Partial<{ checked: boolean; notes: string }>) =>
+    setGrpSel((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  const setFile = (id: number, patch: Partial<{ checked: boolean; label: string; notes: string }>) =>
+    setFileSel((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
 
   if (loading) {
     return (
@@ -202,7 +260,9 @@ export function RefereeMappingPanel({
     );
   }
 
-  const nonEmptyGroups = groups.filter((g) => g.files.length > 0);
+  const hasEvidence = confirmedGroups.length > 0 || ungrouped.length > 0;
+  const selectedGroupCount = Object.values(grpSel).filter((v) => v.checked).length
+    + Object.values(fileSel).filter((v) => v.checked).length;
 
   return (
     <div className="rounded-lg border mt-4">
@@ -277,11 +337,11 @@ export function RefereeMappingPanel({
             )}
           </section>
 
-          {/* Evidence */}
+          {/* Evidence groups */}
           <section className="space-y-2">
             <div className="flex items-center gap-2">
               <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5" /> Evidence
+                <Layers className="w-3.5 h-3.5" /> Evidence groups
               </h4>
               <button onClick={() => void load(true)} disabled={syncing}
                 className="ml-auto inline-flex items-center gap-1 text-[11px] text-[#1E2D6B] hover:text-[#3D4FA8] disabled:opacity-50"
@@ -289,64 +349,143 @@ export function RefereeMappingPanel({
                 <RefreshCw className={cn("w-3 h-3", syncing && "animate-spin")} /> Refresh from Drive
               </button>
             </div>
-            {nonEmptyGroups.length === 0 ? (
+            {!hasEvidence ? (
               <p className="text-xs text-muted-foreground">
-                No evidence files yet. Upload documents to the case's Evidence folders in Drive, then Refresh.
+                No evidence yet. Upload documents to the case's Evidence folders in Drive, then Refresh —
+                they'll be grouped automatically for curation{staff ? " in the Evidence Groups tab" : ""}.
               </p>
             ) : (
               <Accordion type="multiple" className="rounded-md border divide-y">
-                {nonEmptyGroups.map((g) => {
-                  const selectedCount = g.files.filter((f) => evSel[f.id]?.checked).length;
+                {byCriterion.map(([crit, { groups, files }]) => {
+                  const selInCrit = groups.filter((g) => grpSel[g.id]?.checked).length
+                    + files.filter((f) => fileSel[f.id]?.checked).length;
+                  const total = groups.length + files.length;
                   return (
-                    <AccordionItem key={g.criterion} value={g.criterion} className="border-b-0 px-3">
+                    <AccordionItem key={crit} value={crit} className="border-b-0 px-3">
                       <AccordionTrigger className="hover:no-underline text-sm">
-                        <span className="font-medium">{g.label}</span>
+                        <span className="font-medium">{criterionLabel(crit)}</span>
                         <span className="ml-auto mr-2 text-[11px] text-muted-foreground">
-                          {selectedCount > 0 ? `${selectedCount} selected · ` : ""}{g.files.length} file{g.files.length !== 1 ? "s" : ""}
+                          {selInCrit > 0 ? `${selInCrit} selected · ` : ""}
+                          {groups.length} group{groups.length !== 1 ? "s" : ""}
+                          {files.length > 0 ? ` · ${files.length} loose` : ""}
                         </span>
                       </AccordionTrigger>
-                      <AccordionContent className="space-y-2">
-                        {g.files.map((f) => {
-                          const s = evSel[f.id] ?? { checked: false, label: "", notes: "" };
-                          const labelError = showErrors && s.checked && !s.label.trim();
-                          return (
-                            <div key={f.id} className="rounded-md border px-3 py-2">
-                              <div className="flex items-center gap-2">
-                                <Checkbox checked={s.checked} disabled={readOnly}
-                                  onCheckedChange={(c) => setEv(f.id, { checked: c === true })} />
-                                <span className="text-sm min-w-0 flex-1 truncate">{f.fileName}</span>
-                                {staff && f.isStaffOnly && (
-                                  <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 shrink-0">
-                                    <Shield className="w-2.5 h-2.5" /> staff-only
-                                  </span>
-                                )}
-                                <button onClick={() => void handleDownload(f)} disabled={downloadingId === f.id}
-                                  className="p-1 text-gray-400 hover:text-[#1E2D6B] shrink-0" title="Download">
-                                  {downloadingId === f.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-                                </button>
-                              </div>
-                              {s.checked && (
-                                <div className="mt-2 space-y-2">
-                                  <div>
-                                    <Input value={s.label} readOnly={readOnly}
-                                      onChange={(e) => setEv(f.id, { label: e.target.value })}
-                                      placeholder='Label this item, e.g. "IEEE paper on claims automation, 2023"'
-                                      className={cn("text-sm", labelError && "border-red-400")} />
-                                    {labelError && (
-                                      <p className="text-[11px] text-red-600 mt-1 flex items-center gap-1">
-                                        <AlertCircle className="w-3 h-3" /> A label is required
-                                      </p>
-                                    )}
+                      <AccordionContent className="space-y-3">
+                        {/* Confirmed groups */}
+                        {groups.length > 0 && (
+                          <div className="space-y-2">
+                            {groups.map((g) => {
+                              const s = grpSel[g.id] ?? { checked: false, notes: "" };
+                              const membersOpen = !!openMembers[g.id];
+                              return (
+                                <div key={g.id} className="rounded-md border px-3 py-2">
+                                  <div className="flex items-start gap-2">
+                                    <Checkbox checked={s.checked} disabled={readOnly} className="mt-0.5"
+                                      onCheckedChange={(c) => setGrp(g.id, { checked: c === true })} />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium min-w-0 truncate">{g.name}</span>
+                                        <span className="text-[11px] text-muted-foreground shrink-0">
+                                          {g.members.length} file{g.members.length !== 1 ? "s" : ""}
+                                        </span>
+                                      </div>
+                                      {g.description && (
+                                        <p className="text-xs text-muted-foreground mt-0.5">{g.description}</p>
+                                      )}
+                                      {g.members.length > 0 && (
+                                        <button type="button"
+                                          onClick={() => setOpenMembers((prev) => ({ ...prev, [g.id]: !prev[g.id] }))}
+                                          className="mt-1 inline-flex items-center gap-1 text-[11px] text-[#1E2D6B] hover:text-[#3D4FA8]">
+                                          <ChevronRight className={cn("w-3 h-3 transition-transform", membersOpen && "rotate-90")} />
+                                          {membersOpen ? "Hide" : "View"} files
+                                        </button>
+                                      )}
+                                      {membersOpen && (
+                                        <ul className="mt-1.5 space-y-1 border-l pl-3">
+                                          {g.members.map((m) => (
+                                            <li key={m.id} className="flex items-center gap-2">
+                                              <FileText className="w-3 h-3 text-gray-400 shrink-0" />
+                                              <span className="text-xs min-w-0 flex-1 truncate">{m.fileName}</span>
+                                              {staff && m.isStaffOnly && (
+                                                <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 shrink-0">
+                                                  <Shield className="w-2.5 h-2.5" /> staff-only
+                                                </span>
+                                              )}
+                                              <button onClick={() => void handleDownload(m)} disabled={downloadingId === m.id}
+                                                className="p-1 text-gray-400 hover:text-[#1E2D6B] shrink-0" title="Download">
+                                                {downloadingId === m.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                                              </button>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      )}
+                                    </div>
                                   </div>
-                                  <Textarea value={s.notes} readOnly={readOnly}
-                                    onChange={(e) => setEv(f.id, { notes: e.target.value })}
-                                    placeholder="What can this referee say about it? (optional)"
-                                    className="min-h-[52px] resize-none text-sm" />
+                                  {s.checked && (
+                                    <Textarea value={s.notes} readOnly={readOnly}
+                                      onChange={(e) => setGrp(g.id, { notes: e.target.value })}
+                                      placeholder="What can this referee say about this group of evidence? (optional)"
+                                      className="mt-2 min-h-[52px] resize-none text-sm" />
+                                  )}
                                 </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Ungrouped / individual documents */}
+                        {files.length > 0 && (
+                          <div className="space-y-2">
+                            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                              Individual documents
+                            </p>
+                            {files.map((f) => {
+                              const s = fileSel[f.id] ?? { checked: false, label: "", notes: "" };
+                              const labelError = showErrors && s.checked && !s.label.trim();
+                              return (
+                                <div key={f.id} className="rounded-md border px-3 py-2">
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox checked={s.checked} disabled={readOnly}
+                                      onCheckedChange={(c) => setFile(f.id, { checked: c === true })} />
+                                    <span className="text-sm min-w-0 flex-1 truncate">{f.fileName}</span>
+                                    {staff && f.isStaffOnly && (
+                                      <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 shrink-0">
+                                        <Shield className="w-2.5 h-2.5" /> staff-only
+                                      </span>
+                                    )}
+                                    <button onClick={() => void handleDownload(f)} disabled={downloadingId === f.id}
+                                      className="p-1 text-gray-400 hover:text-[#1E2D6B] shrink-0" title="Download">
+                                      {downloadingId === f.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                                    </button>
+                                  </div>
+                                  {s.checked && (
+                                    <div className="mt-2 space-y-2">
+                                      <div>
+                                        <Input value={s.label} readOnly={readOnly}
+                                          onChange={(e) => setFile(f.id, { label: e.target.value })}
+                                          placeholder='Short label, e.g. "IEEE paper on claims automation, 2023"'
+                                          className={cn("text-sm", labelError && "border-red-400")} />
+                                        {labelError && (
+                                          <p className="text-[11px] text-red-600 mt-1 flex items-center gap-1">
+                                            <AlertCircle className="w-3 h-3" /> A label is required
+                                          </p>
+                                        )}
+                                      </div>
+                                      <Textarea value={s.notes} readOnly={readOnly}
+                                        onChange={(e) => setFile(f.id, { notes: e.target.value })}
+                                        placeholder="What can this referee say about it? (optional)"
+                                        className="min-h-[52px] resize-none text-sm" />
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {total === 0 && (
+                          <p className="text-xs text-muted-foreground">No evidence in this criterion.</p>
+                        )}
                       </AccordionContent>
                     </AccordionItem>
                   );
@@ -358,6 +497,11 @@ export function RefereeMappingPanel({
           {/* Save */}
           {!readOnly && (
             <div className="flex items-center justify-end gap-3 pt-1">
+              {selectedGroupCount > 0 && (
+                <span className="text-[11px] text-muted-foreground">
+                  {selectedGroupCount} evidence item{selectedGroupCount !== 1 ? "s" : ""} selected
+                </span>
+              )}
               {dirty && <span className="text-[11px] text-amber-600">Unsaved changes</span>}
               <Button size="sm" className="bg-[#1E2D6B] hover:bg-[#3D4FA8] gap-1.5"
                 disabled={!dirty || saving} onClick={() => void handleSave()}>
