@@ -138,6 +138,16 @@ export async function syncCaseEvidence(
       });
 
     logger.info({ caseId, folders: subtree.length }, "[evidenceSync] case evidence synced");
+
+    // Auto-propose groups when enough ungrouped files have accumulated. Dynamic
+    // import avoids a static cycle (grouping service imports this module). Never throws.
+    try {
+      const { maybeAutoEnqueueGrouping } = await import("./evidenceGroupingWorker");
+      await maybeAutoEnqueueGrouping(caseId);
+    } catch (err) {
+      logger.error({ err, caseId }, "[evidenceSync] auto-enqueue grouping failed");
+    }
+
     return { synced: true, syncedAt: now };
   } catch (err) {
     logger.error({ err, caseId }, "[evidenceSync] syncCaseEvidence failed");

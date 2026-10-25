@@ -17,6 +17,7 @@
     { "path": "/api/cron/drive-channel-renewal", "schedule": "0 */12 * * *" },
     { "path": "/api/cron/pending-grants-cleanup", "schedule": "0 */6 * * *" },
     { "path": "/api/cron/evidence-sync", "schedule": "*/30 * * * *" },
-    { "path": "/api/cron/letter-generation", "schedule": "*/3 * * * *" }
+    { "path": "/api/cron/letter-generation", "schedule": "*/3 * * * *" },
+    { "path": "/api/cron/evidence-grouping", "schedule": "*/5 * * * *" }
   ]
 }

@@ -18,6 +18,7 @@ import { purgeExpiredPendingGrants } from "../services/pendingGrantsCleanup";
 import { renewExpiringSoonChannels } from "../services/driveWatchService";
 import { syncActiveCasesEvidence } from "../services/evidenceSyncService";
 import { drainLetterGenerationQueue } from "../services/letterGenerationWorker";
+import { drainEvidenceGroupingQueue } from "../services/evidenceGroupingWorker";
 import { seedReferenceData } from "../services/seedReferenceData";
 
 const router: IRouter = Router();
@@ -80,6 +81,14 @@ router.get(
   "/cron/letter-generation",
   cronHandler("letter-generation", async () => {
     await drainLetterGenerationQueue();
+  }),
+);
+
+// Drain the evidence-grouping queue (AI group proposals).
+router.get(
+  "/cron/evidence-grouping",
+  cronHandler("evidence-grouping", async () => {
+    await drainEvidenceGroupingQueue();
   }),
 );
 
