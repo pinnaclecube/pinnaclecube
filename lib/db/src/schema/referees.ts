@@ -203,3 +203,38 @@ export const insertLetterDraftSchema = createInsertSchema(letterDraftsTable).omi
 });
 export type LetterDraft = typeof letterDraftsTable.$inferSelect;
 export type InsertLetterDraft = z.infer<typeof insertLetterDraftSchema>;
+
+// ─── Letter generation jobs (Step 4 — async queue drained by a cron worker) ──────
+// "Generate" enqueues a job; the worker claims it, calls the model, writes a
+// letter_drafts row, then notifies staff + client. One active job per referee.
+
+export const letterGenerationJobsTable = pgTable(
+  "letter_generation_jobs",
+  {
+    id: serial("id").primaryKey(),
+    refereeId: integer("referee_id")
+      .notNull()
+      .references(() => refereesTable.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("queued"), // 'queued'|'processing'|'done'|'failed'
+    requestedBy: text("requested_by").notNull(), // 'client' | 'staff'
+    feedback: text("feedback"), // change-request text for this generation, if any
+    draftId: integer("draft_id"), // the letter_drafts row produced (on success)
+    error: text("error"),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => ({
+    oneActivePerReferee: uniqueIndex("letter_gen_jobs_one_active_per_referee")
+      .on(t.refereeId)
+      .where(sql`status in ('queued', 'processing')`),
+  }),
+);
+
+export const insertLetterGenerationJobSchema = createInsertSchema(letterGenerationJobsTable).omit({
+  id: true,
+  createdAt: true,
+});
+export type LetterGenerationJob = typeof letterGenerationJobsTable.$inferSelect;
+export type InsertLetterGenerationJob = z.infer<typeof insertLetterGenerationJobSchema>;
