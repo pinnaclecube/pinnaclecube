@@ -93,6 +93,7 @@ export function LetterDraftPanel({
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [eligibility, setEligibility] = useState<Eligibility>({ ok: false, reasons: [] });
+  const [generation, setGeneration] = useState<{ status: string; error: string | null } | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [cap, setCap] = useState(3);
   const [history, setHistory] = useState<Draft[]>([]);
@@ -113,6 +114,7 @@ export function LetterDraftPanel({
       const d = await fetchFn(`/referees/${refereeId}/letter-draft`).then((r) => r.json());
       setDraft(d.draft ?? null);
       setEligibility(d.eligibility ?? { ok: false, reasons: [] });
+      setGeneration(d.generation ?? null);
       if (staff) setHistory(d.history ?? []);
       else { setRemaining(d.remainingClientGenerations ?? null); setCap(d.generationCap ?? 3); }
     } catch {
@@ -124,6 +126,15 @@ export function LetterDraftPanel({
 
   useEffect(() => { void load(); }, [load]);
 
+  const inFlight = generation?.status === "queued" || generation?.status === "processing";
+
+  // Poll while a generation job is in flight so the draft appears when ready.
+  useEffect(() => {
+    if (!inFlight) return;
+    const t = setInterval(() => { void load(); }, 15000);
+    return () => clearInterval(t);
+  }, [inFlight, load]);
+
   async function generate(feedbackText?: string) {
     setGenerating(true);
     try {
@@ -133,16 +144,18 @@ export function LetterDraftPanel({
         body: JSON.stringify(feedbackText ? { feedback: feedbackText } : {}),
       });
       const d = await r.json().catch(() => ({}));
-      if (!r.ok) {
+      if (!r.ok && r.status !== 409) {
         if (d.reasons) toast({ title: d.reasons.join(" "), variant: "destructive" });
-        else toast({ title: d.error ?? "Generation failed", variant: "destructive" });
+        else toast({ title: d.error ?? "Could not queue generation", variant: "destructive" });
         return;
       }
+      // Enqueued (202) or already queued (409) — show the queued state and poll.
       setFeedbackOpen(false); setFeedback("");
-      toast({ title: "Draft generated" });
-      await load();
+      if (typeof d.remainingClientGenerations === "number") setRemaining(d.remainingClientGenerations);
+      setGeneration({ status: "queued", error: null });
+      toast({ title: "Generation queued — we'll notify you when the draft is ready." });
     } catch {
-      toast({ title: "Generation failed", variant: "destructive" });
+      toast({ title: "Could not queue generation", variant: "destructive" });
     } finally {
       setGenerating(false);
     }
@@ -198,7 +211,7 @@ export function LetterDraftPanel({
   }
 
   const atCap = !staff && remaining !== null && remaining <= 0;
-  const canGenerate = eligibility.ok && !readOnly && !generating && (staff || !atCap);
+  const canGenerate = eligibility.ok && !readOnly && !generating && !inFlight && (staff || !atCap);
   const shown = viewing ?? draft;
 
   return (
@@ -223,6 +236,25 @@ export function LetterDraftPanel({
       </div>
 
       <div className="p-4 space-y-3">
+        {/* Queued / generating banner */}
+        {inFlight && (
+          <div className="rounded-md border border-[#1E2D6B]/20 bg-[#1E2D6B]/5 p-3 text-xs text-[#1E2D6B] flex items-center gap-1.5">
+            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+            {generation?.status === "processing"
+              ? "Generating the draft now…"
+              : "Queued — the draft is being prepared in the background."}
+            {" "}We'll send a notification when it's ready.
+          </div>
+        )}
+
+        {/* Failed banner */}
+        {generation?.status === "failed" && !inFlight && (
+          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700 flex items-start gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            Last generation failed{generation.error ? `: ${generation.error}` : ""}. You can try again.
+          </div>
+        )}
+
         {/* Ineligible → reasons */}
         {!eligibility.ok && !draft && (
           <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3">
@@ -235,8 +267,8 @@ export function LetterDraftPanel({
           </div>
         )}
 
-        {/* No draft yet, eligible → generate */}
-        {!draft && eligibility.ok && (
+        {/* No draft yet, eligible, nothing in flight → generate */}
+        {!draft && eligibility.ok && !inFlight && (
           <div className="text-center py-4">
             <p className="text-sm text-muted-foreground mb-3">
               Generate a first draft from this referee's mapped projects and evidence.
@@ -247,13 +279,6 @@ export function LetterDraftPanel({
               Generate Reference Letter
             </Button>
           </div>
-        )}
-
-        {/* Generating overlay note */}
-        {generating && draft && (
-          <p className="text-xs text-[#1E2D6B] flex items-center gap-1.5">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating a new draft… this can take up to a minute.
-          </p>
         )}
 
         {/* Draft viewer */}
@@ -307,14 +332,14 @@ export function LetterDraftPanel({
                   <span className="text-[11px] text-muted-foreground mr-auto">{remaining} of {cap} change requests remaining</span>
                   <Button variant="ghost" size="sm" onClick={() => { setFeedbackOpen(false); setFeedback(""); }} disabled={generating}>Cancel</Button>
                   <Button size="sm" className="bg-[#1E2D6B] hover:bg-[#3D4FA8] gap-1.5"
-                    disabled={!feedback.trim() || generating} onClick={() => void generate(feedback)}>
+                    disabled={!feedback.trim() || generating || inFlight} onClick={() => void generate(feedback)}>
                     {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MessageSquarePlus className="w-3.5 h-3.5" />}
                     Submit & regenerate
                   </Button>
                 </div>
               </div>
             ) : (
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setFeedbackOpen(true)} disabled={generating}>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setFeedbackOpen(true)} disabled={generating || inFlight}>
                 <MessageSquarePlus className="w-3.5 h-3.5" /> Request changes ({remaining} of {cap} left)
               </Button>
             )}
@@ -351,7 +376,7 @@ export function LetterDraftPanel({
             )}
             {draft && draft.status !== "finalized" && !editing && (
               <Button size="sm" className="bg-green-700 hover:bg-green-800 gap-1.5 ml-auto"
-                disabled={!eligibility.ok || generating} onClick={() => setFinalizeOpen(true)}>
+                disabled={!eligibility.ok || generating || inFlight} onClick={() => setFinalizeOpen(true)}>
                 <Send className="w-3.5 h-3.5" /> Finalize & Send for Client Review
               </Button>
             )}
@@ -370,7 +395,7 @@ export function LetterDraftPanel({
               placeholder="Optional instructions for the regeneration" className="min-h-[64px] text-sm" />
             <div className="flex justify-end gap-2">
               <Button size="sm" variant="ghost" onClick={() => { setFeedbackOpen(false); setFeedback(""); }} disabled={generating}>Cancel</Button>
-              <Button size="sm" className="bg-[#1E2D6B] hover:bg-[#3D4FA8] gap-1.5" disabled={generating} onClick={() => void generate(feedback || undefined)}>
+              <Button size="sm" className="bg-[#1E2D6B] hover:bg-[#3D4FA8] gap-1.5" disabled={generating || inFlight} onClick={() => void generate(feedback || undefined)}>
                 {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />} Regenerate
               </Button>
             </div>

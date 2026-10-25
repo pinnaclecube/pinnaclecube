@@ -73,12 +73,13 @@ function driveFileUrl(fileId: string): string {
 // ─── Referee row (summary + expandable detail) ───────────────────────────────────
 
 function RefereeRow({
-  referee, caseId, mappingCount, draftStatus, onEdit, onDelete, onSaved, onRequestUnlock, onMappingSaved, onDraftChanged,
+  referee, caseId, mappingCount, draftStatus, generating, onEdit, onDelete, onSaved, onRequestUnlock, onMappingSaved, onDraftChanged,
 }: {
   referee: Referee;
   caseId: number;
   mappingCount?: { projects: number; evidence: number };
   draftStatus?: DraftStatus;
+  generating?: string;
   onEdit: (r: Referee) => void;
   onDelete: (r: Referee) => void;
   onSaved: (r: Referee) => void;
@@ -171,12 +172,17 @@ function RefereeRow({
           )}
           <Badge variant="outline" className={cn(
             "text-[10px] gap-1",
-            draftStatus?.status === "finalized" ? "border-green-300 text-green-700 bg-green-50"
-              : draftStatus?.status === "draft" ? "border-violet-300 text-violet-700 bg-violet-50"
-                : "border-gray-200 text-gray-400",
+            generating ? "border-violet-300 text-violet-700 bg-violet-50"
+              : draftStatus?.status === "finalized" ? "border-green-300 text-green-700 bg-green-50"
+                : draftStatus?.status === "draft" ? "border-violet-300 text-violet-700 bg-violet-50"
+                  : "border-gray-200 text-gray-400",
           )}>
-            <Sparkles className="w-2.5 h-2.5" />
-            {draftStatus?.status === "finalized" ? "Finalized" : draftStatus?.status === "draft" ? `Draft v${draftStatus.version}` : "No draft"}
+            {generating ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Sparkles className="w-2.5 h-2.5" />}
+            {generating === "processing" ? "Generating…"
+              : generating === "queued" ? "Queued"
+                : draftStatus?.status === "finalized" ? "Finalized"
+                  : draftStatus?.status === "draft" ? `Draft v${draftStatus.version}`
+                    : "No draft"}
           </Badge>
           {draftStatus?.clientRequestedChanges && (
             <Badge variant="outline" className="text-[10px] gap-1 border-amber-300 text-amber-700 bg-amber-50">
@@ -332,6 +338,7 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
   const [exporting, setExporting] = useState(false);
   const [mappingCounts, setMappingCounts] = useState<Record<number, { projects: number; evidence: number }>>({});
   const [draftStatuses, setDraftStatuses] = useState<Record<number, DraftStatus>>({});
+  const [generatingMap, setGeneratingMap] = useState<Record<number, string>>({});
   const { toast } = useToast();
 
   const load = useCallback(async () => {
@@ -367,6 +374,11 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
         dmap[s.refereeId] = { status: s.status, version: s.version, clientRequestedChanges: s.clientRequestedChanges };
       }
       setDraftStatuses(dmap);
+      const gmap: Record<number, string> = {};
+      for (const g of (drafts.generating ?? []) as { refereeId: number; status: string }[]) {
+        gmap[g.refereeId] = g.status;
+      }
+      setGeneratingMap(gmap);
     } catch {
       setError("Something went wrong loading referees. Please try again.");
     } finally {
@@ -483,6 +495,7 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
             <RefereeRow key={r.id} referee={r} caseId={caseId as number}
               mappingCount={mappingCounts[r.id]}
               draftStatus={draftStatuses[r.id]}
+              generating={generatingMap[r.id]}
               onEdit={(ref) => setFormModal({ open: true, referee: ref })}
               onDelete={setDeleteTarget}
               onSaved={onSaved}
