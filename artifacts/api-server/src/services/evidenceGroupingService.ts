@@ -14,13 +14,21 @@ import { z } from "zod/v4";
 import {
   db,
   caseFolderItemsTable,
+  casePetitionSetupTable,
   evidenceGroupsTable,
   evidenceGroupSuggestionsTable,
 } from "@workspace/db";
 import { downloadDriveFile } from "./driveService";
 import { extractText } from "./evidenceProcessing";
-import { getEvidenceSubtreeFolders } from "./evidenceSyncService";
+import { getEvidenceSubtreeFolders, criterionKeyForFolderName } from "./evidenceSyncService";
+import { getCriteriaFolders, type VisaCategory } from "../config/driveFolderConfig";
 import { logger } from "../lib/logger";
+
+// Map a stored visa_path (e.g. "eb1a") to the VISA_FOLDER_STRUCTURE key.
+function toVisaCategory(v: string | null | undefined): VisaCategory {
+  const up = (v ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return up === "NIW" || up === "O1A" ? (up as VisaCategory) : "EB1A";
+}
 
 const MODEL = "claude-sonnet-4-5";
 const MAX_TOKENS = 6000;
@@ -134,6 +142,20 @@ async function assembleInput(caseId: number) {
     if (s) f.snippet = s;
   });
 
+  // Canonical criteria for this case's visa path — the model classifies each new
+  // group into one of these keys by content (the Drive folder layout is unreliable,
+  // so most input files arrive "unclassified").
+  const [caseRow] = await db
+    .select({ visaPath: casePetitionSetupTable.visaPath })
+    .from(casePetitionSetupTable)
+    .where(eq(casePetitionSetupTable.id, caseId))
+    .limit(1);
+  const allowedCriteria = getCriteriaFolders(toVisaCategory(caseRow?.visaPath)).map((c) => ({
+    key: criterionKeyForFolderName(c.name),
+    label: c.name,
+  }));
+  const allowedKeys = new Set(allowedCriteria.map((c) => c.key));
+
   // Confirmed groups (never modified; shown so the model can propose add-to-group).
   const confirmedGroups = await db
     .select({ id: evidenceGroupsTable.id, name: evidenceGroupsTable.name, description: evidenceGroupsTable.description, criterion: evidenceGroupsTable.criterionFolder })
@@ -159,6 +181,8 @@ async function assembleInput(caseId: number) {
     confirmedGroups: confirmedGroups.map((g) => ({ ...g, members: groupMembers.get(g.id) ?? [] })),
     ungroupedIds: new Set(ungrouped.map((f) => f.id)),
     confirmedIds: new Set(confirmedGroups.map((g) => g.id)),
+    allowedCriteria,
+    allowedKeys,
   };
 }
 
@@ -168,7 +192,8 @@ const SYSTEM_PROMPT = `You organize a petition case's evidence FILES into GROUPS
 
 Rules:
 - Cluster only files that document the SAME underlying accomplishment. When in doubt, leave a file ungrouped — do not force buckets.
-- Never group files across different criterion folders unless the text makes it unmistakably the same item.
+- Classify each new group under the single best-fit criterion by what the documents ACTUALLY are. Input files are frequently unsorted (criterion "unclassified"); do not trust the input criterion — decide from the content and file names. Group together only files that belong to the same criterion.
+- criterion_folder MUST be one of the KEYS from the VALID CRITERIA list in the user message (copy the key exactly). Use "unclassified" only when no listed criterion genuinely fits.
 - Give each new group a short, specific name (e.g. "SCRS Fellow Certification 2024") and a one-line description.
 - You may propose ADDING an ungrouped file to an existing CONFIRMED group, but never rename, re-describe, or remove members from confirmed groups.
 - Use ONLY the file ids provided. Every file id you output must come from the ungrouped list.
@@ -199,7 +224,10 @@ function buildUserMessage(input: Awaited<ReturnType<typeof assembleInput>>): str
   const groups = input.confirmedGroups.map((g) =>
     `  {group_id:${g.id}, name:${JSON.stringify(g.name)}, criterion:${JSON.stringify(g.criterion ?? "unclassified")}, members:${JSON.stringify(g.members)}}`,
   ).join("\n");
-  return `UNGROUPED FILES (cluster these):\n${files || "  (none)"}\n\nEXISTING CONFIRMED GROUPS (never modify; you may suggest adding ungrouped files):\n${groups || "  (none)"}\n\nReturn the JSON now.`;
+  const criteria = input.allowedCriteria.map((c) =>
+    `  {key:${JSON.stringify(c.key)}, label:${JSON.stringify(c.label)}}`,
+  ).join("\n");
+  return `VALID CRITERIA (set each new group's criterion_folder to one of these KEYS):\n${criteria || "  (none)"}\n\nUNGROUPED FILES (cluster these; their input criterion is unreliable — classify by content):\n${files || "  (none)"}\n\nEXISTING CONFIRMED GROUPS (never modify; you may suggest adding ungrouped files):\n${groups || "  (none)"}\n\nReturn the JSON now.`;
 }
 
 async function callModel(userMessage: string): Promise<GroupingResultT> {
@@ -263,13 +291,17 @@ async function persist(
       const fileIds = g.file_ids.filter((id) => input.ungroupedIds.has(id) && !usedFileIds.has(id));
       if (fileIds.length === 0) continue;
       for (const id of fileIds) usedFileIds.add(id);
+      // Trust the AI's criterion only if it resolves to one of this case's valid
+      // criteria keys; otherwise store null (shows as Unclassified).
+      const criterionKey = criterionKeyForFolderName(g.criterion_folder ?? "");
+      const criterionFolder = input.allowedKeys.has(criterionKey) ? criterionKey : null;
       const [group] = await tx
         .insert(evidenceGroupsTable)
         .values({
           caseId,
           name: g.name.slice(0, 200),
           description: g.description?.trim() || null,
-          criterionFolder: g.criterion_folder ?? null,
+          criterionFolder,
           createdBy: "ai",
           status: "confirmed", // hybrid: AI groups are auto-confirmed so clients see
                                // them immediately; staff can edit/merge/dissolve later.
