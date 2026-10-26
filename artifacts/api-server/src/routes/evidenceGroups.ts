@@ -32,7 +32,7 @@ import {
   getEvidenceSubtreeFolders,
   criterionKeyForFolderName,
 } from "../services/evidenceSyncService";
-import { resetGroupingReview } from "../services/evidenceGroupingService";
+import { resetGroupingReview, reclassifyUnclassifiedGroups } from "../services/evidenceGroupingService";
 import { requireClientAuth } from "../middlewares/clientAuth";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { logger } from "../lib/logger";
@@ -416,6 +416,26 @@ router.post(
       .returning();
     logger.info({ caseId, jobId: job.id }, "[evidenceGroups] grouping job queued");
     res.status(202).json({ job });
+  },
+);
+
+// ─── Reclassify (staff) — assign criteria to still-unclassified confirmed groups ───
+
+router.post(
+  "/cases/:caseId/evidence-groups/reclassify",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const aug = req as AugmentedRequest;
+    const caseId = parseInt(req.params.caseId as string, 10);
+    if (!(await authorizeCase(aug, res, caseId))) return;
+    try {
+      const result = await reclassifyUnclassifiedGroups(caseId);
+      logger.info({ caseId, ...result }, "[evidenceGroups] reclassify requested");
+      res.json(result);
+    } catch (err) {
+      logger.error({ err, caseId }, "[evidenceGroups] reclassify failed");
+      res.status(502).json({ error: "Reclassification failed. Please try again." });
+    }
   },
 );
 

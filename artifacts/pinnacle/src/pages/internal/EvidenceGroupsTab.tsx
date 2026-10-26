@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Loader2, Sparkles, Check, X, Pencil, Trash2, Plus, FileText, Download,
-  FolderPlus, Layers, AlertCircle, RefreshCw,
+  FolderPlus, Layers, AlertCircle, RefreshCw, Tags,
 } from "lucide-react";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
 import { useToast } from "@/hooks/use-toast";
@@ -74,6 +74,7 @@ export function EvidenceGroupsTab({ userId }: { userId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<GroupsData | null>(null);
   const [suggesting, setSuggesting] = useState(false);
+  const [reclassifying, setReclassifying] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
   // Dialog state
@@ -148,6 +149,21 @@ export function EvidenceGroupsTab({ userId }: { userId: string }) {
     } finally { setSuggesting(false); }
   }
 
+  async function reclassify() {
+    if (caseId === null) return;
+    setReclassifying(true);
+    try {
+      const r = await staffFetch(`/cases/${caseId}/evidence-groups/reclassify`, { method: "POST" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { toast({ title: d.error ?? "Reclassification failed", variant: "destructive" }); return; }
+      toast({
+        title: `Reclassified ${d.reclassified ?? 0} group${d.reclassified === 1 ? "" : "s"}`,
+        description: d.remaining > 0 ? `${d.remaining} still pending — run again to continue.` : undefined,
+      });
+      await loadGroups(caseId);
+    } finally { setReclassifying(false); }
+  }
+
   async function confirmAll() {
     if (!data) return;
     for (const g of data.suggested) {
@@ -198,6 +214,13 @@ export function EvidenceGroupsTab({ userId }: { userId: string }) {
             {suggesting || jobActive ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
             Suggest groups
           </Button>
+          {data.confirmed.some((g) => !g.criterion || g.criterion === "unclassified") && (
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => void reclassify()} disabled={reclassifying}
+              title="Assign criteria to unclassified groups using AI">
+              {reclassifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Tags className="w-4 h-4" />}
+              Reclassify
+            </Button>
+          )}
           <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => caseId !== null && void loadGroups(caseId)}>
             <RefreshCw className="w-3.5 h-3.5" />
           </Button>

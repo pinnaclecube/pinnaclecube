@@ -8,7 +8,7 @@
  * staff confirm. Reuses the Step 4 extraction utility and the getAI() pattern.
  */
 
-import { eq, and, inArray, isNull, asc } from "drizzle-orm";
+import { eq, and, or, inArray, isNull, asc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod/v4";
 import {
@@ -403,4 +403,115 @@ export async function resetGroupingReview(caseId: number): Promise<void> {
       eq(caseFolderItemsTable.isDeletedInDrive, false),
       isNull(caseFolderItemsTable.groupId),
     ));
+}
+
+// ─── Reclassify existing groups (backfill) ─────────────────────────────────────────
+// Assigns a criterion to confirmed groups that are still unclassified, using each
+// group's AI-written name + description + member file names (no Drive downloads).
+
+const RECLASSIFY_SYSTEM = `You assign each evidence GROUP to the single best-fit petition criterion, judging from the group's name, description and member file names.
+- criterion_folder MUST be one of the KEYS from the VALID CRITERIA list (copy the key exactly). Use "unclassified" only when no listed criterion genuinely fits.
+- Classify every group_id you are given, exactly once.
+Return ONLY strict JSON, no prose, no code fences: {"classifications":[{"group_id":number,"criterion_folder":string}]}`;
+
+const ReclassifyResult = z.object({
+  classifications: z.array(z.object({
+    group_id: z.number().int(),
+    criterion_folder: z.string().nullish(),
+  })).default([]),
+});
+type ReclassifyResultT = z.infer<typeof ReclassifyResult>;
+
+async function callReclassifyModel(
+  allowedCriteria: { key: string; label: string }[],
+  groups: { id: number; name: string; description: string | null; files: string[] }[],
+): Promise<ReclassifyResultT> {
+  const ai = getAI();
+  const criteria = allowedCriteria.map((c) => `  {key:${JSON.stringify(c.key)}, label:${JSON.stringify(c.label)}}`).join("\n");
+  const groupLines = groups.map((g) =>
+    `  {group_id:${g.id}, name:${JSON.stringify(g.name)}, description:${JSON.stringify(g.description ?? "")}, files:${JSON.stringify(g.files)}}`,
+  ).join("\n");
+  const userMessage = `VALID CRITERIA (choose one KEY per group):\n${criteria}\n\nGROUPS TO CLASSIFY:\n${groupLines}\n\nReturn the JSON now.`;
+  const run = async (timeoutMs: number) => {
+    const res = await ai.messages.create(
+      { model: MODEL, max_tokens: MAX_TOKENS, system: RECLASSIFY_SYSTEM, messages: [{ role: "user", content: userMessage }] },
+      { timeout: timeoutMs, maxRetries: 0 },
+    );
+    const raw = res.content.map((b: { type: string; text?: string }) => (b.type === "text" ? b.text ?? "" : "")).join("");
+    return ReclassifyResult.parse(extractJson(raw));
+  };
+  try {
+    return await run(MODEL_TIMEOUT_MS);
+  } catch (err) {
+    if (err instanceof Anthropic.APIError) throw err;
+    return await run(MODEL_RETRY_TIMEOUT_MS);
+  }
+}
+
+const RECLASSIFY_BATCH = 40;
+
+// Reclassify confirmed groups whose criterion is null or "unclassified". Bounded per
+// call (time + batch) so it fits the function budget; returns remaining for re-runs.
+export async function reclassifyUnclassifiedGroups(
+  caseId: number,
+): Promise<{ reclassified: number; processed: number; remaining: number }> {
+  const [caseRow] = await db
+    .select({ visaPath: casePetitionSetupTable.visaPath })
+    .from(casePetitionSetupTable)
+    .where(eq(casePetitionSetupTable.id, caseId))
+    .limit(1);
+  const allowedCriteria = getCriteriaFolders(toVisaCategory(caseRow?.visaPath)).map((c) => ({
+    key: criterionKeyForFolderName(c.name),
+    label: c.name,
+  }));
+  const allowedKeys = new Set(allowedCriteria.map((c) => c.key));
+
+  const groups = await db
+    .select({ id: evidenceGroupsTable.id, name: evidenceGroupsTable.name, description: evidenceGroupsTable.description })
+    .from(evidenceGroupsTable)
+    .where(and(
+      eq(evidenceGroupsTable.caseId, caseId),
+      eq(evidenceGroupsTable.status, "confirmed"),
+      or(isNull(evidenceGroupsTable.criterionFolder), eq(evidenceGroupsTable.criterionFolder, "unclassified")),
+    ));
+  const total = groups.length;
+  if (total === 0) return { reclassified: 0, processed: 0, remaining: 0 };
+
+  const ids = groups.map((g) => g.id);
+  const members = await db
+    .select({ groupId: caseFolderItemsTable.groupId, name: caseFolderItemsTable.name })
+    .from(caseFolderItemsTable)
+    .where(inArray(caseFolderItemsTable.groupId, ids));
+  const namesByGroup = new Map<number, string[]>();
+  for (const m of members) {
+    if (m.groupId == null) continue;
+    const arr = namesByGroup.get(m.groupId) ?? [];
+    arr.push(m.name);
+    namesByGroup.set(m.groupId, arr);
+  }
+
+  const start = Date.now();
+  let reclassified = 0;
+  let processed = 0;
+  for (let i = 0; i < groups.length; i += RECLASSIFY_BATCH) {
+    if (Date.now() - start > 40000) break; // budget — remaining returned for re-run
+    const chunk = groups.slice(i, i + RECLASSIFY_BATCH);
+    const result = await callReclassifyModel(
+      allowedCriteria,
+      chunk.map((g) => ({ id: g.id, name: g.name, description: g.description, files: (namesByGroup.get(g.id) ?? []).slice(0, 12) })),
+    );
+    const byId = new Map(result.classifications.map((c) => [c.group_id, c.criterion_folder]));
+    await db.transaction(async (tx) => {
+      for (const g of chunk) {
+        const raw = byId.get(g.id);
+        const key = criterionKeyForFolderName(raw ?? "");
+        const value = allowedKeys.has(key) ? key : null; // normalizes "unclassified"/unknown → null
+        await tx.update(evidenceGroupsTable).set({ criterionFolder: value, updatedAt: new Date() }).where(eq(evidenceGroupsTable.id, g.id));
+        if (value) reclassified++;
+      }
+    });
+    processed += chunk.length;
+  }
+  logger.info({ caseId, reclassified, processed, total }, "[evidenceGrouping] reclassify pass complete");
+  return { reclassified, processed, remaining: total - processed };
 }
