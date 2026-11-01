@@ -430,6 +430,25 @@ installed before stages 3 and 6 can run.
 
 ---
 
+## 11a. Deployment — package worker (phase 11)
+
+The pipeline's extract / generate / assemble stages shell out to **LibreOffice,
+poppler (`pdftoppm`), tesseract, and python3**, which are not present in Vercel's
+serverless Node runtime. Therefore:
+
+- The **UI, routes, approval, and client reflection run on Vercel** as normal (no
+  native deps).
+- The **queue drain runs in a dedicated container worker** —
+  `Dockerfile.package-worker` (LibreOffice + poppler + tesseract + python deps) →
+  `artifacts/api-server/src/package-worker.ts`, a long-lived loop calling
+  `drainPackageQueue()` + `notifySettledPackages()`. Deploy it to any container
+  host (Render / Railway / Fly / Cloud Run / a VM) with the same env as the API
+  plus `PACKAGE_EXTRACT_SCRIPT=/app/scripts/extract.py`.
+- `/api/cron/package-generation` is **no longer scheduled on Vercel** (it would
+  fail at the extract stage); it remains callable for manual/toolchain-equipped
+  use. A light, toolchain-free `/api/cron/package-notify` cron stays on Vercel as
+  a backstop for the 15-minute client-notification settle check.
+
 ## 12. Build phases (summary)
 
 0 audit · 1 schema · 2 scanner+extractor · 3 classification+grouping · 4 template config+importer ·

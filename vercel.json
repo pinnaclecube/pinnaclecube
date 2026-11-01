@@ -19,6 +19,6 @@
     { "path": "/api/cron/evidence-sync", "schedule": "*/30 * * * *" },
     { "path": "/api/cron/letter-generation", "schedule": "*/3 * * * *" },
     { "path": "/api/cron/evidence-grouping", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/package-generation", "schedule": "*/2 * * * *" }
+    { "path": "/api/cron/package-notify", "schedule": "*/5 * * * *" }
   ]
 }
