@@ -11,8 +11,9 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
-  db, casePetitionSetupTable, petitionPackageTable, packageGenerationJobsTable, exhibitDocumentsTable,
+  db, casePetitionSetupTable, petitionPackageTable, packageGenerationJobsTable, exhibitDocumentsTable, evidenceGroupsTable,
 } from "@workspace/db";
+import { desc } from "drizzle-orm";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { resumeFromGroupReview } from "../services/package/jobs";
 import { logger } from "../lib/logger";
@@ -65,6 +66,35 @@ router.post(
     }).returning();
     logger.info({ caseId, version, jobId: job.id }, "[packages] job queued");
     res.status(202).json({ job, version });
+  },
+);
+
+// UI-supporting read: latest package + active job + its documents + which criteria
+// have confirmed groups (generate-modal defaults).
+router.get(
+  "/internal/cases/:caseId/packages",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const caseId = parseInt(req.params.caseId as string, 10);
+    const c = await loadEb1aCase(caseId, res);
+    if (!c) return;
+    const [pkg] = await db.select().from(petitionPackageTable).where(eq(petitionPackageTable.caseSetupId, caseId)).limit(1);
+    const [job] = await db.select().from(packageGenerationJobsTable)
+      .where(eq(packageGenerationJobsTable.caseSetupId, caseId))
+      .orderBy(desc(packageGenerationJobsTable.id)).limit(1);
+    const version = pkg?.currentVersion ?? 0;
+    const documents = version > 0
+      ? await db.select().from(exhibitDocumentsTable)
+          .where(and(eq(exhibitDocumentsTable.caseSetupId, caseId), eq(exhibitDocumentsTable.packageVersion, version)))
+          .orderBy(asc(exhibitDocumentsTable.id))
+      : [];
+    const critRows = await db.selectDistinct({ c: evidenceGroupsTable.criterionFolder })
+      .from(evidenceGroupsTable)
+      .where(and(eq(evidenceGroupsTable.caseId, caseId), eq(evidenceGroupsTable.status, "confirmed")));
+    res.json({
+      package: pkg ?? null, job: job ?? null, documents,
+      criteriaWithGroups: critRows.map((r) => r.c).filter((x): x is string => !!x),
+    });
   },
 );
 
