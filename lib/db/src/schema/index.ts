@@ -18,4 +18,5 @@ export * from "./drive";
 export * from "./referees";
 export * from "./projects";
 export * from "./evidence_groups";
+export * from "./evidence_package";
 export * from "./newsletters";

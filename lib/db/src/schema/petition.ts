@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, integer, boolean, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, integer, boolean, jsonb, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -90,6 +90,15 @@ export const petitionPackageTable = pgTable("petition_package", {
   petitionReadiness: integer("petition_readiness").default(0),
   packagePublishedAt: timestamp("package_published_at", { withTimezone: true }),
   packagePublishedBy: text("package_published_by"),
+  // Evidence Package module (spec section 5.2) — versioned package lifecycle.
+  currentVersion: integer("current_version").notNull().default(0),
+  // none | generating | awaiting_group_review | ready_for_review | partially_approved | approved
+  packageStatus: text("package_status").notNull().default("none"),
+  readyForReviewAt: timestamp("ready_for_review_at", { withTimezone: true }),
+  exhibitIndexDriveId: text("exhibit_index_drive_id"),
+  mergedPdfDriveId: text("merged_pdf_drive_id"),
+  mergedPdfDriveUrl: text("merged_pdf_drive_url"),
+  clientNotifiedAt: timestamp("client_notified_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -137,22 +146,50 @@ export const criteriaAssessmentsTable = pgTable("criteria_assessments", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
-export const exhibitDocumentsTable = pgTable("exhibit_documents", {
-  id: serial("id").primaryKey(),
-  caseSetupId: integer("case_setup_id").notNull(),
-  profileId: integer("profile_id").notNull(),
-  jobId: integer("job_id"),
-  documentType: text("document_type").notNull(),
-  exhibitLabel: text("exhibit_label"),
-  criteriaCode: text("criteria_code"),
-  fileName: text("file_name").notNull(),
-  driveFileId: text("drive_file_id"),
-  driveUrl: text("drive_url"),
-  publishedToClient: boolean("published_to_client").default(false),
-  publishedAt: timestamp("published_at", { withTimezone: true }),
-  publishedBy: text("published_by"),
-  generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow(),
-});
+export const exhibitDocumentsTable = pgTable(
+  "exhibit_documents",
+  {
+    id: serial("id").primaryKey(),
+    caseSetupId: integer("case_setup_id").notNull(),
+    profileId: integer("profile_id").notNull(),
+    jobId: integer("job_id"),
+    documentType: text("document_type").notNull(),
+    exhibitLabel: text("exhibit_label"),
+    criteriaCode: text("criteria_code"),
+    fileName: text("file_name").notNull(),
+    driveFileId: text("drive_file_id"),
+    driveUrl: text("drive_url"),
+    publishedToClient: boolean("published_to_client").default(false),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    publishedBy: text("published_by"),
+    generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow(),
+    // ── Evidence Package module (spec section 5.1) ──────────────────────────────
+    packageVersion: integer("package_version"),
+    role: text("role"), // sub_exhibit | criterion | index | final_merits (null = legacy exhibit)
+    exhibitCode: text("exhibit_code"), // stable per-version code; headers derive from this
+    // FK to evidence_groups(id) declared in DDL (kept out of Drizzle to avoid an
+    // import cycle, matching the case_folder_items.group_id precedent).
+    evidenceGroupId: integer("evidence_group_id"),
+    sourceFileIds: jsonb("source_file_ids"), // case_folder_items.id[] feeding this document
+    sortDate: timestamp("sort_date", { withTimezone: true }),
+    missingTypes: jsonb("missing_types"), // expected-but-absent evidence types for the group
+    contentJson: jsonb("content_json"), // structured content produced in stage 6
+    flags: jsonb("flags"), // [{ kind, message, severity }] from render checks (spec section 7)
+    wordDriveId: text("word_drive_id"),
+    wordDriveUrl: text("word_drive_url"),
+    thumbnailDriveId: text("thumbnail_drive_id"),
+    thumbnailDriveUrl: text("thumbnail_drive_url"),
+    renderStatus: text("render_status").default("pending"), // pending | rendered | failed
+    regenerationInstruction: text("regeneration_instruction"),
+    approvedBy: text("approved_by"),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+  },
+  (t) => ({
+    caseVersionIdx: index("exhibit_documents_case_version_idx").on(t.caseSetupId, t.packageVersion),
+    caseCodeIdx: index("exhibit_documents_case_code_idx").on(t.caseSetupId, t.exhibitCode),
+    groupIdx: index("exhibit_documents_group_idx").on(t.evidenceGroupId),
+  }),
+);
 
 export const insertCasePetitionSetupSchema = createInsertSchema(casePetitionSetupTable).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertPetitionCriteriaExhibitSchema = createInsertSchema(petitionCriteriaExhibitsTable).omit({ id: true, createdAt: true });
