@@ -92,4 +92,13 @@ router.get(
   }),
 );
 
+// Drain the evidence-package generation queue.
+router.get(
+  "/cron/package-generation",
+  cronHandler("package-generation", async () => {
+    const { drainPackageQueue } = await import("../services/package/orchestrator");
+    await drainPackageQueue();
+  }),
+);
+
 export default router;

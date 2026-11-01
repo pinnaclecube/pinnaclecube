@@ -29,7 +29,7 @@ export interface RenderMeta {
 export type RenderContent =
   | { kind: "sub_exhibit"; sourceSummary: string; relevanceNote: string }
   | { kind: "criterion"; regulation?: string; regulatoryStandard: string; evidenceSummary: string; argument: string; conclusion: string }
-  | { kind: "final_merits"; regulation?: string; introduction: string; criteriaMet: string; totalityArgument: string; conclusion: string }
+  | { kind: "final_merits"; regulation?: string; introduction: string; criteriaMet: string; totalityArgument: string; conclusion: string; indexRows?: { displayNumber: number; code: string; title: string; criterion?: string }[] }
   | { kind: "index"; rows: { displayNumber: number; code: string; title: string; criterion?: string }[] };
 
 export interface RenderResult { buffer: Buffer; flags: PlanFlag[]; checkedText: string }
@@ -193,6 +193,12 @@ function sectionBody(content: RenderContent, code: string, figures: FigureInput[
     add("Introduction", content.introduction);
     add("Criteria Met", content.criteriaMet);
     add("Final Merits Determination", content.totalityArgument);
+    if (content.indexRows && content.indexRows.length > 0) {
+      children.push(heading("Index of Exhibits"));
+      for (const r of content.indexRows) {
+        children.push(new Paragraph({ spacing: { after: 40 }, children: [new TextRun({ text: `Exhibit ${r.displayNumber} (${r.code}) — ${r.title}${r.criterion ? ` [${r.criterion}]` : ""}`, size: HALF(HS.bodySizePt), font: HS.bodyFont })] }));
+      }
+    }
     add("Conclusion", content.conclusion);
   } else {
     children.push(heading("Index of Exhibits"));
