@@ -439,4 +439,54 @@ router.post(
   },
 );
 
+// ─── Split a confirmed group (move a subset of files into a new group) ─────────────
+// The one group-review action Step 5 lacked (Evidence Package phase 3). Staff only.
+
+const SplitInput = z.object({
+  fileIds: z.array(z.number().int().positive()).min(1),
+  name: z.string().trim().min(1).nullish(),
+});
+
+router.post(
+  "/evidence-groups/:id/split",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const aug = req as AugmentedRequest;
+    const group = await loadAuthorizedGroup(aug, res, parseInt(req.params.id as string, 10));
+    if (!group) return;
+    const parsed = SplitInput.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: "Invalid body", details: parsed.error.issues }); return; }
+    const fileIds = [...new Set(parsed.data.fileIds)];
+
+    // The files must currently belong to this group.
+    const members = await db
+      .select({ id: caseFolderItemsTable.id })
+      .from(caseFolderItemsTable)
+      .where(eq(caseFolderItemsTable.groupId, group.id));
+    const memberIds = new Set(members.map((m) => m.id));
+    const bad = fileIds.filter((id) => !memberIds.has(id));
+    if (bad.length > 0) { res.status(400).json({ error: "Some files are not in this group", fileIds: bad }); return; }
+    if (fileIds.length >= memberIds.size) {
+      res.status(400).json({ error: "Cannot split out every file — at least one must remain in the original group" });
+      return;
+    }
+
+    const newGroup = await db.transaction(async (tx) => {
+      const [g] = await tx.insert(evidenceGroupsTable).values({
+        caseId: group.caseId,
+        name: parsed.data.name?.trim() || `${group.name} (split)`,
+        description: group.description,
+        criterionFolder: group.criterionFolder,
+        createdBy: "staff",
+        status: "confirmed",
+      }).returning();
+      await tx.update(caseFolderItemsTable).set({ groupId: g.id }).where(inArray(caseFolderItemsTable.id, fileIds));
+      await tx.update(evidenceGroupsTable).set({ updatedAt: new Date() }).where(eq(evidenceGroupsTable.id, group.id));
+      return g;
+    });
+    logger.info({ groupId: group.id, newGroupId: newGroup.id, moved: fileIds.length }, "[evidenceGroups] group split");
+    res.status(201).json({ group: newGroup });
+  },
+);
+
 export default router;
