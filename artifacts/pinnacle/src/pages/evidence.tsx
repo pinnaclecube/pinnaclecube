@@ -93,8 +93,11 @@ function useEvidenceCriteria() {
 
 // ─── useMyExhibits ────────────────────────────────────────────────────────────
 
+interface MyPackage { version: number | null; status: string; approved: boolean; mergedPdfUrl: string | null }
+
 function useMyExhibits() {
   const [exhibits, setExhibits] = useState<ExhibitDoc[]>([]);
+  const [pkg, setPkg] = useState<MyPackage | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -102,18 +105,18 @@ function useMyExhibits() {
       headers: { Authorization: `Bearer ${getToken()}` },
     })
       .then((r) => r.json())
-      .then((d) => setExhibits(d.exhibits ?? []))
+      .then((d) => { setExhibits(d.exhibits ?? []); setPkg(d.package ?? null); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  return { exhibits, loading };
+  return { exhibits, loading, pkg };
 }
 
 // ─── ExhibitsView ─────────────────────────────────────────────────────────────
 
 function ExhibitsView() {
-  const { exhibits, loading } = useMyExhibits();
+  const { exhibits, loading, pkg } = useMyExhibits();
 
   if (loading) {
     return (
@@ -172,6 +175,20 @@ function ExhibitsView() {
 
   return (
     <div className="space-y-6">
+      {/* Package header: version label + download-all (merged PDF) once fully approved */}
+      {pkg?.version && (
+        <div className="flex items-center gap-3 rounded-lg border bg-[#1E2D6B]/5 px-4 py-3">
+          <span className="text-xs font-semibold text-[#1E2D6B] bg-white border rounded-full px-2 py-0.5">Package v{pkg.version}</span>
+          <span className="text-sm text-muted-foreground">
+            {pkg.approved ? "Your evidence package is complete." : "Approved exhibits are shown below."}
+          </span>
+          {pkg.approved && pkg.mergedPdfUrl && (
+            <a href={pkg.mergedPdfUrl} target="_blank" rel="noreferrer"
+              className="ml-auto text-sm font-medium text-[#1E2D6B] underline">Download full package (PDF)</a>
+          )}
+        </div>
+      )}
+
       {/* Criteria sections */}
       {criteriaGroups.length > 0 && (
         <div className="space-y-4">

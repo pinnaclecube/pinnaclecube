@@ -92,4 +92,28 @@ router.get(
   }),
 );
 
+// Drain the evidence-package generation queue. NOTE: the pipeline shells out to
+// LibreOffice/poppler/tesseract/python which are NOT present in Vercel's runtime,
+// so this is NOT scheduled on Vercel — the dedicated package worker
+// (Dockerfile.package-worker) drains the queue. This route is kept for manual /
+// toolchain-equipped invocation only.
+router.get(
+  "/cron/package-generation",
+  cronHandler("package-generation", async () => {
+    const { drainPackageQueue } = await import("../services/package/orchestrator");
+    await drainPackageQueue();
+  }),
+);
+
+// Client-notification settle check (toolchain-free: DB + email only) — safe to run
+// on Vercel as a backstop to the worker. One notice per package, 15 min after the
+// last approval settles.
+router.get(
+  "/cron/package-notify",
+  cronHandler("package-notify", async () => {
+    const { notifySettledPackages } = await import("../services/package/approval");
+    await notifySettledPackages();
+  }),
+);
+
 export default router;

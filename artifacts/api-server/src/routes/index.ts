@@ -36,6 +36,7 @@ import projectsRouter from "./projects";
 import evidenceRegistryRouter from "./evidenceRegistry";
 import letterDraftsRouter from "./letterDrafts";
 import evidenceGroupsRouter from "./evidenceGroups";
+import packagesRouter from "./packages";
 
 const router: IRouter = Router();
 
@@ -76,5 +77,6 @@ router.use(projectsRouter);
 router.use(evidenceRegistryRouter);
 router.use(letterDraftsRouter);
 router.use(evidenceGroupsRouter);
+router.use(packagesRouter);
 
 export default router;

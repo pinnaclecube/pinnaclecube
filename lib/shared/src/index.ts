@@ -58,3 +58,4 @@ export type MilestoneStatus = (typeof MILESTONE_STATUSES)[number];
 
 export * from "./disclaimers";
 export * from "./criteriaFolders";
+export * from "./packageTemplateConfig";

@@ -16,7 +16,7 @@ import {
   ArrowLeft, Plus, Check, AlertTriangle, Lock,
   RefreshCw, ExternalLink, Loader2, CheckCircle, Clock, Zap, Activity,
   LayoutDashboard, FolderSearch, GraduationCap, ClipboardCheck,
-  FileText, Files, HardDrive, Menu, X, ClipboardList, Mail, FolderKanban,
+  FileText, Files, HardDrive, Menu, X, ClipboardList, Mail, FolderKanban, Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FolderBrowser } from "@/components/case/FolderBrowser";
@@ -24,9 +24,10 @@ import { PetitionAssessmentTab } from "./PetitionAssessmentTab";
 import { ExhibitsTab } from "./ExhibitsTab";
 import { TasksTab } from "./TasksTab";
 import { ReferenceLettersTab } from "./ReferenceLettersTab";
+import { PackagesTab } from "./PackagesTab";
 import { ProjectsTab } from "./ProjectsTab";
 
-const TABS = ["Overview", "Tasks", "Evidence", "Excellence Lab", "Petition Workspace", "Petition Assessment", "Exhibits", "Documents", "Projects", "Reference Letters", "Drive Folders"] as const;
+const TABS = ["Overview", "Tasks", "Evidence", "Excellence Lab", "Petition Workspace", "Petition Assessment", "Exhibits", "Documents", "Projects", "Reference Letters", "Packages", "Drive Folders"] as const;
 type Tab = typeof TABS[number];
 
 const HIDDEN_TABS = ["Petition Workspace"] as const;
@@ -41,6 +42,7 @@ const TAB_ICONS: Partial<Record<Tab, React.ComponentType<{ className?: string }>
   "Documents": Files,
   "Projects": FolderKanban,
   "Reference Letters": Mail,
+  "Packages": Package,
   "Drive Folders": HardDrive,
 };
 
@@ -1028,6 +1030,7 @@ const TAB_SLUG_MAP: Record<string, Tab> = {
   "projects": "Projects",
   "Projects": "Projects",
   "reference-letters": "Reference Letters",
+  "packages": "Packages",
   "drive-folders": "Drive Folders",
 };
 
@@ -1214,6 +1217,7 @@ export default function InternalCaseDetail() {
             {activeTab === "Documents" && <DocumentsTab userId={user_id} />}
             {activeTab === "Projects" && <ProjectsTab userId={user_id} />}
             {activeTab === "Reference Letters" && <ReferenceLettersTab userId={user_id} />}
+            {activeTab === "Packages" && <PackagesTab userId={user_id} />}
             {activeTab === "Drive Folders" && <DriveFoldersTab userId={user_id} />}
           </div>
         </div>

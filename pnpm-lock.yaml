@@ -721,6 +721,10 @@ importers:
   lib/shared: {}
 
   scripts:
+    dependencies:
+      '@workspace/shared':
+        specifier: workspace:*
+        version: link:../lib/shared
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

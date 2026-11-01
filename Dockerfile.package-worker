@@ -1,0 +1,39 @@
+# Evidence Package worker (spec phase 11).
+#
+# Runs the package generation queue off Vercel, in a container that has the native
+# toolchain the pipeline needs (LibreOffice, poppler, tesseract, python). Deploy to
+# any container host (Render / Railway / Fly / Cloud Run / a VM). Give it the same
+# env as the API: DATABASE_URL, GOOGLE_SERVICE_ACCOUNT_JSON, ANTHROPIC_API_KEY,
+# RESEND_API_KEY, FRONTEND_URL, etc.
+
+FROM node:22-bookworm-slim
+
+# Native toolchain: office->PDF, PDF rasterization, OCR, python extractor deps.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libreoffice-writer libreoffice-calc libreoffice-impress \
+      poppler-utils tesseract-ocr \
+      python3 python3-pip fonts-dejavu \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --no-cache-dir --break-system-packages \
+      pdfplumber python-docx openpyxl Pillow pytesseract cffi
+
+WORKDIR /app
+RUN npm install -g pnpm@10 tsx
+
+# Install deps first for layer caching, then the source.
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY artifacts/api-server/package.json artifacts/api-server/
+COPY lib ./lib
+COPY scripts ./scripts
+RUN pnpm install --frozen-lockfile || pnpm install
+
+COPY . .
+# Build the composite TS libs so @workspace/db + @workspace/shared resolve.
+RUN pnpm run typecheck:libs || true
+
+# extract.py is resolved from this absolute path (cwd-independent).
+ENV PACKAGE_EXTRACT_SCRIPT=/app/scripts/extract.py
+ENV NODE_ENV=production
+
+CMD ["tsx", "artifacts/api-server/src/package-worker.ts"]

@@ -13,6 +13,9 @@
     "cleanup:regression": "tsx ./src/cleanupRegressionTest.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "@workspace/shared": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "catalog:",
     "tsx": "catalog:"

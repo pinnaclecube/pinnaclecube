@@ -138,3 +138,24 @@ export async function downloadDriveFile(fileId: string): Promise<Buffer> {
   );
   return Buffer.from(res.data as ArrayBuffer);
 }
+
+// Read a file/folder's description field (used as the Evidence Package scanner's
+// skip tag — spec section 4 stage 2).
+export async function getDriveFileDescription(fileId: string): Promise<string | null> {
+  const res = await getDriveClient().files.get({
+    supportsAllDrives: true,
+    fileId,
+    fields: "description",
+  });
+  return res.data.description ?? null;
+}
+
+// Set a file/folder's description field (tags _Templates and package-output
+// folders so the scanner skips them).
+export async function setDriveFileDescription(fileId: string, description: string): Promise<void> {
+  await getDriveClient().files.update({
+    supportsAllDrives: true,
+    fileId,
+    requestBody: { description },
+  });
+}
