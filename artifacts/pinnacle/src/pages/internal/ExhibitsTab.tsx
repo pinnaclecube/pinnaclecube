@@ -104,15 +104,29 @@ function GenerationRow({
 // ─── GenerationPanel (left column) ───────────────────────────────────────────
 
 function GenerationPanel({
-  caseSetupId, criteria, pkg, busy, setBusy,
+  caseSetupId, criteria, pkg, busy, setBusy, visaPath,
 }: {
   caseSetupId: number;
   criteria: any[];
   pkg: any;
   busy: Record<string, boolean>;
   setBusy: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  visaPath?: string;
 }) {
   const [runningPackage, setRunningPackage] = useState(false);
+
+  // EB-1A uses the new Evidence Package module (Packages tab); the legacy PDF
+  // exhibit generator is hidden here (spec phase 9).
+  if (visaPath === "eb1a") {
+    return (
+      <Card className="sticky top-4">
+        <CardContent className="py-6 text-center space-y-2">
+          <FileText className="w-8 h-8 text-gray-200 mx-auto" />
+          <p className="text-sm text-muted-foreground">For EB-1A, generate the evidence package from the <span className="font-medium">Packages</span> tab.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const fire = async (key: string, path: string) => {
     setBusy((p) => ({ ...p, [key]: true }));
@@ -759,6 +773,7 @@ export function ExhibitsTab({ userId, profileData }: { userId: string; profileDa
           pkg={pkg}
           busy={genBusy}
           setBusy={setGenBusy}
+          visaPath={visaPath}
         />
         <DocumentLibrary
           caseSetupId={caseSetupId}

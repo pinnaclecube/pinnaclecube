@@ -156,17 +156,47 @@ router.get(
       criteriaRows.map((c) => [c.criteriaCode, { criteriaName: c.criteriaName, exhibitLabel: c.exhibitNumber }]),
     );
 
-    // Return only safe fields — driveFileId, publishedBy, jobId stripped
-    const exhibits = docs.map(({ driveFileId: _df, publishedBy: _pb, jobId: _jid, ...rest }) => {
+    // Evidence Package docs (role set) are versioned: keep only the newest
+    // published version per exhibitCode (spec §6). Legacy exhibits (role null)
+    // pass through unchanged.
+    const newestByCode = new Map<string, (typeof docs)[number]>();
+    const legacy: typeof docs = [];
+    for (const d of docs) {
+      if (d.role && d.exhibitCode) {
+        const cur = newestByCode.get(d.exhibitCode);
+        if (!cur || (d.packageVersion ?? 0) > (cur.packageVersion ?? 0)) newestByCode.set(d.exhibitCode, d);
+      } else {
+        legacy.push(d);
+      }
+    }
+    const deduped = [...legacy, ...newestByCode.values()];
+    const latestVersion = Math.max(0, ...deduped.map((d) => d.packageVersion ?? 0));
+
+    // Return only safe fields — driveFileId, publishedBy, jobId, content stripped
+    const exhibits = deduped.map(({ driveFileId: _df, publishedBy: _pb, jobId: _jid, contentJson: _cj, flags: _fl, sourceFileIds: _sf, ...rest }) => {
       const meta = rest.criteriaCode ? criteriaMap.get(rest.criteriaCode) : undefined;
       return {
         ...rest,
         criteriaName: meta?.criteriaName ?? null,
         criteriaExhibitLabel: meta?.exhibitLabel ?? null,
+        versionLabel: rest.packageVersion ? `v${rest.packageVersion}` : null,
       };
     });
 
-    res.json({ exhibits, visaPath: setup.visaPath });
+    // Package summary — expose the merged PDF (download-all) only when fully approved.
+    const [pkgRow] = await db.select().from(petitionPackageTable).where(eq(petitionPackageTable.caseSetupId, setup.id)).limit(1);
+    const packageApproved = pkgRow?.packageStatus === "approved";
+    res.json({
+      exhibits,
+      visaPath: setup.visaPath,
+      packageVersion: latestVersion || null,
+      package: pkgRow ? {
+        version: pkgRow.currentVersion,
+        status: pkgRow.packageStatus,
+        approved: packageApproved,
+        mergedPdfUrl: packageApproved ? (pkgRow.mergedPdfDriveUrl ?? null) : null,
+      } : null,
+    });
   },
 );
 

@@ -140,7 +140,7 @@ async function generateDocuments(caseSetupId: number, version: number, extracts:
       const classByFile = new Map(classes.map((c) => [c.fileId, c]));
       const gen = await generateSubExhibit({
         applicantName, criterionName: crit?.name ?? "Evidence", exhibitCode: code,
-        groupTitle: d.exhibitLabel ?? d.fileName,
+        groupTitle: d.exhibitLabel ?? d.fileName, instruction: d.regenerationInstruction,
         files: members.map((m) => ({
           fileId: m.id, name: m.name,
           evidenceType: classByFile.get(m.id)?.evidenceType ?? null,
@@ -213,8 +213,11 @@ async function runJob(job: Job, deadline: number): Promise<"done" | "paused" | "
       return "paused";
     }
 
-    // plan (idempotent re-plan)
-    await planPackage(caseId, version);
+    // plan — only on the first run for this version, so a regenerated 'pending'
+    // doc (set by the approval flow) is not cleared by a re-plan.
+    const [planned] = await db.select({ n: sql<number>`count(*)::int` }).from(exhibitDocumentsTable)
+      .where(and(eq(exhibitDocumentsTable.caseSetupId, caseId), eq(exhibitDocumentsTable.packageVersion, version)));
+    if ((planned?.n ?? 0) === 0) await planPackage(caseId, version);
 
     // generate (bounded; persists per doc)
     const allRendered = await generateDocuments(caseId, version, extracts, folderId, deadline);

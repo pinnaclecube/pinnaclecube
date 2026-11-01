@@ -92,7 +92,7 @@ export type SubExhibitOutT = z.infer<typeof SubExhibitOut>;
 
 export interface SubExhibitGrounding {
   applicantName: string; criterionName: string; exhibitCode: string;
-  groupTitle: string; groupDescription?: string | null;
+  groupTitle: string; groupDescription?: string | null; instruction?: string | null;
   files: { fileId: number; name: string; evidenceType?: string | null; summary?: string | null; extract: string }[];
 }
 export interface CriterionGrounding {
@@ -113,6 +113,7 @@ export async function generateSubExhibit(g: SubExhibitGrounding): Promise<{ cont
     `GROUP: ${g.groupTitle}${g.groupDescription ? ` — ${g.groupDescription}` : ""}`,
     `FILES (source_file_id, name, type, extract):`,
     ...g.files.map((f) => `  {id:${f.fileId}, name:${JSON.stringify(f.name)}, type:${JSON.stringify(f.evidenceType ?? "")}, text:${JSON.stringify((f.extract || f.summary || "").slice(0, 1200))}}`),
+    g.instruction ? `\nSTAFF REGENERATION INSTRUCTION (apply, without breaking any guardrail): ${g.instruction}` : "",
     `\nReturn JSON: {"source_summary":string,"relevance_note":string,"figures":[{"source_file_id":number,"caption":string}]}`,
     `One figure entry per source file, caption as "<short source label> — <one-line description>".`,
   ].join("\n");

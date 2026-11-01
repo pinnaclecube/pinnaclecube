@@ -98,6 +98,9 @@ router.get(
   cronHandler("package-generation", async () => {
     const { drainPackageQueue } = await import("../services/package/orchestrator");
     await drainPackageQueue();
+    // One client notification per package, 15 min after the last approval settles.
+    const { notifySettledPackages } = await import("../services/package/approval");
+    await notifySettledPackages();
   }),
 );
 

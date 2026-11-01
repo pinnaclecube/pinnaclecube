@@ -14,11 +14,17 @@ import {
   db, casePetitionSetupTable, petitionPackageTable, packageGenerationJobsTable, exhibitDocumentsTable, evidenceGroupsTable,
 } from "@workspace/db";
 import { desc } from "drizzle-orm";
+import multer from "multer";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { resumeFromGroupReview } from "../services/package/jobs";
+import {
+  approveDocument, approveUnflagged, rejectPackage, regenerateDocument, replaceDocument, notifyClientNow, derivePackageStatus,
+} from "../services/package/approval";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+const staffId = (req: Request) => (req as Request & { staffUser?: { id: string } }).staffUser?.id ?? "staff";
 
 async function loadEb1aCase(caseId: number, res: Response) {
   if (isNaN(caseId)) { res.status(400).json({ error: "Invalid caseId" }); return null; }
@@ -136,5 +142,53 @@ router.post(
     res.status(409).json({ error: `Cannot retry a job in status '${job.status}'` });
   },
 );
+
+// ─── Approval + client reflection (spec §6) ────────────────────────────────────
+
+router.post("/internal/exhibit-documents/:id/approve", requireStaffAuth, async (req: Request, res: Response): Promise<void> => {
+  const doc = await approveDocument(parseInt(req.params.id as string, 10), staffId(req));
+  if (!doc) { res.status(404).json({ error: "Document not found" }); return; }
+  res.json({ ok: true });
+});
+
+router.post("/internal/exhibit-documents/:id/regenerate", requireStaffAuth, async (req: Request, res: Response): Promise<void> => {
+  const instruction = typeof req.body?.instruction === "string" ? req.body.instruction : "";
+  const ok = await regenerateDocument(parseInt(req.params.id as string, 10), instruction, staffId(req));
+  if (!ok) { res.status(409).json({ error: "Document not found or its package is locked" }); return; }
+  res.json({ ok: true });
+});
+
+router.post("/internal/exhibit-documents/:id/replace", requireStaffAuth, upload.single("file"), async (req: Request, res: Response): Promise<void> => {
+  const file = (req as Request & { file?: { buffer: Buffer } }).file;
+  if (!file) { res.status(400).json({ error: "No file uploaded" }); return; }
+  const ok = await replaceDocument(parseInt(req.params.id as string, 10), file.buffer, staffId(req));
+  if (!ok) { res.status(409).json({ error: "Document not found or its package is locked" }); return; }
+  res.json({ ok: true });
+});
+
+router.post("/internal/cases/:caseId/packages/approve-unflagged", requireStaffAuth, async (req: Request, res: Response): Promise<void> => {
+  const caseId = parseInt(req.params.caseId as string, 10);
+  const c = await loadEb1aCase(caseId, res); if (!c) return;
+  const [pkg] = await db.select({ v: petitionPackageTable.currentVersion }).from(petitionPackageTable).where(eq(petitionPackageTable.caseSetupId, caseId)).limit(1);
+  const count = await approveUnflagged(caseId, pkg?.v ?? 0, staffId(req));
+  res.json({ ok: true, approved: count });
+});
+
+router.post("/internal/cases/:caseId/packages/reject", requireStaffAuth, async (req: Request, res: Response): Promise<void> => {
+  const caseId = parseInt(req.params.caseId as string, 10);
+  const c = await loadEb1aCase(caseId, res); if (!c) return;
+  const [pkg] = await db.select({ v: petitionPackageTable.currentVersion }).from(petitionPackageTable).where(eq(petitionPackageTable.caseSetupId, caseId)).limit(1);
+  await rejectPackage(caseId, pkg?.v ?? 0, staffId(req));
+  res.json({ ok: true });
+});
+
+router.post("/internal/cases/:caseId/packages/notify-client", requireStaffAuth, async (req: Request, res: Response): Promise<void> => {
+  const caseId = parseInt(req.params.caseId as string, 10);
+  const c = await loadEb1aCase(caseId, res); if (!c) return;
+  const [pkg] = await db.select({ v: petitionPackageTable.currentVersion }).from(petitionPackageTable).where(eq(petitionPackageTable.caseSetupId, caseId)).limit(1);
+  await notifyClientNow(caseId, pkg?.v ?? 0, staffId(req));
+  await derivePackageStatus(caseId, pkg?.v ?? 0);
+  res.json({ ok: true });
+});
 
 export default router;
