@@ -74,6 +74,40 @@ export async function uploadPdfToDrive(
   };
 }
 
+/**
+ * Uploads any buffer (docx, png, pdf, …) to a Drive folder with an explicit mime
+ * type. Unlike uploadPdfToDrive it does NOT make the file public by default
+ * (Evidence Package page-image cache + exhibit docs stay private); pass
+ * { share: true } to grant anyone-with-link read. Spec section 9.
+ */
+export async function uploadFileToDrive(
+  data: Buffer,
+  fileName: string,
+  mimeType: string,
+  driveFolderId: string,
+  opts?: { share?: boolean },
+): Promise<DriveUploadResult> {
+  const drive = getDriveClient();
+  const response = await drive.files.create({
+    supportsAllDrives: true,
+    requestBody: { name: fileName, mimeType, parents: [driveFolderId] },
+    media: { mimeType, body: Readable.from(data) },
+    fields: "id,webViewLink",
+  });
+  const fileId = response.data.id;
+  if (!fileId) {
+    throw new Error(`Drive upload returned no id for file "${fileName}"`);
+  }
+  if (opts?.share) {
+    await drive.permissions.create({
+      supportsAllDrives: true,
+      fileId,
+      requestBody: { role: "reader", type: "anyone" },
+    });
+  }
+  return { driveFileId: fileId, driveUrl: response.data.webViewLink ?? "", fileName };
+}
+
 // ─── Folder resolver ──────────────────────────────────────────────────────────
 
 /**
