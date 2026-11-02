@@ -67,11 +67,13 @@ export function PackagesTab({ userId }: { userId: string }) {
 
   const loadCase = useCallback(async () => {
     const r = await staffFetch(`/internal/petition/setup/${userId}`);
-    const d = await r.json().catch(() => ({}));
-    const id = d?.setup?.id ?? null;
-    setCaseId(id);
-    setVisaPath(d?.setup?.visaPath ?? null);
-    return id as number | null;
+    // The endpoint returns { cases: [{ setup, ... }] } — prefer the EB-1A case.
+    const d = (await r.json().catch(() => ({}))) as { cases?: { setup?: { id: number; visaPath?: string } }[] };
+    const cases = d.cases ?? [];
+    const setup = cases.find((c) => c.setup?.visaPath === "eb1a")?.setup ?? cases[0]?.setup ?? null;
+    setCaseId(setup?.id ?? null);
+    setVisaPath(setup?.visaPath ?? null);
+    return setup?.id ?? null;
   }, [userId]);
 
   const loadState = useCallback(async (cid: number) => {
