@@ -1,10 +1,14 @@
-# Evidence Package worker (spec phase 11).
+# Evidence Package worker (spec §11a).
 #
 # Runs the package generation queue off Vercel, in a container that has the native
 # toolchain the pipeline needs (LibreOffice, poppler, tesseract, python). Deploy to
 # any container host (Render / Railway / Fly / Cloud Run / a VM). Give it the same
 # env as the API: DATABASE_URL, GOOGLE_SERVICE_ACCOUNT_JSON, ANTHROPIC_API_KEY,
-# RESEND_API_KEY, FRONTEND_URL, etc.
+# RESEND_API_KEY, RESEND_FROM_EMAIL, FRONTEND_URL.
+#
+# Build context excludes are in Dockerfile.package-worker.dockerignore (BuildKit
+# uses that in place of the repo's .dockerignore, which omits scripts/ and some
+# workspace packages this worker needs).
 
 FROM node:22-bookworm-slim
 
@@ -21,19 +25,14 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 WORKDIR /app
 RUN npm install -g pnpm@10 tsx
 
-# Install deps first for layer caching, then the source.
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
-COPY artifacts/api-server/package.json artifacts/api-server/
-COPY lib ./lib
-COPY scripts ./scripts
-RUN pnpm install --frozen-lockfile || pnpm install
-
+# The whole monorepo (minus the Dockerfile-specific ignore) so pnpm can resolve
+# every workspace package the lockfile references, plus scripts/ and lib/.
 COPY . .
-# Build the composite TS libs so @workspace/db + @workspace/shared resolve.
-RUN pnpm run typecheck:libs || true
+RUN pnpm install --frozen-lockfile || pnpm install
 
 # extract.py is resolved from this absolute path (cwd-independent).
 ENV PACKAGE_EXTRACT_SCRIPT=/app/scripts/extract.py
 ENV NODE_ENV=production
 
+# The worker runs TypeScript directly via tsx (@workspace/* export their src).
 CMD ["tsx", "artifacts/api-server/src/package-worker.ts"]
