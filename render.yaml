@@ -23,6 +23,8 @@ services:
         value: production
       - key: PACKAGE_EXTRACT_SCRIPT
         value: /app/scripts/extract.py
+      - key: NODE_OPTIONS            # prefer IPv4 (Render has no IPv6 egress)
+        value: --dns-result-order=ipv4first
       - key: PACKAGE_WORKER_INTERVAL_MS
         value: "30000"
       - key: FRONTEND_URL
