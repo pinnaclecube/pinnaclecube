@@ -5,7 +5,7 @@ import type { Evidence } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Upload, X, FileText, AlertCircle, ExternalLink, Download, BookOpen } from "lucide-react";
+import { Plus, Search, Upload, X, FileText, AlertCircle, ExternalLink, Download, BookOpen, Folder, FolderOpen, ChevronRight, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
@@ -113,10 +113,131 @@ function useMyExhibits() {
   return { exhibits, loading, pkg };
 }
 
+// ─── useMyExhibitsTree ──────────────────────────────────────────────────────
+
+interface TreeFile {
+  driveFileId: string;
+  name: string;
+  webViewLink: string;
+  exhibitLabel: string | null;
+  publishedAt: string | null;
+}
+interface TreeNode {
+  id: string;
+  name: string;
+  files: TreeFile[];
+  folders: TreeNode[];
+}
+
+function useMyExhibitsTree() {
+  const [tree, setTree] = useState<TreeNode | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/petition/my-exhibits/tree", {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then((r) => r.json())
+      .then((d) => setTree(d.tree ?? null))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  return { tree, loading };
+}
+
+// ─── FolderTree (read-only) ──────────────────────────────────────────────────
+
+function TreeFileRow({ file }: { file: TreeFile }) {
+  return (
+    <div className="flex items-center gap-3 py-2.5 pr-2 hover:bg-gray-50/60 transition-colors rounded">
+      <FileText className="w-4 h-4 text-[#1E2D6B] shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate">{file.name}</p>
+        {file.publishedAt && (
+          <p className="text-xs text-muted-foreground">
+            Shared {new Date(file.publishedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+          </p>
+        )}
+      </div>
+      {file.webViewLink && (
+        <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 shrink-0"
+          onClick={() => window.open(file.webViewLink, "_blank")}>
+          <ExternalLink className="w-3.5 h-3.5" />View
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function TreeFolder({ node, depth, defaultOpen }: { node: TreeNode; depth: number; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(!!defaultOpen);
+  const count = node.files.length + node.folders.reduce((n, f) => n + f.files.length, 0);
+
+  return (
+    <div>
+      <button
+        className="w-full flex items-center gap-2 py-2.5 text-left hover:bg-gray-50 transition-colors rounded"
+        style={{ paddingLeft: depth * 16 }}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {open ? <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
+        {open ? <FolderOpen className="w-4 h-4 text-[#1E2D6B] shrink-0" /> : <Folder className="w-4 h-4 text-[#1E2D6B] shrink-0" />}
+        <span className="text-sm font-semibold flex-1 truncate">{node.name}</span>
+        <Badge variant="secondary" className="text-xs mr-1">{count}</Badge>
+      </button>
+      {open && (
+        <div>
+          {node.folders.map((child) => (
+            <TreeFolder key={child.id} node={child} depth={depth + 1} />
+          ))}
+          <div style={{ paddingLeft: (depth + 1) * 16 }} className="divide-y">
+            {node.files.map((f) => <TreeFileRow key={f.driveFileId} file={f} />)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FolderTreeView() {
+  const { tree, loading } = useMyExhibitsTree();
+
+  if (loading) return <Skeleton className="h-40 w-full" />;
+  if (!tree) {
+    return (
+      <Card className="text-center py-12">
+        <CardContent>
+          <Folder className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+          <p className="text-muted-foreground text-sm">No shared files yet.</p>
+          <p className="text-xs text-muted-foreground mt-1">Documents your team shares will appear here, organized into folders.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-2 sm:p-4">
+        {/* Root folder's own files + its subfolders */}
+        {tree.folders.map((child) => (
+          <TreeFolder key={child.id} node={child} depth={0} defaultOpen />
+        ))}
+        {tree.files.length > 0 && (
+          <div className="divide-y">
+            {tree.files.map((f) => <TreeFileRow key={f.driveFileId} file={f} />)}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── ExhibitsView ─────────────────────────────────────────────────────────────
 
 function ExhibitsView() {
   const { exhibits, loading, pkg } = useMyExhibits();
+  const [view, setView] = useState<"docs" | "folders">("docs");
 
   if (loading) {
     return (
@@ -175,6 +296,29 @@ function ExhibitsView() {
 
   return (
     <div className="space-y-6">
+      {/* View toggle: grouped documents vs. read-only folder tree */}
+      <div className="inline-flex rounded-lg border p-0.5 bg-gray-50">
+        {([
+          { key: "docs", label: "Documents", icon: FileText },
+          { key: "folders", label: "Folder view", icon: Folder },
+        ] as { key: "docs" | "folders"; label: string; icon: typeof FileText }[]).map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            onClick={() => setView(key)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+              view === key ? "bg-white text-[#1E2D6B] shadow-sm" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Icon className="w-3.5 h-3.5" />{label}
+          </button>
+        ))}
+      </div>
+
+      {view === "folders" ? (
+        <FolderTreeView />
+      ) : (
+      <>
       {/* Package header: version label + download-all (merged PDF) once fully approved */}
       {pkg?.version && (
         <div className="flex items-center gap-3 rounded-lg border bg-[#1E2D6B]/5 px-4 py-3">
@@ -233,6 +377,8 @@ function ExhibitsView() {
             </CardContent>
           </Card>
         </div>
+      )}
+      </>
       )}
     </div>
   );

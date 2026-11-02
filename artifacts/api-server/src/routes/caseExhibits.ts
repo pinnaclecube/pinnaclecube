@@ -19,6 +19,7 @@ import {
   petitionCriteriaExhibitsTable,
   casePetitionSetupTable,
   profilesTable,
+  notificationsTable,
 } from "@workspace/db";
 import { requireStaffAuth } from "../middlewares/staffAuth";
 import { verifyToken } from "../services/auth";
@@ -38,6 +39,14 @@ import { logger } from "../lib/logger";
 import { z } from "zod/v4";
 import multer from "multer";
 import { uploadFileToDrive, getCaseDriveFolderId } from "../services/driveUploadService";
+import {
+  createDriveFolder,
+  listDriveFolderFiles,
+  listDriveSubfolders,
+  shareDriveFile,
+  getDriveClient,
+} from "../services/driveService";
+import { sendEmail } from "../services/emailService";
 
 const uploadMw = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -493,10 +502,144 @@ router.patch(
   },
 );
 
+// ═════════════════════════════════════════════════════════════════════════════
+// Drive-backed Exhibits file manager
+//
+// The case's "Exhibits" Drive folder is the source of truth. Staff can upload
+// from the app or drop files directly in Drive — both surface here. A file is
+// "sent to client" when it has an exhibit_documents row with publishedToClient
+// = true (keyed by driveFileId); sending also notifies the client.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** Case → profile (id + contact fields for the client notification). */
+async function caseProfile(caseSetupId: number) {
+  const [row] = await db
+    .select({
+      profileId: casePetitionSetupTable.profileId,
+      email: profilesTable.email,
+      name: profilesTable.name,
+      firstName: profilesTable.firstName,
+    })
+    .from(casePetitionSetupTable)
+    .innerJoin(profilesTable, eq(profilesTable.id, casePetitionSetupTable.profileId))
+    .where(eq(casePetitionSetupTable.id, caseSetupId))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Verifies `folderId` is the case's Exhibits root or a descendant of it, by
+ * walking up the parent chain (bounded). Prevents writing into unrelated
+ * folders when a folderId is supplied by the client.
+ */
+async function isWithinExhibits(folderId: string, exhibitsRootId: string): Promise<boolean> {
+  if (folderId === exhibitsRootId) return true;
+  const drive = getDriveClient();
+  let current: string | null = folderId;
+  for (let depth = 0; depth < 8 && current; depth++) {
+    const r = await drive.files.get({ supportsAllDrives: true, fileId: current, fields: "id,parents" });
+    const parents: string[] = r.data.parents ?? [];
+    if (parents.includes(exhibitsRootId)) return true;
+    current = parents[0] ?? null;
+  }
+  return false;
+}
+
+/** Resolves the Exhibits root folder for a case, 400-ing if absent. */
+async function resolveExhibitsRoot(caseSetupId: number, res: Response): Promise<string | null> {
+  const root = await getCaseDriveFolderId(caseSetupId, "exhibits");
+  if (!root) { res.status(400).json({ error: "This case has no Exhibits Drive folder" }); return null; }
+  return root;
+}
+
+// ─── GET /cases/:caseSetupId/exhibits/drive ──────────────────────────────────
+// Lists one Drive folder (defaults to the Exhibits root): its subfolders and
+// files, each file annotated with its send-to-client state.
+router.get(
+  "/cases/:caseSetupId/exhibits/drive",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const caseSetupId = parseCaseId(req.params.caseSetupId);
+    if (!caseSetupId) { res.status(400).json({ error: "Invalid caseId" }); return; }
+    const root = await resolveExhibitsRoot(caseSetupId, res);
+    if (!root) return;
+
+    const requested = typeof req.query.folderId === "string" ? req.query.folderId : "";
+    const folderId = requested || root;
+    if (requested && !(await isWithinExhibits(requested, root))) {
+      res.status(403).json({ error: "Folder is outside this case's Exhibits folder" });
+      return;
+    }
+
+    const [subfolders, files, rows] = await Promise.all([
+      listDriveSubfolders(folderId),
+      listDriveFolderFiles(folderId),
+      db
+        .select({
+          id: exhibitDocumentsTable.id,
+          driveFileId: exhibitDocumentsTable.driveFileId,
+          publishedToClient: exhibitDocumentsTable.publishedToClient,
+          publishedAt: exhibitDocumentsTable.publishedAt,
+        })
+        .from(exhibitDocumentsTable)
+        .where(eq(exhibitDocumentsTable.caseSetupId, caseSetupId)),
+    ]);
+
+    const byDriveId = new Map(rows.filter((r) => r.driveFileId).map((r) => [r.driveFileId as string, r]));
+
+    const annotatedFiles = files.map((f) => {
+      const row = byDriveId.get(f.id);
+      return {
+        driveFileId: f.id,
+        name: f.name,
+        mimeType: f.mimeType,
+        webViewLink: f.webViewLink,
+        exhibitId: row?.id ?? null,
+        publishedToClient: row?.publishedToClient ?? false,
+        publishedAt: row?.publishedAt ?? null,
+      };
+    });
+
+    res.json({
+      root,
+      folderId,
+      isRoot: folderId === root,
+      subfolders: subfolders.map((s) => ({ driveFileId: s.id, name: s.name, webViewLink: s.webViewLink })),
+      files: annotatedFiles,
+    });
+  },
+);
+
+// ─── POST /cases/:caseSetupId/exhibits/folder ────────────────────────────────
+// Creates a subfolder inside the Exhibits folder (or inside a given subfolder).
+const CreateFolderBody = z.object({ name: z.string().min(1).max(200), parentId: z.string().optional() });
+router.post(
+  "/cases/:caseSetupId/exhibits/folder",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const caseSetupId = parseCaseId(req.params.caseSetupId);
+    if (!caseSetupId) { res.status(400).json({ error: "Invalid caseId" }); return; }
+    const parsed = CreateFolderBody.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: "Invalid body", details: parsed.error.issues }); return; }
+    const root = await resolveExhibitsRoot(caseSetupId, res);
+    if (!root) return;
+
+    const parentId = parsed.data.parentId || root;
+    if (parentId !== root && !(await isWithinExhibits(parentId, root))) {
+      res.status(403).json({ error: "Parent folder is outside this case's Exhibits folder" });
+      return;
+    }
+
+    const folder = await createDriveFolder(parsed.data.name.trim(), parentId);
+    logger.info({ caseSetupId, folderId: folder.driveId, staffId: staffId(req) }, "[caseExhibits] exhibit subfolder created");
+    res.status(201).json({ folder: { driveFileId: folder.driveId, name: parsed.data.name.trim(), webViewLink: folder.driveUrl } });
+  },
+);
+
 // ─── POST /cases/:caseSetupId/exhibits/upload ────────────────────────────────
-// Staff uploads a finished exhibit document (built offline) into the case's
-// Exhibits Drive folder and records it as an exhibit. Publish to the client with
-// the existing publish route.
+// Staff uploads a finished exhibit (built offline) into the Exhibits folder or a
+// chosen subfolder. The file surfaces in the Drive listing; publish it with
+// Send to client.
 router.post(
   "/cases/:caseSetupId/exhibits/upload",
   requireStaffAuth,
@@ -506,27 +649,134 @@ router.post(
     if (!caseSetupId) { res.status(400).json({ error: "Invalid caseId" }); return; }
     const file = (req as Request & { file?: { buffer: Buffer; originalname: string; mimetype: string } }).file;
     if (!file) { res.status(400).json({ error: "No file uploaded" }); return; }
-    const label = typeof req.body?.label === "string" ? req.body.label.trim() : "";
-    const criteriaCode = typeof req.body?.criteriaCode === "string" ? req.body.criteriaCode.trim() || null : null;
+    const root = await resolveExhibitsRoot(caseSetupId, res);
+    if (!root) return;
 
-    const [c] = await db.select({ profileId: casePetitionSetupTable.profileId }).from(casePetitionSetupTable).where(eq(casePetitionSetupTable.id, caseSetupId)).limit(1);
-    if (!c) { res.status(404).json({ error: "Case not found" }); return; }
-    const folderId = await getCaseDriveFolderId(caseSetupId, "exhibits");
-    if (!folderId) { res.status(400).json({ error: "This case has no Exhibits Drive folder" }); return; }
+    const requested = typeof req.body?.folderId === "string" ? req.body.folderId.trim() : "";
+    const folderId = requested || root;
+    if (requested && requested !== root && !(await isWithinExhibits(requested, root))) {
+      res.status(403).json({ error: "Folder is outside this case's Exhibits folder" });
+      return;
+    }
 
-    const up = await uploadFileToDrive(file.buffer, file.originalname, file.mimetype || "application/octet-stream", folderId, { share: true });
-    const [row] = await db.insert(exhibitDocumentsTable).values({
-      caseSetupId, profileId: c.profileId,
-      documentType: "uploaded_exhibit",
-      exhibitLabel: label || file.originalname,
-      criteriaCode,
-      fileName: file.originalname,
-      driveFileId: up.driveFileId,
-      driveUrl: up.driveUrl,
-      publishedToClient: false,
-    }).returning();
-    logger.info({ caseSetupId, exhibitId: row.id, staffId: staffId(req) }, "[caseExhibits] exhibit uploaded");
-    res.status(201).json({ exhibit: row });
+    const up = await uploadFileToDrive(
+      file.buffer, file.originalname, file.mimetype || "application/octet-stream", folderId, { share: true },
+    );
+    logger.info({ caseSetupId, driveFileId: up.driveFileId, staffId: staffId(req) }, "[caseExhibits] exhibit uploaded to Drive");
+    res.status(201).json({ file: { driveFileId: up.driveFileId, name: file.originalname, webViewLink: up.driveUrl } });
+  },
+);
+
+// ─── POST /cases/:caseSetupId/exhibits/send-to-client ────────────────────────
+// Shares the Drive file, records/publishes an exhibit_documents row (keyed by
+// driveFileId), and notifies the client (in-app + email).
+const SendBody = z.object({
+  driveFileId: z.string().min(1),
+  fileName: z.string().min(1),
+  webViewLink: z.string().optional(),
+  label: z.string().optional(),
+  criteriaCode: z.string().optional(),
+});
+router.post(
+  "/cases/:caseSetupId/exhibits/send-to-client",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const caseSetupId = parseCaseId(req.params.caseSetupId);
+    if (!caseSetupId) { res.status(400).json({ error: "Invalid caseId" }); return; }
+    const parsed = SendBody.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: "Invalid body", details: parsed.error.issues }); return; }
+    const { driveFileId, fileName, webViewLink, label, criteriaCode } = parsed.data;
+
+    const prof = await caseProfile(caseSetupId);
+    if (!prof) { res.status(404).json({ error: "Case not found" }); return; }
+
+    // Make the file viewable via its link (idempotent for app-uploaded files).
+    try { await shareDriveFile(driveFileId); }
+    catch (err) { logger.warn({ caseSetupId, driveFileId, err }, "[caseExhibits] shareDriveFile failed (continuing)"); }
+
+    const now = new Date();
+    const sid = staffId(req);
+
+    // Upsert by driveFileId within this case.
+    const [existing] = await db
+      .select()
+      .from(exhibitDocumentsTable)
+      .where(and(eq(exhibitDocumentsTable.caseSetupId, caseSetupId), eq(exhibitDocumentsTable.driveFileId, driveFileId)))
+      .limit(1);
+
+    let exhibit;
+    if (existing) {
+      [exhibit] = await db
+        .update(exhibitDocumentsTable)
+        .set({ publishedToClient: true, publishedAt: now, publishedBy: sid })
+        .where(eq(exhibitDocumentsTable.id, existing.id))
+        .returning();
+    } else {
+      [exhibit] = await db
+        .insert(exhibitDocumentsTable)
+        .values({
+          caseSetupId, profileId: prof.profileId,
+          documentType: "uploaded_exhibit",
+          exhibitLabel: (label?.trim() || fileName),
+          criteriaCode: criteriaCode?.trim() || null,
+          fileName,
+          driveFileId,
+          driveUrl: webViewLink ?? "",
+          publishedToClient: true,
+          publishedAt: now,
+          publishedBy: sid,
+        })
+        .returning();
+    }
+
+    // Notify the client — in-app notification + email. Non-fatal on failure.
+    try {
+      await db.insert(notificationsTable).values({
+        profileId: prof.profileId, userType: "client", caseSetupId,
+        notificationType: "exhibit_shared", title: "A new exhibit is ready to view",
+        message: `${exhibit.exhibitLabel ?? fileName} is now available in your Exhibits.`,
+        link: "/evidence", status: "unread", priority: "medium",
+      });
+      const appUrl = process.env.FRONTEND_URL ?? "https://pinnaclecube.com";
+      await sendEmail(prof.email, {
+        subject: "A new exhibit is ready to view",
+        html: `<p>Hi ${prof.firstName ?? prof.name ?? "there"},</p><p>A new exhibit has been shared with you and is available in your Pinnacle³ portal.</p><p><a href="${appUrl}/evidence">View your exhibits</a></p>`,
+        text: `A new exhibit has been shared with you: ${appUrl}/evidence`,
+      });
+    } catch (err) {
+      logger.error({ caseSetupId, driveFileId, err }, "[caseExhibits] client notification failed");
+    }
+
+    logger.info({ caseSetupId, exhibitId: exhibit.id, driveFileId, staffId: sid }, "[caseExhibits] exhibit sent to client");
+    res.json({ success: true, exhibit });
+  },
+);
+
+// ─── POST /cases/:caseSetupId/exhibits/recall ────────────────────────────────
+// Un-shares a previously sent exhibit from the client's portal (Drive file is
+// left in place; only publishedToClient is cleared).
+const RecallBody = z.object({ driveFileId: z.string().min(1) });
+router.post(
+  "/cases/:caseSetupId/exhibits/recall",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const caseSetupId = parseCaseId(req.params.caseSetupId);
+    if (!caseSetupId) { res.status(400).json({ error: "Invalid caseId" }); return; }
+    const parsed = RecallBody.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: "Invalid body", details: parsed.error.issues }); return; }
+
+    const [updated] = await db
+      .update(exhibitDocumentsTable)
+      .set({ publishedToClient: false, publishedAt: null, publishedBy: null })
+      .where(and(
+        eq(exhibitDocumentsTable.caseSetupId, caseSetupId),
+        eq(exhibitDocumentsTable.driveFileId, parsed.data.driveFileId),
+      ))
+      .returning();
+
+    if (!updated) { res.status(404).json({ error: "Exhibit not found" }); return; }
+    logger.info({ caseSetupId, driveFileId: parsed.data.driveFileId, staffId: staffId(req) }, "[caseExhibits] exhibit recalled");
+    res.json({ success: true, exhibit: updated });
   },
 );
 

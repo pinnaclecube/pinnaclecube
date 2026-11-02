@@ -16,6 +16,9 @@ import {
   exhibitDocumentsTable,
 } from "@workspace/db";
 import { requireClientAuth } from "../middlewares/clientAuth";
+import { getCaseDriveFolderId } from "../services/driveUploadService";
+import { listDriveFolderFiles, listDriveSubfolders } from "../services/driveService";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -197,6 +200,96 @@ router.get(
         mergedPdfUrl: packageApproved ? (pkgRow.mergedPdfDriveUrl ?? null) : null,
       } : null,
     });
+  },
+);
+
+// ─── GET /petition/my-exhibits/tree ──────────────────────────────────────────
+// Read-only mirror of the case's Exhibits Drive folder structure, containing
+// ONLY files that staff have sent to the client (publishedToClient = true).
+// Folders with no sent files anywhere beneath them are pruned.
+
+interface TreeFile {
+  driveFileId: string;
+  name: string;
+  webViewLink: string;
+  exhibitLabel: string | null;
+  publishedAt: string | null;
+}
+interface TreeNode {
+  id: string;
+  name: string;
+  files: TreeFile[];
+  folders: TreeNode[];
+}
+
+const TREE_MAX_DEPTH = 5;
+
+router.get(
+  "/petition/my-exhibits/tree",
+  requireClientAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const user = (req as AuthedRequest).clientUser;
+
+    const setups = await db
+      .select()
+      .from(casePetitionSetupTable)
+      .where(eq(casePetitionSetupTable.profileId, user.id));
+    if (!setups.length) { res.json({ tree: null }); return; }
+    const setup = setups.sort((a, b) => b.id - a.id)[0];
+
+    // Published exhibit docs → map by driveFileId for the safe metadata overlay.
+    const published = await db
+      .select()
+      .from(exhibitDocumentsTable)
+      .where(and(
+        eq(exhibitDocumentsTable.caseSetupId, setup.id),
+        eq(exhibitDocumentsTable.publishedToClient, true),
+      ));
+    const metaByDriveId = new Map(
+      published.filter((d) => d.driveFileId).map((d) => [d.driveFileId as string, d]),
+    );
+    if (metaByDriveId.size === 0) { res.json({ tree: null }); return; }
+
+    const rootId = await getCaseDriveFolderId(setup.id, "exhibits");
+    if (!rootId) { res.json({ tree: null }); return; }
+
+    async function build(folderId: string, name: string, depth: number): Promise<TreeNode> {
+      const [files, subfolders] = await Promise.all([
+        listDriveFolderFiles(folderId),
+        depth < TREE_MAX_DEPTH ? listDriveSubfolders(folderId) : Promise.resolve([]),
+      ]);
+
+      const keptFiles: TreeFile[] = files
+        .filter((f) => metaByDriveId.has(f.id))
+        .map((f) => {
+          const meta = metaByDriveId.get(f.id)!;
+          return {
+            driveFileId: f.id,
+            name: f.name,
+            webViewLink: meta.driveUrl || f.webViewLink,
+            exhibitLabel: meta.exhibitLabel ?? null,
+            publishedAt: meta.publishedAt ? new Date(meta.publishedAt).toISOString() : null,
+          };
+        });
+
+      const childNodes = await Promise.all(
+        subfolders.map((s) => build(s.id, s.name, depth + 1)),
+      );
+      const keptFolders = childNodes.filter((n) => n.files.length > 0 || n.folders.length > 0);
+
+      return { id: folderId, name, files: keptFiles, folders: keptFolders };
+    }
+
+    try {
+      const tree = await build(rootId, "Exhibits", 0);
+      // Prune the root itself if nothing is visible (shouldn't happen given the
+      // published guard, but keep the contract clean).
+      if (tree.files.length === 0 && tree.folders.length === 0) { res.json({ tree: null }); return; }
+      res.json({ tree });
+    } catch (err) {
+      logger.error({ caseSetupId: setup.id, err }, "[petitionClient] exhibits tree build failed");
+      res.json({ tree: null });
+    }
   },
 );
 
