@@ -130,6 +130,17 @@ export async function listDriveSubfolders(
   ) as DriveFileMetadata[];
 }
 
+// Grants "anyone with the link can view" on a Drive file. Idempotent — Drive
+// silently no-ops a duplicate anyone/reader grant. Used when a staff member
+// sends a client an exhibit that was dropped directly into Drive.
+export async function shareDriveFile(fileId: string): Promise<void> {
+  await getDriveClient().permissions.create({
+    supportsAllDrives: true,
+    fileId,
+    requestBody: { role: "reader", type: "anyone" },
+  });
+}
+
 // Download a Drive file's raw bytes (works for files in shared drives).
 export async function downloadDriveFile(fileId: string): Promise<Buffer> {
   const res = await getDriveClient().files.get(
