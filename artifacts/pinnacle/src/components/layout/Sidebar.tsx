@@ -21,7 +21,6 @@ const navItems = [
   { href: "/my-files", label: "Case Files", icon: FolderArchive },
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/reference-letters", label: "Reference Letters", icon: Mail },
-  { href: "/criteria", label: "Criteria Exhibit", icon: FileCheck2 },
   { href: "/blueprint", label: "Elite Blueprint", icon: Map },
   { href: "/courses", label: "Excellence Lab", icon: GraduationCap },
 ];

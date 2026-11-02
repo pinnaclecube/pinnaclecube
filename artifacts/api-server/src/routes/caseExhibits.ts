@@ -36,6 +36,10 @@ import {
 } from "../services/exhibitGeneratorService";
 import { logger } from "../lib/logger";
 import { z } from "zod/v4";
+import multer from "multer";
+import { uploadFileToDrive, getCaseDriveFolderId } from "../services/driveUploadService";
+
+const uploadMw = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 const router: IRouter = Router();
 
@@ -486,6 +490,43 @@ router.patch(
 
     logger.info({ exhibitId, caseSetupId, staffId: staffId(req) }, "[caseExhibits] exhibit unpublished");
     res.json({ success: true, exhibit: updated });
+  },
+);
+
+// ─── POST /cases/:caseSetupId/exhibits/upload ────────────────────────────────
+// Staff uploads a finished exhibit document (built offline) into the case's
+// Exhibits Drive folder and records it as an exhibit. Publish to the client with
+// the existing publish route.
+router.post(
+  "/cases/:caseSetupId/exhibits/upload",
+  requireStaffAuth,
+  uploadMw.single("file"),
+  async (req: Request, res: Response): Promise<void> => {
+    const caseSetupId = parseCaseId(req.params.caseSetupId);
+    if (!caseSetupId) { res.status(400).json({ error: "Invalid caseId" }); return; }
+    const file = (req as Request & { file?: { buffer: Buffer; originalname: string; mimetype: string } }).file;
+    if (!file) { res.status(400).json({ error: "No file uploaded" }); return; }
+    const label = typeof req.body?.label === "string" ? req.body.label.trim() : "";
+    const criteriaCode = typeof req.body?.criteriaCode === "string" ? req.body.criteriaCode.trim() || null : null;
+
+    const [c] = await db.select({ profileId: casePetitionSetupTable.profileId }).from(casePetitionSetupTable).where(eq(casePetitionSetupTable.id, caseSetupId)).limit(1);
+    if (!c) { res.status(404).json({ error: "Case not found" }); return; }
+    const folderId = await getCaseDriveFolderId(caseSetupId, "exhibits");
+    if (!folderId) { res.status(400).json({ error: "This case has no Exhibits Drive folder" }); return; }
+
+    const up = await uploadFileToDrive(file.buffer, file.originalname, file.mimetype || "application/octet-stream", folderId, { share: true });
+    const [row] = await db.insert(exhibitDocumentsTable).values({
+      caseSetupId, profileId: c.profileId,
+      documentType: "uploaded_exhibit",
+      exhibitLabel: label || file.originalname,
+      criteriaCode,
+      fileName: file.originalname,
+      driveFileId: up.driveFileId,
+      driveUrl: up.driveUrl,
+      publishedToClient: false,
+    }).returning();
+    logger.info({ caseSetupId, exhibitId: row.id, staffId: staffId(req) }, "[caseExhibits] exhibit uploaded");
+    res.status(201).json({ exhibit: row });
   },
 );
 

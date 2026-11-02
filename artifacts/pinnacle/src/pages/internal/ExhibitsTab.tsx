@@ -114,15 +114,46 @@ function GenerationPanel({
   visaPath?: string;
 }) {
   const [runningPackage, setRunningPackage] = useState(false);
+  const [upFile, setUpFile] = useState<File | null>(null);
+  const [upLabel, setUpLabel] = useState("");
+  const [upCrit, setUpCrit] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [upMsg, setUpMsg] = useState<string | null>(null);
 
-  // EB-1A uses the new Evidence Package module (Packages tab); the legacy PDF
-  // exhibit generator is hidden here (spec phase 9).
+  const doUpload = async () => {
+    if (!upFile || !caseSetupId) return;
+    setUploading(true); setUpMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", upFile);
+      if (upLabel.trim()) fd.append("label", upLabel.trim());
+      if (upCrit) fd.append("criteriaCode", upCrit);
+      const r = await staffFetch(`/cases/${caseSetupId}/exhibits/upload`, { method: "POST", body: fd });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); setUpMsg(d.error ?? "Upload failed"); return; }
+      setUpMsg("Uploaded — it appears below shortly. Publish it to share with the client.");
+      setUpFile(null); setUpLabel(""); setUpCrit("");
+    } catch { setUpMsg("Upload failed"); } finally { setUploading(false); }
+  };
+
+  // EB-1A: build exhibits offline and upload them here (no AI generation).
   if (visaPath === "eb1a") {
     return (
       <Card className="sticky top-4">
-        <CardContent className="py-6 text-center space-y-2">
-          <FileText className="w-8 h-8 text-gray-200 mx-auto" />
-          <p className="text-sm text-muted-foreground">For EB-1A, generate the evidence package from the <span className="font-medium">Packages</span> tab.</p>
+        <CardHeader className="pb-3"><CardTitle className="text-sm font-semibold">Upload Exhibit</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-[11px] text-muted-foreground">Build the exhibit offline, then upload the finished .docx/.pdf. It's stored in the case's Exhibits Drive folder; publish it below to share with the client.</p>
+          <input type="file" accept=".docx,.pdf" onChange={(e) => setUpFile(e.target.files?.[0] ?? null)} className="block w-full text-xs" />
+          <input type="text" value={upLabel} onChange={(e) => setUpLabel(e.target.value)} placeholder="Exhibit label (optional)" className="w-full border rounded px-2 py-1 text-xs" />
+          {criteria?.length > 0 && (
+            <select value={upCrit} onChange={(e) => setUpCrit(e.target.value)} className="w-full border rounded px-2 py-1 text-xs bg-white">
+              <option value="">No criterion</option>
+              {criteria.map((c: any) => <option key={c.criteriaCode} value={c.criteriaCode}>{c.criteriaName ?? c.criteriaCode}</option>)}
+            </select>
+          )}
+          <Button className="w-full bg-[#1E2D6B] hover:bg-[#3D4FA8] text-white text-xs h-8" disabled={!upFile || uploading} onClick={doUpload}>
+            {uploading ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Uploading…</> : <><Upload className="w-3.5 h-3.5 mr-1.5" />Upload Exhibit</>}
+          </Button>
+          {upMsg && <p className="text-[11px] text-green-700">{upMsg}</p>}
         </CardContent>
       </Card>
     );

@@ -30,7 +30,9 @@ import { ProjectsTab } from "./ProjectsTab";
 const TABS = ["Overview", "Tasks", "Evidence", "Excellence Lab", "Petition Workspace", "Petition Assessment", "Exhibits", "Documents", "Projects", "Reference Letters", "Packages", "Drive Folders"] as const;
 type Tab = typeof TABS[number];
 
-const HIDDEN_TABS = ["Petition Workspace"] as const;
+// Hidden from the left nav (code kept; reachable by direct URL). Evidence lives in
+// Drive now; Documents/Packages are consolidated into the Exhibits tab (upload).
+const HIDDEN_TABS = ["Petition Workspace", "Evidence", "Documents", "Packages"] as const;
 
 const TAB_ICONS: Partial<Record<Tab, React.ComponentType<{ className?: string }>>> = {
   "Overview": LayoutDashboard,

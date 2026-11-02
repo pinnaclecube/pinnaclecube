@@ -20,18 +20,14 @@ import {
 import {
   Loader2, UserPlus, ChevronRight, Trash2, Pencil, ExternalLink,
   ShieldCheck, Users, Mail, Shield, Lock, Unlock, FileUp, Send, FileText,
-  FileSpreadsheet, HandHeart, Sparkles, MessageSquare, Layers,
+  FileSpreadsheet, HandHeart, Sparkles, MessageSquare,
 } from "lucide-react";
-import {
-  Accordion, AccordionItem, AccordionTrigger, AccordionContent,
-} from "@/components/ui/accordion";
 import { getStaffToken } from "@/components/auth/StaffProtectedRoute";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { RefereeForm, type Referee, type LookupItem } from "@/components/referees/RefereeForm";
 import { RefereeMappingPanel } from "@/components/referees/RefereeMappingPanel";
 import { LetterDraftPanel } from "@/components/referees/LetterDraftPanel";
-import { EvidenceGroupsTab } from "./EvidenceGroupsTab";
 
 interface DraftStatus { status: "draft" | "finalized"; version: number; clientRequestedChanges: boolean }
 
@@ -484,25 +480,7 @@ export function ReferenceLettersTab({ userId }: { userId: string }) {
         )}
       </div>
 
-      {caseId !== null && (
-        <Accordion type="single" collapsible className="rounded-lg border bg-white">
-          <AccordionItem value="evidence-groups" className="border-b-0">
-            <AccordionTrigger className="px-4 py-3 hover:no-underline text-sm">
-              <span className="flex items-center gap-2 font-semibold">
-                <Layers className="w-4 h-4 text-muted-foreground" /> Evidence Groups
-              </span>
-              <span className="ml-auto mr-2 text-[11px] text-muted-foreground font-normal">
-                AI-grouped evidence · curate before mapping referees
-              </span>
-            </AccordionTrigger>
-            <AccordionContent className="px-4 pb-4 border-t">
-              <div className="pt-4">
-                <EvidenceGroupsTab userId={userId} />
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
-      )}
+      {/* AI evidence grouping removed — referees map to individual evidence files. */}
 
       {referees.length === 0 ? (
         <div className="text-center py-16 border rounded-lg bg-white">

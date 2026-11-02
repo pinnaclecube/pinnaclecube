@@ -1,9 +1,0 @@
-# BuildKit uses this instead of .dockerignore for Dockerfile.package-worker.
-# Unlike the repo's .dockerignore, it KEEPS scripts/ and all workspace packages
-# (the worker needs scripts/extract.py, and pnpm install needs every package.json
-# referenced by the lockfile). Only build artifacts and VCS metadata are excluded.
-**/node_modules
-.git
-**/dist
-artifacts/pinnacle/dist
-attached_assets
