@@ -55,14 +55,14 @@ interface DriveListing {
   files: DriveFile[];
 }
 interface Crumb { id: string; name: string }
+interface PendingFile { driveFileId: string; name: string; folderPath: string }
 
 // ─── FileRow ──────────────────────────────────────────────────────────────────
 
 function FileRow({
-  file, onSend, onRecall, busy,
+  file, onRecall, busy,
 }: {
   file: DriveFile;
-  onSend: (f: DriveFile) => void;
   onRecall: (f: DriveFile) => void;
   busy: boolean;
 }) {
@@ -82,9 +82,9 @@ function FileRow({
           "text-xs px-2 py-0.5 rounded-full border font-medium",
           file.publishedToClient
             ? "bg-green-50 text-green-700 border-green-200"
-            : "bg-gray-100 text-gray-500 border-gray-200",
+            : "bg-amber-50 text-amber-700 border-amber-200",
         )}>
-          {file.publishedToClient ? "Visible to Client" : "Not sent"}
+          {file.publishedToClient ? "Visible to Client" : "Pending send"}
         </span>
         {file.webViewLink && (
           <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Open in Drive"
@@ -92,15 +92,10 @@ function FileRow({
             <ExternalLink className="w-3.5 h-3.5" />
           </Button>
         )}
-        {file.publishedToClient ? (
+        {file.publishedToClient && (
           <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground"
             disabled={busy} onClick={() => onRecall(file)} title="Recall from client">
             {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Undo2 className="w-3 h-3 mr-1" />Recall</>}
-          </Button>
-        ) : (
-          <Button size="sm" className="h-7 text-xs bg-[#1E2D6B] hover:bg-[#3D4FA8] text-white"
-            disabled={busy} onClick={() => onSend(file)}>
-            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Send className="w-3 h-3 mr-1" />Send to client</>}
           </Button>
         )}
       </div>
@@ -127,6 +122,10 @@ export function ExhibitsTab({ userId }: { userId: string; profileData?: any }) {
   const [newFolderName, setNewFolderName] = useState("");
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+
+  const [pending, setPending] = useState<{ count: number; files: PendingFile[] } | null>(null);
+  const [showSend, setShowSend] = useState(false);
+  const [sending, setSending] = useState(false);
 
   const currentFolderId = crumbs.length ? crumbs[crumbs.length - 1].id : null;
 
@@ -166,10 +165,23 @@ export function ExhibitsTab({ userId }: { userId: string; profileData?: any }) {
     }
   }, []);
 
+  const loadPending = useCallback(async (csId: number) => {
+    try {
+      const r = await staffFetch(`/cases/${csId}/exhibits/pending`);
+      if (!r.ok) return;
+      const d = await r.json();
+      setPending({ count: d.count ?? 0, files: d.files ?? [] });
+    } catch { /* non-fatal */ }
+  }, []);
+
   useEffect(() => {
     if (caseSetupId) loadFolder(caseSetupId, currentFolderId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseSetupId, currentFolderId]);
+
+  useEffect(() => {
+    if (caseSetupId) loadPending(caseSetupId);
+  }, [caseSetupId, loadPending]);
 
   // ── Navigation ────────────────────────────────────────────────────────────
   const enterFolder = (f: DriveFolder) => setCrumbs((c) => [...c, { id: f.driveFileId, name: f.name }]);
@@ -186,8 +198,8 @@ export function ExhibitsTab({ userId }: { userId: string; profileData?: any }) {
       const r = await staffFetch(`/cases/${caseSetupId}/exhibits/upload`, { method: "POST", body: fd });
       if (!r.ok) { const d = await r.json().catch(() => ({})); setMsg(d.error ?? "Upload failed"); return; }
       setUpFile(null);
-      setMsg("Uploaded. Click Send to client when you're ready to share it.");
-      await loadFolder(caseSetupId, currentFolderId);
+      setMsg("Uploaded. Use Send to Client when you're ready to share.");
+      await Promise.all([loadFolder(caseSetupId, currentFolderId), loadPending(caseSetupId)]);
     } catch { setMsg("Upload failed"); } finally { setUploading(false); }
   };
 
@@ -206,22 +218,20 @@ export function ExhibitsTab({ userId }: { userId: string; profileData?: any }) {
     } catch { setMsg("Could not create folder"); } finally { setCreatingFolder(false); }
   };
 
-  // ── Send / Recall ─────────────────────────────────────────────────────────
-  const sendToClient = async (f: DriveFile) => {
+  // ── Send (case-level batch) / Recall ──────────────────────────────────────
+  const doSend = async () => {
     if (!caseSetupId) return;
-    setRowBusy((p) => ({ ...p, [f.driveFileId]: true }));
-    setMsg(null);
+    setSending(true); setMsg(null);
     try {
-      const r = await staffFetch(`/cases/${caseSetupId}/exhibits/send-to-client`, {
-        method: "POST",
-        body: JSON.stringify({ driveFileId: f.driveFileId, fileName: f.name, webViewLink: f.webViewLink }),
-      });
+      const r = await staffFetch(`/cases/${caseSetupId}/exhibits/send-to-client`, { method: "POST" });
       if (!r.ok) { const d = await r.json().catch(() => ({})); setMsg(d.error ?? "Could not send to client"); return; }
-      setMsg(`“${f.name}” sent — the client has been notified.`);
-      await loadFolder(caseSetupId, currentFolderId);
-    } catch { setMsg("Could not send to client"); } finally {
-      setRowBusy((p) => ({ ...p, [f.driveFileId]: false }));
-    }
+      const d = await r.json();
+      setShowSend(false);
+      setMsg(d.sent > 0
+        ? `Sent ${d.sent} document${d.sent !== 1 ? "s" : ""} — the client has been notified by email.`
+        : (d.message ?? "Nothing new to send."));
+      await Promise.all([loadFolder(caseSetupId, currentFolderId), loadPending(caseSetupId)]);
+    } catch { setMsg("Could not send to client"); } finally { setSending(false); }
   };
 
   const recall = async (f: DriveFile) => {
@@ -234,7 +244,7 @@ export function ExhibitsTab({ userId }: { userId: string; profileData?: any }) {
         body: JSON.stringify({ driveFileId: f.driveFileId }),
       });
       if (!r.ok) { const d = await r.json().catch(() => ({})); setMsg(d.error ?? "Could not recall"); return; }
-      await loadFolder(caseSetupId, currentFolderId);
+      await Promise.all([loadFolder(caseSetupId, currentFolderId), loadPending(caseSetupId)]);
     } catch { setMsg("Could not recall"); } finally {
       setRowBusy((p) => ({ ...p, [f.driveFileId]: false }));
     }
@@ -326,6 +336,17 @@ export function ExhibitsTab({ userId }: { userId: string; profileData?: any }) {
                 <ExternalLink className="w-3.5 h-3.5 mr-1" />Drive
               </Button>
             )}
+            <Button size="sm" className="h-8 text-xs bg-[#1E2D6B] hover:bg-[#3D4FA8] text-white"
+              disabled={sending || (pending?.count ?? 0) === 0}
+              onClick={() => setShowSend((s) => !s)}>
+              <Send className="w-3.5 h-3.5 mr-1.5" />
+              Send to Client
+              {pending && pending.count > 0 && (
+                <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-white/25 px-1.5 text-[11px] font-semibold">
+                  {pending.count}
+                </span>
+              )}
+            </Button>
           </div>
 
           {showNewFolder && (
@@ -343,6 +364,37 @@ export function ExhibitsTab({ userId }: { userId: string; profileData?: any }) {
               </Button>
               <Button size="sm" variant="ghost" className="h-8 text-xs"
                 onClick={() => { setShowNewFolder(false); setNewFolderName(""); }}>Cancel</Button>
+            </div>
+          )}
+
+          {showSend && pending && pending.count > 0 && (
+            <div className="w-full pt-2">
+              <div className="rounded-lg border bg-gray-50/70 p-3">
+                <p className="text-xs font-semibold text-foreground mb-2">
+                  This will share {pending.count} new document{pending.count !== 1 ? "s" : ""} and email the client an itemized list:
+                </p>
+                <ul className="max-h-48 overflow-y-auto space-y-1 mb-3">
+                  {pending.files.map((f) => (
+                    <li key={f.driveFileId} className="flex items-center gap-2 text-xs">
+                      <FileText className="w-3.5 h-3.5 text-[#1E2D6B] shrink-0" />
+                      <span className="truncate flex-1">{f.name}</span>
+                      {f.folderPath && f.folderPath !== "Exhibits" && (
+                        <span className="text-muted-foreground shrink-0">{f.folderPath}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" className="h-8 text-xs bg-[#1E2D6B] hover:bg-[#3D4FA8] text-white"
+                    disabled={sending} onClick={doSend}>
+                    {sending
+                      ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Sending…</>
+                      : <><Send className="w-3.5 h-3.5 mr-1.5" />Send &amp; notify client</>}
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-8 text-xs"
+                    disabled={sending} onClick={() => setShowSend(false)}>Cancel</Button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -378,7 +430,7 @@ export function ExhibitsTab({ userId }: { userId: string; profileData?: any }) {
               {/* Files */}
               {files.map((f) => (
                 <FileRow key={f.driveFileId} file={f}
-                  onSend={sendToClient} onRecall={recall} busy={!!rowBusy[f.driveFileId]} />
+                  onRecall={recall} busy={!!rowBusy[f.driveFileId]} />
               ))}
             </>
           )}

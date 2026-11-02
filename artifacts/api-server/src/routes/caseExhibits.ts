@@ -47,6 +47,7 @@ import {
   getDriveClient,
 } from "../services/driveService";
 import { sendEmail } from "../services/emailService";
+import { logActivity } from "../services/activityLogger";
 
 const uploadMw = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -66,6 +67,16 @@ function parseCaseId(raw: string | string[]): number | null {
 
 function staffId(req: Request): string {
   return (req as any).staffUser?.id ?? "staff";
+}
+
+/** Minimal HTML-escape for values interpolated into notification email bodies. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 // Staff tokens built at startup — avoids re-reading env on every dual-auth request
@@ -552,6 +563,38 @@ async function resolveExhibitsRoot(caseSetupId: number, res: Response): Promise<
   return root;
 }
 
+interface CollectedFile { driveFileId: string; name: string; webViewLink: string; folderPath: string }
+const EXHIBITS_TREE_MAX_DEPTH = 5;
+
+/** Depth-first collect of every file in the Exhibits folder tree, each tagged
+ * with its folder path relative to the Exhibits root ("" = root). */
+async function collectExhibitTreeFiles(rootId: string): Promise<CollectedFile[]> {
+  const out: CollectedFile[] = [];
+  async function walk(folderId: string, path: string, depth: number): Promise<void> {
+    const [files, subs] = await Promise.all([
+      listDriveFolderFiles(folderId),
+      depth < EXHIBITS_TREE_MAX_DEPTH ? listDriveSubfolders(folderId) : Promise.resolve([]),
+    ]);
+    for (const f of files) out.push({ driveFileId: f.id, name: f.name, webViewLink: f.webViewLink, folderPath: path });
+    for (const s of subs) await walk(s.id, path ? `${path}/${s.name}` : s.name, depth + 1);
+  }
+  await walk(rootId, "", 0);
+  return out;
+}
+
+/** Files in the Exhibits tree that have NOT yet been sent to the client. */
+async function pendingExhibitFiles(caseSetupId: number, rootId: string): Promise<CollectedFile[]> {
+  const [collected, publishedRows] = await Promise.all([
+    collectExhibitTreeFiles(rootId),
+    db
+      .select({ driveFileId: exhibitDocumentsTable.driveFileId })
+      .from(exhibitDocumentsTable)
+      .where(and(eq(exhibitDocumentsTable.caseSetupId, caseSetupId), eq(exhibitDocumentsTable.publishedToClient, true))),
+  ]);
+  const publishedSet = new Set(publishedRows.map((r) => r.driveFileId).filter(Boolean) as string[]);
+  return collected.filter((f) => !publishedSet.has(f.driveFileId));
+}
+
 // ─── GET /cases/:caseSetupId/exhibits/drive ──────────────────────────────────
 // Lists one Drive folder (defaults to the Exhibits root): its subfolders and
 // files, each file annotated with its send-to-client state.
@@ -667,88 +710,125 @@ router.post(
   },
 );
 
+// ─── GET /cases/:caseSetupId/exhibits/pending ────────────────────────────────
+// Files across the whole Exhibits tree that have not yet been sent to the
+// client — drives the case-level "Send to Client" button and its preview.
+router.get(
+  "/cases/:caseSetupId/exhibits/pending",
+  requireStaffAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const caseSetupId = parseCaseId(req.params.caseSetupId);
+    if (!caseSetupId) { res.status(400).json({ error: "Invalid caseId" }); return; }
+    const root = await resolveExhibitsRoot(caseSetupId, res);
+    if (!root) return;
+
+    const pending = await pendingExhibitFiles(caseSetupId, root);
+    res.json({
+      count: pending.length,
+      files: pending.map((f) => ({ driveFileId: f.driveFileId, name: f.name, folderPath: f.folderPath })),
+    });
+  },
+);
+
 // ─── POST /cases/:caseSetupId/exhibits/send-to-client ────────────────────────
-// Shares the Drive file, records/publishes an exhibit_documents row (keyed by
-// driveFileId), and notifies the client (in-app + email).
-const SendBody = z.object({
-  driveFileId: z.string().min(1),
-  fileName: z.string().min(1),
-  webViewLink: z.string().optional(),
-  label: z.string().optional(),
-  criteriaCode: z.string().optional(),
-});
+// Case-level batch send. Shares and publishes every not-yet-sent file in the
+// Exhibits tree, records the change log, and sends the client ONE notification
+// + email that itemizes exactly what is included in this send.
 router.post(
   "/cases/:caseSetupId/exhibits/send-to-client",
   requireStaffAuth,
   async (req: Request, res: Response): Promise<void> => {
     const caseSetupId = parseCaseId(req.params.caseSetupId);
     if (!caseSetupId) { res.status(400).json({ error: "Invalid caseId" }); return; }
-    const parsed = SendBody.safeParse(req.body);
-    if (!parsed.success) { res.status(400).json({ error: "Invalid body", details: parsed.error.issues }); return; }
-    const { driveFileId, fileName, webViewLink, label, criteriaCode } = parsed.data;
+    const root = await resolveExhibitsRoot(caseSetupId, res);
+    if (!root) return;
 
     const prof = await caseProfile(caseSetupId);
     if (!prof) { res.status(404).json({ error: "Case not found" }); return; }
 
-    // Make the file viewable via its link (idempotent for app-uploaded files).
-    try { await shareDriveFile(driveFileId); }
-    catch (err) { logger.warn({ caseSetupId, driveFileId, err }, "[caseExhibits] shareDriveFile failed (continuing)"); }
+    const pending = await pendingExhibitFiles(caseSetupId, root);
+    if (pending.length === 0) {
+      res.json({ sent: 0, files: [], message: "Nothing new to send — all files are already shared." });
+      return;
+    }
 
     const now = new Date();
     const sid = staffId(req);
 
-    // Upsert by driveFileId within this case.
-    const [existing] = await db
-      .select()
+    // Existing rows (any publish state) so we upsert rather than duplicate.
+    const existingRows = await db
+      .select({ id: exhibitDocumentsTable.id, driveFileId: exhibitDocumentsTable.driveFileId })
       .from(exhibitDocumentsTable)
-      .where(and(eq(exhibitDocumentsTable.caseSetupId, caseSetupId), eq(exhibitDocumentsTable.driveFileId, driveFileId)))
-      .limit(1);
+      .where(eq(exhibitDocumentsTable.caseSetupId, caseSetupId));
+    const rowByDriveId = new Map(existingRows.filter((r) => r.driveFileId).map((r) => [r.driveFileId as string, r.id]));
 
-    let exhibit;
-    if (existing) {
-      [exhibit] = await db
-        .update(exhibitDocumentsTable)
-        .set({ publishedToClient: true, publishedAt: now, publishedBy: sid })
-        .where(eq(exhibitDocumentsTable.id, existing.id))
-        .returning();
-    } else {
-      [exhibit] = await db
-        .insert(exhibitDocumentsTable)
-        .values({
+    for (const f of pending) {
+      try { await shareDriveFile(f.driveFileId); }
+      catch (err) { logger.warn({ caseSetupId, driveFileId: f.driveFileId, err }, "[caseExhibits] shareDriveFile failed (continuing)"); }
+
+      const existingId = rowByDriveId.get(f.driveFileId);
+      if (existingId) {
+        await db.update(exhibitDocumentsTable)
+          .set({ publishedToClient: true, publishedAt: now, publishedBy: sid, driveUrl: f.webViewLink || undefined })
+          .where(eq(exhibitDocumentsTable.id, existingId));
+      } else {
+        await db.insert(exhibitDocumentsTable).values({
           caseSetupId, profileId: prof.profileId,
           documentType: "uploaded_exhibit",
-          exhibitLabel: (label?.trim() || fileName),
-          criteriaCode: criteriaCode?.trim() || null,
-          fileName,
-          driveFileId,
-          driveUrl: webViewLink ?? "",
+          exhibitLabel: f.name,
+          fileName: f.name,
+          driveFileId: f.driveFileId,
+          driveUrl: f.webViewLink ?? "",
           publishedToClient: true,
           publishedAt: now,
           publishedBy: sid,
-        })
-        .returning();
+        });
+      }
     }
 
-    // Notify the client — in-app notification + email. Non-fatal on failure.
+    // Change log (itemized list of what went out in this send).
+    const changeLog = pending.map((f) => ({ name: f.name, folderPath: f.folderPath || "Exhibits" }));
+    logActivity({
+      profileId: prof.profileId, caseSetupId,
+      eventType: "exhibits_sent_to_client", actor: "staff", actorName: sid, category: "exhibits",
+      description: `Sent ${changeLog.length} document${changeLog.length !== 1 ? "s" : ""} to client`,
+      metadata: { count: changeLog.length, files: changeLog },
+    });
+
+    // One notification + one email, itemizing this send.
+    const names = changeLog.map((f) => f.name);
+    const n = changeLog.length;
     try {
+      const summary = names.slice(0, 5).join(", ") + (names.length > 5 ? `, and ${names.length - 5} more` : "");
       await db.insert(notificationsTable).values({
         profileId: prof.profileId, userType: "client", caseSetupId,
-        notificationType: "exhibit_shared", title: "A new exhibit is ready to view",
-        message: `${exhibit.exhibitLabel ?? fileName} is now available in your Exhibits.`,
+        notificationType: "exhibit_shared",
+        title: `${n} new document${n !== 1 ? "s" : ""} shared with you`,
+        message: `${n} document${n !== 1 ? "s" : ""} added to your Exhibits: ${summary}`,
         link: "/evidence", status: "unread", priority: "medium",
       });
+
       const appUrl = process.env.FRONTEND_URL ?? "https://pinnaclecube.com";
+      const listHtml = changeLog
+        .map((f) => `<li>${escapeHtml(f.name)}${f.folderPath && f.folderPath !== "Exhibits" ? ` <span style="color:#6b7280">— ${escapeHtml(f.folderPath)}</span>` : ""}</li>`)
+        .join("");
+      const listText = changeLog
+        .map((f) => `• ${f.name}${f.folderPath && f.folderPath !== "Exhibits" ? ` — ${f.folderPath}` : ""}`)
+        .join("\n");
       await sendEmail(prof.email, {
-        subject: "A new exhibit is ready to view",
-        html: `<p>Hi ${prof.firstName ?? prof.name ?? "there"},</p><p>A new exhibit has been shared with you and is available in your Pinnacle³ portal.</p><p><a href="${appUrl}/evidence">View your exhibits</a></p>`,
-        text: `A new exhibit has been shared with you: ${appUrl}/evidence`,
+        subject: `${n} new document${n !== 1 ? "s" : ""} ready to view`,
+        html: `<p>Hi ${escapeHtml(prof.firstName ?? prof.name ?? "there")},</p>`
+          + `<p>The following ${n === 1 ? "document has" : `${n} documents have`} been shared with you and ${n === 1 ? "is" : "are"} now available in your Pinnacle³ portal:</p>`
+          + `<ul>${listHtml}</ul>`
+          + `<p><a href="${appUrl}/evidence">View your exhibits</a></p>`,
+        text: `The following ${n === 1 ? "document has" : `${n} documents have`} been shared with you:\n\n${listText}\n\nView your exhibits: ${appUrl}/evidence`,
       });
     } catch (err) {
-      logger.error({ caseSetupId, driveFileId, err }, "[caseExhibits] client notification failed");
+      logger.error({ caseSetupId, err }, "[caseExhibits] batch client notification failed");
     }
 
-    logger.info({ caseSetupId, exhibitId: exhibit.id, driveFileId, staffId: sid }, "[caseExhibits] exhibit sent to client");
-    res.json({ success: true, exhibit });
+    logger.info({ caseSetupId, sent: n, staffId: sid }, "[caseExhibits] exhibits batch sent to client");
+    res.json({ sent: n, files: changeLog });
   },
 );
 
